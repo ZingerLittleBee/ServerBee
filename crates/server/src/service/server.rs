@@ -291,8 +291,8 @@ impl ServerService {
     /// agent is offline (and so the in-memory cache can be re-seeded on
     /// server restart via `preload_capabilities`). Capabilities themselves are
     /// owned exclusively by the agent host's config file.
-    pub async fn update_capabilities_mirror(
-        db: &DatabaseConnection,
+    pub async fn update_capabilities_mirror<C: ConnectionTrait>(
+        db: &C,
         server_id: &str,
         capabilities: u32,
     ) -> Result<(), DbErr> {

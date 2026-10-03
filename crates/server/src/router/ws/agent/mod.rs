@@ -160,6 +160,7 @@ async fn handle_agent_ws(
     // NOT advertise any: the agent enforces purely on its local policy and
     // ignores this field.
     let welcome = ServerMessage::Welcome {
+        capability_event_ack: true,
         server_id: server_id.clone(),
         protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
         report_interval: 3,
@@ -551,13 +552,22 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             security::on_blocklist_reset_ack(state, server_id, ok, reason).await;
         }
         AgentMessage::CapabilitiesChanged {
-            msg_id: _,
+            msg_id,
+            occurred_at,
             capabilities,
             temporary,
             changes,
         } => {
-            security::on_capabilities_changed(state, server_id, capabilities, temporary, changes)
-                .await;
+            return security::on_capabilities_changed(
+                state,
+                server_id,
+                msg_id,
+                occurred_at,
+                capabilities,
+                temporary,
+                changes,
+            )
+            .await;
         }
         AgentMessage::UnlockResults {
             egress_ip,

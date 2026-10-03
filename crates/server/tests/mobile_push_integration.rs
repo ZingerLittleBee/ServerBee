@@ -3825,3 +3825,477 @@ async fn ws_event_replay_does_not_restart_an_expired_mobile_deadline() {
         "Existing external channels retain their own semantics"
     );
 }
+
+async fn capability_ws_fixture(
+    client: &reqwest::Client,
+    base: &str,
+    admin: &str,
+) -> (
+    String,
+    String,
+    String,
+    common::AgentSink,
+    common::AgentReader,
+) {
+    let (server, rule, token, sink, reader) = event_ws_fixture(client, base, admin).await;
+    assert_eq!(
+        client
+            .put(format!("{base}/api/alert-rules/{rule}"))
+            .bearer_auth(admin)
+            .json(&serde_json::json!({"rules":[{"rule_type":"capability_grant_detected"}]}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    (server, rule, token, sink, reader)
+}
+
+fn capability_source_frame(
+    at: chrono::DateTime<Utc>,
+    cap: &str,
+    action: &str,
+) -> serde_json::Value {
+    serde_json::json!({"type":"capabilities_changed","msg_id":uuid::Uuid::new_v4().to_string(),
+        "occurred_at":at,"capabilities":serverbee_common::constants::CAP_DEFAULT,"temporary":[],
+        "changes":[{"cap":cap,"action":action,"expires_at":at.timestamp()+3600,
+            "granted_by":"root","reason":"original source event"}]})
+}
+
+async fn capability_send_and_ack(
+    sink: &mut common::AgentSink,
+    reader: &mut common::AgentReader,
+    frame: &serde_json::Value,
+) {
+    use futures_util::SinkExt;
+    sink.send(tokio_tungstenite::tungstenite::Message::Text(
+        frame.to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let ack = common::recv_agent_text(reader).await;
+    assert_eq!(ack["type"], "ack");
+    assert_eq!(ack["msg_id"], frame["msg_id"]);
+    event_ws_barrier(sink, reader).await;
+}
+
+/// The external Agent boundary retains the original frame on disk and retries
+/// automatically after reconnect. Production reporter/source restart is covered
+/// separately by the Agent's real loopback reporter test, without helper retries.
+async fn retained_capability_source(
+    endpoint: tokio::sync::watch::Receiver<String>,
+    token: String,
+    path: std::path::PathBuf,
+    attempted: Arc<std::sync::atomic::AtomicUsize>,
+    attempted_endpoint: tokio::sync::watch::Sender<String>,
+) {
+    use futures_util::{SinkExt, StreamExt};
+    loop {
+        let base = endpoint.borrow().clone();
+        let request_url = format!("{}/api/agent/ws", base.replace("http://", "ws://"));
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+        let mut request = request_url.into_client_request().unwrap();
+        request
+            .headers_mut()
+            .insert("Authorization", format!("Bearer {token}").parse().unwrap());
+        if let Ok((mut ws, _)) = tokio_tungstenite::connect_async(request).await {
+            let welcome = ws.next().await.unwrap().unwrap();
+            if let tokio_tungstenite::tungstenite::Message::Text(text) = welcome {
+                assert_eq!(
+                    serde_json::from_str::<serde_json::Value>(&text).unwrap()["capability_event_ack"],
+                    true
+                );
+            }
+            let frame: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+            ws.send(tokio_tungstenite::tungstenite::Message::Text(
+                frame.to_string().into(),
+            ))
+            .await
+            .unwrap();
+            attempted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            attempted_endpoint.send(base).unwrap();
+            while let Some(Ok(message)) = ws.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let reply: serde_json::Value = serde_json::from_str(&text).unwrap();
+                    if reply["type"] == "ack" && reply["msg_id"] == frame["msg_id"] {
+                        std::fs::remove_file(&path).unwrap();
+                        return;
+                    }
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+async fn exercise_capability_capture_restart(
+    fail_commit: bool,
+    expired: bool,
+    revoke_recipient: bool,
+) {
+    use serverbee_server::entity::{audit_log, capability_event_receipt as receipt};
+    let (base, state, directory, relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "capability-owner-a").await;
+    let other = login_http(&client, &base, "member", "capability-owner-b").await;
+    let admin = login["access_token"].as_str().unwrap();
+    let other_access = other["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    queued_register(&client, &base, other_access, "device-b").await;
+    let (server, rule, token, sink, reader) = capability_ws_fixture(&client, &base, admin).await;
+    drop(sink);
+    drop(reader);
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    let original = Utc::now() - ChronoDuration::seconds(if expired { 3600 } else { 120 });
+    let frame = capability_source_frame(original, "terminal", "granted");
+    let path = directory.path().join("retained-capability-source.json");
+    std::fs::write(&path, serde_json::to_vec(&frame).unwrap()).unwrap();
+    let sql = if fail_commit {
+        "CREATE TABLE capability_capture_parent(id INTEGER PRIMARY KEY);
+         CREATE TABLE capability_capture_child(parent_id INTEGER REFERENCES capability_capture_parent(id) DEFERRABLE INITIALLY DEFERRED);
+         CREATE TRIGGER fail_capability_capture AFTER INSERT ON alert_event_intents
+         BEGIN INSERT INTO capability_capture_child(parent_id) VALUES(1); END"
+    } else {
+        "CREATE TRIGGER fail_capability_capture BEFORE INSERT ON alert_event_intents
+         BEGIN SELECT RAISE(ABORT,'injected capability intent capture failure'); END"
+    };
+    state.db.execute_unprepared(sql).await.unwrap();
+    let (endpoint_tx, endpoint_rx) = tokio::sync::watch::channel(base.clone());
+    let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (attempted_tx, mut attempted_rx) = tokio::sync::watch::channel(String::new());
+    let source = tokio::spawn(retained_capability_source(
+        endpoint_rx,
+        token.clone(),
+        path.clone(),
+        attempts.clone(),
+        attempted_tx,
+    ));
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while attempts.load(std::sync::atomic::Ordering::SeqCst) < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("original source automatically reconnects after failed admission");
+    assert!(
+        path.exists(),
+        "No admission Ack consumed the original source"
+    );
+    assert!(event_intents(&state).await.is_empty());
+    assert!(alert_jobs(&state).await.is_empty());
+    assert!(
+        receipt::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        audit_log::Entity::find()
+            .filter(audit_log::Column::Action.eq("capability_temporarily_granted"))
+            .all(&state.db)
+            .await
+            .unwrap()
+            .is_empty(),
+        "Audit rolled back with failed capture/commit"
+    );
+    assert!(webhook.lock().await.is_empty());
+    if revoke_recipient {
+        assert_eq!(
+            client
+                .post(format!("{base}/api/mobile/auth/logout"))
+                .bearer_auth(other_access)
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+    }
+    let restarted = reopen_alert_state(&state, &directory).await;
+    let restarted_base = serve_outbox_http(restarted.clone()).await;
+    endpoint_tx.send(restarted_base.clone()).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let current = attempted_rx.borrow().clone();
+            if current == restarted_base {
+                break;
+            }
+            attempted_rx.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("source reconnects to restarted owner before fault release");
+    restarted
+        .db
+        .execute_unprepared("DROP TRIGGER fail_capability_capture")
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(10), source)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(
+        !path.exists(),
+        "Only owned durable admission Ack consumes the source"
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while persisted_alert_cycle(&restarted, &rule, &server)
+            .await
+            .is_none()
+            || !event_intents(&restarted).await.is_empty()
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let cycle = persisted_alert_cycle(&restarted, &rule, &server)
+        .await
+        .unwrap();
+    assert_eq!(cycle.first_triggered_at, original);
+    assert_eq!(cycle.last_notified_at, original);
+    let admitted = receipt::Entity::find().all(&restarted.db).await.unwrap();
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].msg_id, frame["msg_id"].as_str().unwrap());
+    assert_eq!(admitted[0].server_id, server);
+    assert_eq!(admitted[0].occurred_at, original);
+    assert_eq!(
+        serverbee_server::entity::server::Entity::find_by_id(&server)
+            .one(&restarted.db)
+            .await
+            .unwrap()
+            .unwrap()
+            .capabilities as u32,
+        serverbee_common::constants::CAP_DEFAULT,
+        "Historical Granted metadata cannot restore a revoked capability snapshot"
+    );
+    let jobs = alert_jobs(&restarted).await;
+    assert_eq!(
+        jobs.len(),
+        if expired {
+            0
+        } else if revoke_recipient {
+            1
+        } else {
+            2
+        }
+    );
+    for job in &jobs {
+        assert_eq!(job.created_at, original.timestamp());
+        assert_eq!(job.expires_at, original.timestamp() + 1800);
+        assert_eq!(job.event_id, jobs[0].event_id);
+        let content = decrypt_alert_envelope(
+            &serde_json::from_str(job.envelope.as_deref().unwrap()).unwrap(),
+        );
+        assert_eq!(
+            content["alert"]["alert_key"],
+            serverbee_server::service::alert::alert_detail_key(&cycle)
+        );
+    }
+    // Simulate lost Ack/restart: same original identity, current authority snapshot
+    // may have changed. No second alert, audit, webhook, or renewed deadline.
+    let (mut sink, mut reader) = common::connect_agent(&restarted_base, &token).await;
+    common::recv_agent_text(&mut reader).await;
+    let mut replay = frame.clone();
+    replay["capabilities"] = serde_json::json!(serverbee_common::constants::CAP_DEFAULT);
+    capability_send_and_ack(&mut sink, &mut reader, &replay).await;
+    assert_eq!(alert_jobs(&restarted).await, jobs);
+    assert_eq!(
+        receipt::Entity::find()
+            .all(&restarted.db)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        audit_log::Entity::find()
+            .filter(audit_log::Column::Action.eq("capability_temporarily_granted"))
+            .all(&restarted.db)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        *webhook.lock().await,
+        ["triggered"],
+        "External channels retain independent expiry and send once"
+    );
+    let final_restart = reopen_alert_state(&restarted, &directory).await;
+    let evaluator = tokio::spawn(serverbee_server::task::alert_evaluator::run(
+        final_restart.clone(),
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    evaluator.abort();
+    let _ = evaluator.await;
+    assert_eq!(alert_jobs(&final_restart).await, jobs);
+    let final_base = serve_outbox_http(final_restart.clone()).await;
+    let (mut sink, mut reader) = common::connect_agent(&final_base, &token).await;
+    common::recv_agent_text(&mut reader).await;
+    capability_send_and_ack(&mut sink, &mut reader, &frame).await;
+    assert_eq!(alert_jobs(&final_restart).await, jobs);
+    assert_eq!(
+        receipt::Entity::find()
+            .all(&final_restart.db)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(*webhook.lock().await, ["triggered"]);
+    relay.status.store(200, std::sync::atomic::Ordering::SeqCst);
+    let worker = serverbee_server::service::mobile_push_outbox::start(final_restart.clone());
+    wait_alert_dispatch(&final_restart).await;
+    worker.abort();
+    let _ = worker.await;
+    assert_eq!(relay.requests().await.len(), jobs.len());
+}
+
+#[tokio::test]
+async fn ws_capability_capture_insert_and_commit_failure_automatically_replay_original_source() {
+    exercise_capability_capture_restart(false, false, false).await;
+    exercise_capability_capture_restart(true, false, false).await;
+}
+
+#[tokio::test]
+async fn ws_capability_capture_replay_preserves_expiry_and_current_recipient_ownership() {
+    exercise_capability_capture_restart(false, true, false).await;
+    exercise_capability_capture_restart(true, false, true).await;
+}
+
+#[tokio::test]
+async fn ws_capability_low_risk_revoked_expired_and_once_suppression_remain_distinct() {
+    let (base, state, _directory, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "capability-gates-owner").await;
+    let admin = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let (server, rule, _token, mut sink, mut reader) =
+        capability_ws_fixture(&client, &base, admin).await;
+    let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    for (cap, action) in [
+        ("ping", "granted"),
+        ("terminal", "expired"),
+        ("terminal", "revoked"),
+    ] {
+        capability_send_and_ack(
+            &mut sink,
+            &mut reader,
+            &capability_source_frame(Utc::now(), cap, action),
+        )
+        .await;
+        assert!(alert_jobs(&state).await.is_empty());
+        assert!(
+            persisted_alert_cycle(&state, &rule, &server)
+                .await
+                .is_none()
+        );
+    }
+    let first = capability_source_frame(Utc::now(), "terminal", "granted");
+    capability_send_and_ack(&mut sink, &mut reader, &first).await;
+    let jobs = alert_jobs(&state).await;
+    assert_eq!(jobs.len(), 1);
+    capability_send_and_ack(
+        &mut sink,
+        &mut reader,
+        &capability_source_frame(Utc::now(), "exec", "granted"),
+    )
+    .await;
+    assert_eq!(
+        alert_jobs(&state).await,
+        jobs,
+        "A distinct new grant still honors once suppression"
+    );
+    assert_eq!(
+        persisted_alert_cycle(&state, &rule, &server)
+            .await
+            .unwrap()
+            .count,
+        2
+    );
+    assert_eq!(*webhook.lock().await, ["triggered"]);
+}
+
+#[tokio::test]
+async fn ws_capability_replay_rejects_changed_identity_and_superseded_socket() {
+    use futures_util::{SinkExt, StreamExt};
+    use serverbee_server::entity::capability_event_receipt as receipt;
+    use tokio_tungstenite::tungstenite::Message;
+    let (base, state, _directory, _relay) = queued_setup().await;
+    let client = reqwest::Client::new();
+    let login = login_http(&client, &base, "admin", "capability-connection-owner").await;
+    let admin = login["access_token"].as_str().unwrap();
+    queued_register(&client, &base, admin, "device-a").await;
+    let (server, rule, token, mut old_sink, mut old_reader) =
+        capability_ws_fixture(&client, &base, admin).await;
+    let (mut current_sink, mut current_reader) = common::connect_agent(&base, &token).await;
+    common::recv_agent_text(&mut current_reader).await;
+    let source = capability_source_frame(Utc::now(), "terminal", "granted");
+    let _ = old_sink
+        .send(Message::Text(source.to_string().into()))
+        .await;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(Ok(message)) = old_reader.next().await {
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
+            if let Message::Text(text) = message {
+                assert_ne!(
+                    serde_json::from_str::<serde_json::Value>(&text).unwrap()["msg_id"],
+                    source["msg_id"]
+                );
+            }
+        }
+    })
+    .await
+    .expect("Superseded socket cannot acknowledge retained source");
+    assert!(
+        receipt::Entity::find()
+            .all(&state.db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        persisted_alert_cycle(&state, &rule, &server)
+            .await
+            .is_none()
+    );
+    capability_send_and_ack(&mut current_sink, &mut current_reader, &source).await;
+    let jobs = alert_jobs(&state).await;
+    let cycle = persisted_alert_cycle(&state, &rule, &server).await.unwrap();
+    let mut changed = source.clone();
+    changed["changes"][0]["cap"] = serde_json::json!("exec");
+    current_sink
+        .send(Message::Text(changed.to_string().into()))
+        .await
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(Ok(message)) = current_reader.next().await {
+            if matches!(message, Message::Close(_)) {
+                break;
+            }
+            if let Message::Text(text) = message {
+                assert_ne!(
+                    serde_json::from_str::<serde_json::Value>(&text).unwrap()["msg_id"],
+                    source["msg_id"]
+                );
+            }
+        }
+    })
+    .await
+    .expect("Changed content cannot reuse an admitted source identity");
+    assert_eq!(alert_jobs(&state).await, jobs);
+    assert_eq!(
+        persisted_alert_cycle(&state, &rule, &server).await.unwrap(),
+        cycle
+    );
+    assert_eq!(
+        receipt::Entity::find().all(&state.db).await.unwrap().len(),
+        1
+    );
+}

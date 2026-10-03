@@ -134,6 +134,7 @@ impl Reporter {
         let (mut write, mut read) = ws_stream.split();
 
         // Wait for Welcome message
+        let mut capability_event_ack = false;
         let report_interval = match read.next().await {
             Some(Ok(Message::Text(text))) => {
                 let msg: ServerMessage = serde_json::from_str(&text)?;
@@ -141,8 +142,17 @@ impl Reporter {
                     ServerMessage::Welcome {
                         server_id,
                         report_interval,
+                        capability_event_ack: supports_event_ack,
                         ..
                     } => {
+                        capability_event_ack = supports_event_ack;
+                        use sha2::{Digest, Sha256};
+                        let deployment =
+                            hex::encode(Sha256::digest(self.config.server_url.as_bytes()));
+                        capabilities.bind_destination(&format!("{deployment}:{server_id}"))?;
+                        if !supports_event_ack {
+                            capabilities.discard_legacy_events()?;
+                        }
                         // The server-advertised `capabilities` field is
                         // intentionally ignored: capabilities are agent-owned
                         // and already loaded into `capabilities` above. The
@@ -301,8 +311,19 @@ impl Reporter {
         let mut report_interval = interval(Duration::from_secs(report_interval as u64));
         report_interval.tick().await; // consume first immediate tick
 
+        let mut capability_retry = interval(Duration::from_secs(3));
         loop {
             tokio::select! {
+                _ = capability_retry.tick(), if capability_event_ack => {
+                    if let Some(event) = capabilities.pending_events()?.first() {
+                        let message = AgentMessage::CapabilitiesChanged {
+                            msg_id: event.msg_id.clone(), occurred_at: Some(event.occurred_at),
+                            capabilities: capabilities.effective(), temporary: capabilities.active_grants(),
+                            changes: event.changes.clone(),
+                        };
+                        send_msg(&mut write, &message).await?;
+                    }
+                }
                 _ = report_interval.tick() => {
                     let report = collector.collect();
                     let msg = AgentMessage::Report(report);
@@ -342,21 +363,25 @@ impl Reporter {
                                     send_msg(&mut write, &msg).await?;
                                 }
                             }
-                            let msg = AgentMessage::CapabilitiesChanged {
-                                msg_id: uuid::Uuid::new_v4().to_string(),
-                                capabilities: t.effective,
-                                temporary: t.temporary,
-                                changes: t.changes,
-                            };
-                            send_msg(&mut write, &msg).await?;
-                            tracing::debug!("Sent CapabilitiesChanged");
+                            if !capability_event_ack {
+                                let msg = AgentMessage::CapabilitiesChanged {
+                                    occurred_at: None,
+                                    msg_id: uuid::Uuid::new_v4().to_string(),
+                                    capabilities: t.effective,
+                                    temporary: t.temporary,
+                                    changes: t.changes,
+                                };
+                                send_msg(&mut write, &msg).await?;
+                                capabilities.discard_legacy_events()?;
+                                tracing::debug!("Sent CapabilitiesChanged");
+                            }
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            // Missed transitions: resync the server with the
-                            // current snapshot (change events for the missed
-                            // steps are lost, but state converges).
+                            // The durable journal retains lagged events. The
+                            // legacy server still receives a current snapshot.
                             tracing::warn!("capability transitions lagged by {n}; resyncing");
                             let msg = AgentMessage::CapabilitiesChanged {
+                                occurred_at: None,
                                 msg_id: uuid::Uuid::new_v4().to_string(),
                                 capabilities: capabilities.effective(),
                                 temporary: capabilities.active_grants(),
@@ -468,6 +493,10 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
+                            if capability_event_ack
+                                && let Ok(ServerMessage::Ack { msg_id }) = serde_json::from_str::<ServerMessage>(&text) {
+                                capabilities.acknowledge_event(&msg_id)?;
+                            }
                             runtime.handle_server_message(&text, &mut write).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
@@ -1266,6 +1295,7 @@ mod tests {
     /// report interval (seconds).
     async fn send_welcome(ws: &mut ServerWs, report_interval: u32) {
         let welcome = ServerMessage::Welcome {
+            capability_event_ack: false,
             server_id: "fake-server".to_string(),
             protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
             report_interval,
@@ -2065,6 +2095,10 @@ mod tests {
         });
 
         let (info, _err, changed) = drive_e2e(&mut reporter, server, Duration::from_secs(15)).await;
+        assert!(
+            reporter.capabilities.pending_events().unwrap().is_empty(),
+            "Legacy attempted transitions must not replay after a future peer upgrade"
+        );
 
         // The initial SystemInfo carried the granted terminal capability.
         match info {
@@ -3440,6 +3474,137 @@ mod tests {
             }
             other => panic!("expected UpgradeResult, got {other:?}"),
         }
+    }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn durable_capability_event_reconnects_restarts_and_waits_for_owned_ack() {
+        use crate::capability_grants::store::{CapabilityGrantStore, GrantRecord};
+        use serverbee_common::constants::{CAP_DEFAULT, CAP_TERMINAL};
+        async fn welcome_with_event_ack(ws: &mut ServerWs) {
+            send_server_msg(
+                ws,
+                &ServerMessage::Welcome {
+                    server_id: "fake-server".into(),
+                    capability_event_ack: true,
+                    protocol_version: serverbee_common::constants::PROTOCOL_VERSION,
+                    report_interval: 30,
+                    capabilities: Some(0),
+                },
+            )
+            .await;
+            handshake_collect_system_info(ws).await;
+        }
+        let (listener, addr) = bind_fake_server().await;
+        let directory = tempfile::tempdir().unwrap();
+        let config = e2e_config(&addr, directory.path());
+        let path = config.capabilities.grants_path();
+        let authority = CapabilityAuthority::new(CAP_DEFAULT, path.clone());
+        let authority_loop = tokio::spawn(Arc::clone(&authority).run(Duration::from_millis(20)));
+        let mut reporter = Reporter::new(config.clone(), Arc::clone(&authority));
+        let source_path = path.clone();
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            welcome_with_event_ack(&mut ws).await;
+            let now = chrono::Utc::now().timestamp();
+            let mut store = CapabilityGrantStore::load(&source_path);
+            store.upsert(
+                GrantRecord {
+                    cap: "terminal".into(),
+                    granted_at: now,
+                    expires_at: now + 3600,
+                    granted_by: "root".into(),
+                    reason: Some("durable source test".into()),
+                },
+                now,
+            );
+            store.flush().unwrap();
+            let event = read_agent_until(&mut ws, |m| {
+                matches!(m,
+                AgentMessage::CapabilitiesChanged { changes, .. } if !changes.is_empty())
+            })
+            .await;
+            ws.close(None).await.unwrap();
+            let mut reconnect = accept_ws(&listener).await;
+            welcome_with_event_ack(&mut reconnect).await;
+            let replay = read_agent_until(&mut reconnect, |m| {
+                matches!(m,
+                AgentMessage::CapabilitiesChanged { changes, .. } if !changes.is_empty())
+            })
+            .await;
+            assert_eq!(
+                serde_json::to_value(&event).unwrap(),
+                serde_json::to_value(&replay).unwrap()
+            );
+            (listener, event)
+        });
+        let (listener, first) = tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::select! {
+                result = server => result.unwrap(),
+                _ = reporter.run_with_external(None) => panic!("reporter unexpectedly exited"),
+            }
+        })
+        .await
+        .expect("automatic reconnect without another grant");
+        drop(reporter);
+        authority_loop.abort();
+        let _ = authority_loop.await;
+        assert_eq!(authority.pending_events().unwrap().len(), 1);
+        drop(authority);
+        let restarted = CapabilityAuthority::new(CAP_DEFAULT, path.clone());
+        let mut reporter = Reporter::new(config, Arc::clone(&restarted));
+        let source = Arc::clone(&restarted);
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            welcome_with_event_ack(&mut ws).await;
+            let replay = read_agent_until(&mut ws, |m| {
+                matches!(m,
+                AgentMessage::CapabilitiesChanged { changes, .. } if !changes.is_empty())
+            })
+            .await;
+            assert_eq!(
+                serde_json::to_value(&first).unwrap(),
+                serde_json::to_value(&replay).unwrap()
+            );
+            let AgentMessage::CapabilitiesChanged {
+                msg_id,
+                capabilities,
+                occurred_at,
+                ..
+            } = replay
+            else {
+                panic!("expected retained source event");
+            };
+            assert_eq!(capabilities & CAP_TERMINAL, CAP_TERMINAL);
+            assert!(occurred_at.is_some());
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::Ack {
+                    msg_id: "different-message".into(),
+                },
+            )
+            .await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert_eq!(source.pending_events().unwrap().len(), 1);
+            send_server_msg(&mut ws, &ServerMessage::Ack { msg_id }).await;
+            while !source.pending_events().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        tokio::time::timeout(Duration::from_secs(15), async {
+            tokio::select! {
+                result = server => result.unwrap(),
+                _ = reporter.run_with_external(None) => panic!("reporter unexpectedly exited"),
+            }
+        })
+        .await
+        .expect("owned Ack consumes original source after restart");
+        drop(reporter);
+        drop(restarted);
+        assert!(
+            CapabilityAuthority::new(CAP_DEFAULT, path)
+                .pending_events()
+                .unwrap()
+                .is_empty()
+        );
     }
 }
 

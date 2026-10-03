@@ -18,7 +18,14 @@ impl MigrationTrait for Migration {
                 count INTEGER NOT NULL,
                 should_notify BOOLEAN NOT NULL
              );
-             CREATE INDEX idx_alert_event_intents_dimension ON alert_event_intents(rule_id, server_id, id);"
+             CREATE INDEX idx_alert_event_intents_dimension ON alert_event_intents(rule_id, server_id, id);
+             CREATE TABLE capability_event_receipts (
+                server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+                msg_id TEXT NOT NULL,
+                payload_hash TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                PRIMARY KEY (server_id, msg_id)
+             );"
         ).await?;
         Ok(())
     }
