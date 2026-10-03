@@ -223,6 +223,7 @@ HTTPS endpoint. No Apple private keys are installed by notification setup.
 | Environment Variable | Default | Description |
 |----------------------|---------|-------------|
 | `RELAY_DATABASE` | required | Persistent SQLite admission state |
+| `RELAY_TRUSTED_PROXY_IPS` | required; no implicit trust | Comma-separated exact proxy peer IPs (for example `127.0.0.1`); trusted peers must overwrite `X-ServerBee-Client-IP` with one client IP. No CIDRs or hostnames. |
 | `APP_ATTEST_ROOT_CA` | required | Path to the audited Apple App Attest root PEM |
 | `APP_ATTEST_ROOT_SHA256` | required | Pinned colon-separated SHA256 root fingerprint |
 | `APP_ATTEST_APP_ID` | required | Official App ID prefix and bundle identifier |
@@ -234,5 +235,7 @@ HTTPS endpoint. No Apple private keys are installed by notification setup.
 | `APNS_PRIVATE_KEY` | required | Path to publisher-only APNs P-256 PEM file, Relay only |
 | `APNS_TOPIC` | required | Official app bundle identifier, Relay only |
 | `RELAY_PORT` | `8787` | Loopback listener port |
+
+The loopback executable refuses to start without `RELAY_TRUSTED_PROXY_IPS`. Existing deployments must add this setting and configure the proxy header together. Only listed native socket peers may supply the fixed header; missing, malformed or observable comma-list values return HTTP 400. Bun may hide repeated raw custom fields, so the proxy must overwrite them; the backend cannot establish wire-level uniqueness. Other peers use their native IP and all other forwarding headers are ignored. Normalized client IPs retain the 30-request/minute handler limit without pooling all proxy clients. The edge must still enforce 32 KiB bodies, source-IP limits, connection/read/write timeouts and bounded concurrency; see the Nginx example in [Relay setup](apps/push-relay/README.md).
 
 Registration, encrypted test, alert, security-rule and final task delivery support both environments through the durable 30-minute outbox. Task successes require explicit opt-in. See [Relay setup](apps/push-relay/README.md) for configuration ownership and the bilingual [operations runbook](apps/docs/content/docs/en/push-relay.mdx) for signing, privacy, troubleshooting and separate genuine-device acceptance.

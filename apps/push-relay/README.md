@@ -15,6 +15,7 @@ Required environment variables:
 | Name | Meaning |
 | --- | --- |
 | `RELAY_DATABASE` | Persistent SQLite file, with a private directory and backups |
+| `RELAY_TRUSTED_PROXY_IPS` | Required comma-separated exact proxy socket IPs, such as `127.0.0.1`; no implicit loopback trust, CIDRs or hostnames |
 | `APP_ATTEST_ROOT_CA` | Path to Apple's App Attest root certificate PEM |
 | `APP_ATTEST_ROOT_SHA256` | Audited colon-separated SHA256 certificate fingerprint |
 | `APP_ATTEST_APP_ID` | App ID prefix plus `.` plus the official bundle identifier |
@@ -35,14 +36,76 @@ changed pin must be an intentional operator action. Test fixtures supply an
 isolated test CA directly to the handler constructor; the executable exposes no
 skip-verification flag or alternate admission path.
 
-The listener binds `127.0.0.1`. A TLS reverse proxy must enforce source-IP rate
-limits, a 32 KiB body limit, connection/time limits and bounded concurrency. The
-handler also caps streamed bodies, pending challenges and requests per connection
-source. It deliberately ignores caller-supplied forwarding headers; configure
-proxy limits using the proxy's actual trusted peer chain. Grant inspection and
-proof responses have `Cache-Control: no-store`. Do not log bodies, bearer grants,
-attestations or receipts. SQLite stores hashes of grant bearer tokens, not their
-plaintext. Persist the database through restarts so counters cannot reset.
+The listener binds `127.0.0.1` and requires `RELAY_TRUSTED_PROXY_IPS` at startup.
+Existing deployments must add this setting and the proxy header together. A listed
+native socket peer must **overwrite** `X-ServerBee-Client-IP` with exactly one bare
+client IP. Missing, malformed or observable comma-separated values return HTTP 400
+before admission. The Relay normalizes IPv6 spellings and IPv4-mapped IPv6 addresses
+so equivalent addresses share a quota. Unlisted peers use their native socket IP;
+`Forwarded`, `X-Forwarded-For` and `X-Real-IP` never select the Relay quota key.
+Bun 1.3.4 retains only the last repeated custom wire header before the handler;
+the backend cannot prove header uniqueness. The trusted proxy must discard all
+caller-supplied instances and set its own value, as in the example below.
+
+The handler still caps streamed bodies at 32 KiB, pending challenges at 10,000 and
+requests at 30 per client IP per minute, including invalid routes and methods.
+Clients sharing a public NAT IP still share that IP's quota. Keep source-IP rate
+limits, body bounds, connection/read/write timeouts and bounded concurrency at the
+TLS edge. Grant inspection and proof responses have `Cache-Control: no-store`.
+Do not log bodies, bearer grants, attestations or receipts. SQLite stores hashes
+of grant bearer tokens, not their plaintext. Persist the database through restarts
+so counters cannot reset.
+
+### TLS proxy client identity
+
+For Nginx receiving clients directly, set `RELAY_TRUSTED_PROXY_IPS=127.0.0.1` in the
+Relay runtime environment and use this example inside Nginx's `http` context
+(replace the hostname and certificate paths):
+
+```nginx
+limit_req_zone $binary_remote_addr zone=relay_rate:10m rate=30r/m;
+limit_conn_zone $binary_remote_addr zone=relay_client:10m;
+limit_conn_zone $server_name zone=relay_total:1m;
+
+server {
+    listen 443 ssl;
+    server_name relay.example.com;
+    ssl_certificate /etc/nginx/tls/relay.fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/relay.key;
+    client_max_body_size 32k;
+    client_header_timeout 10s;
+    client_body_timeout 10s;
+    keepalive_timeout 15s;
+    send_timeout 10s;
+    limit_req zone=relay_rate burst=10 nodelay;
+    limit_req_status 429;
+    limit_conn relay_client 5;
+    limit_conn relay_total 100;
+    limit_conn_status 429;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header X-ServerBee-Client-IP $remote_addr;
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header Forwarded "";
+        proxy_request_buffering on;
+        proxy_connect_timeout 3s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 15s;
+    }
+}
+```
+
+`proxy_set_header` replaces any client-supplied value; never copy an incoming
+`$http_x_serverbee_client_ip` or append a forwarding chain. This example assumes
+`$remote_addr` is the actual client peer. If another load balancer/CDN is present,
+configure its exact trusted peer chain at Nginx before deriving that address;
+never trust arbitrary forwarded headers or an entire public network. Restrict
+Relay access to the proxy and trusted local processes: an IP allowlist cannot
+distinguish processes sharing the proxy host. The Nginx timeouts bound idle gaps,
+not total request duration; retain an edge total-request deadline where available.
+See [Nginx header handling](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header)
+and [connection limits](https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html).
 
 Configure the self-hosted Server with `SERVERBEE_PUSH_RELAY__URL` or
 `[push_relay].url`. Use HTTPS with a trusted certificate. Only the Server's local
@@ -123,7 +186,8 @@ retains the mobile session and registration.
 
 ## Verification
 
-Run `bun --filter @serverbee/push-relay test` and `bun --filter
+Tests also require Node 24 for native loopback client sockets; the real Relay and
+proxy still run on Bun. Run `bun --filter @serverbee/push-relay test` and `bun --filter
 @serverbee/push-relay typecheck`. Relay tests use real handlers, migrated local
 SQLite and certificate/assertion fixtures signed by an isolated test CA. OpenSSL
 performs actual path and validity validation. Those generated Apple-format

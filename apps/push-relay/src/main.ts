@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { serve } from 'bun'
 import { ApnsTransport } from './apns'
 import { type Environment, requireValue } from './attestation'
+import { createRelayFetch, parseTrustedProxyIPs } from './client-address'
 import { Relay } from './relay'
 
 function required(name: string): string {
@@ -11,6 +12,8 @@ function required(name: string): string {
   return value
 }
 
+// No implicit loopback trust: operators must identify the TLS proxy peer.
+const trustedProxies = parseTrustedProxyIPs(required('RELAY_TRUSTED_PROXY_IPS'))
 const rootPem = readFileSync(required('APP_ATTEST_ROOT_CA'), 'utf8')
 const root = new X509Certificate(rootPem)
 requireValue(root.fingerprint256 === required('APP_ATTEST_ROOT_SHA256'), 'App Attest trust anchor pin mismatch')
@@ -50,9 +53,5 @@ const relay = new Relay(
 serve({
   hostname: '127.0.0.1',
   port: Number(process.env.RELAY_PORT ?? '8787'),
-  fetch(request, server) {
-    // Reverse proxies must enforce their own source-IP limits. Never trust a
-    // caller-supplied forwarding header as the local admission rate-limit key.
-    return relay.handle(request, server.requestIP(request)?.address ?? 'unknown')
-  }
+  fetch: createRelayFetch(relay, trustedProxies)
 })

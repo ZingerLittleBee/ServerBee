@@ -13,7 +13,7 @@ This runbook describes operator actions for an explicitly authorized isolated en
 1. Record the exact Server, Agent, Relay and app revisions, app build number, device/iOS version, UTC time and intended environment. Use a dedicated Server account, test Servers and database, Relay URL/state, and physical device. Keep Heeler and production services separate. Use synthetic alert/security facts and commands with no sensitive output.
 2. The publisher supplies a correctly signed app with APNs, App Attest and shared Keychain entitlements, its matching provisioning profiles, and an authorized Relay operator. Official-app users and self-hosted Server operators need no publisher key or personal Apple developer account. Source-build maintainers need their own appropriate signing identity.
 3. Install the locked repository dependencies on the authorized Relay host with Bun and OpenSSL 3. Use the `packageManager` version declared by the repository (currently Bun 1.3.4); docs preview/checks use Node 24. The docs CI Bun setup is not explicitly version-pinned.
-4. Provision a private persistent SQLite directory and HTTPS reverse proxy. The Relay executable listens on loopback. Enforce a 32 KiB request-body bound, source-IP rate limits, bounded concurrent requests and connection/time limits at the proxy. Configure its trusted peer chain there; the Relay ignores caller-provided forwarding headers. Allow outbound APNs HTTP/2 and keep clocks synchronized.
+4. Provision a private persistent SQLite directory and HTTPS reverse proxy. The Relay executable listens on loopback. Enforce a 32 KiB request-body bound, source-IP rate limits, bounded concurrent requests and connection/time limits at the proxy. Set `RELAY_TRUSTED_PROXY_IPS` to the exact proxy socket IPs and overwrite the fixed client-IP header as described below; never pass through a caller-controlled value. Allow outbound APNs HTTP/2 and keep clocks synchronized.
 
 ### Configuration Ownership
 
@@ -22,8 +22,74 @@ This runbook describes operator actions for an explicitly authorized isolated en
 | Server | `SERVERBEE_PUSH_RELAY__URL` or `[push_relay].url`, the final HTTPS Relay URL; the app also uses the final HTTPS Server URL without redirects |
 | Relay trust | `APP_ATTEST_ROOT_CA`, audited Apple root PEM path; `APP_ATTEST_ROOT_SHA256`, independently verified fingerprint; `APP_ATTEST_APP_ID`, App ID prefix plus app bundle identifier; `APP_ATTEST_BUNDLE_VERSIONS`, approved signed build versions |
 | Relay APNs | `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY` (private PEM **path**), `APNS_TOPIC` (app bundle identifier, not extension identifier) |
+| Relay proxy | `RELAY_TRUSTED_PROXY_IPS`, required exact proxy peer IP list; proxy overwrites `X-ServerBee-Client-IP` with one bare client IP |
 | Relay state | `RELAY_DATABASE`, private persistent SQLite path; `RELAY_PORT`, loopback listener port |
 | Relay environments | `APNS_ENVIRONMENTS=sandbox,production` for coexistence; alternatively `APNS_ENVIRONMENT` for one environment. The plural setting takes precedence. |
+
+### Trusted Proxy Client Identity
+
+This is a required deployment update: the executable refuses to start without
+`RELAY_TRUSTED_PROXY_IPS`. Set it to comma-separated exact socket IPs, with no
+CIDRs or hostnames. Loopback is not trusted implicitly. Only a listed native peer
+may supply `X-ServerBee-Client-IP`; missing, malformed or observable comma-separated
+values fail closed with HTTP 400 before admission. Other peers use their native
+socket IP. `Forwarded`, `X-Forwarded-For` and `X-Real-IP` never select the Relay's
+quota key. IPv6 spellings and IPv4-mapped IPv6 are normalized to stable keys.
+Bun 1.3.4 retains only the last repeated custom wire header before the handler;
+the backend cannot prove uniqueness. The trusted proxy must discard all incoming
+instances and overwrite the header with its own client address.
+
+The existing handler protections remain: 30 requests per client IP per minute
+(including invalid routes/methods), streamed bodies up to 32 KiB and at most
+10,000 pending challenges. Distinct proxy clients no longer share the proxy's
+quota; clients behind one public NAT still share that public IP's quota. Keep
+edge limits as well. For directly connected Nginx clients, configure the Relay
+with `RELAY_TRUSTED_PROXY_IPS=127.0.0.1` and place this example in Nginx's `http`
+context, replacing the hostname and certificate paths:
+
+```nginx
+limit_req_zone $binary_remote_addr zone=relay_rate:10m rate=30r/m;
+limit_conn_zone $binary_remote_addr zone=relay_client:10m;
+limit_conn_zone $server_name zone=relay_total:1m;
+
+server {
+    listen 443 ssl;
+    server_name relay.example.com;
+    ssl_certificate /etc/nginx/tls/relay.fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/relay.key;
+    client_max_body_size 32k;
+    client_header_timeout 10s;
+    client_body_timeout 10s;
+    keepalive_timeout 15s;
+    send_timeout 10s;
+    limit_req zone=relay_rate burst=10 nodelay;
+    limit_req_status 429;
+    limit_conn relay_client 5;
+    limit_conn relay_total 100;
+    limit_conn_status 429;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header X-ServerBee-Client-IP $remote_addr;
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header Forwarded "";
+        proxy_request_buffering on;
+        proxy_connect_timeout 3s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 15s;
+    }
+}
+```
+
+The proxy must replace any client-supplied header, never copy
+`$http_x_serverbee_client_ip` or append a forwarding chain. This example assumes
+`$remote_addr` is the real downstream peer. If a load balancer/CDN precedes Nginx,
+configure its exact trusted peer chain there first; never blindly trust a public
+forwarding header. Limit Relay access to the proxy and trusted local processes;
+an IP allowlist cannot distinguish processes sharing its host. These timeouts
+bound idle gaps, not total request duration; retain an edge total-request deadline
+where available. See [Nginx header handling](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header)
+and [connection limits](https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html).
 
 Values and key files belong in the operator's protected runtime configuration, outside the repository. Apple keys stay exclusively at the Relay. Never log bearer grants, attestations, receipts, request bodies, plaintext content or content keys. Retain SQLite state across restarts, including challenge consumption, assertion counters and grant revocation. Use a consistent SQLite backup; restoring stale admission state can roll back replay protection and requires an operator recovery decision before reopening admission.
 
@@ -56,6 +122,7 @@ The extension decrypts and localizes bounded authenticated content or shows gene
 | --- | --- |
 | No system prompt at login | Expected. Enable explicitly in Notifications. If permission was denied, open system settings and return to the app; repeated reconciliation does not grant permission. |
 | Preferences save failed | Keep the visible error and confirmed choices. Check current Server role and settings revision. Retry permitted choices; registration success alone does not confirm a failed preference save. |
+| HTTP 400 `Invalid client address` | Verify the actual proxy socket peer is listed and Nginx overwrites the fixed header with one bare IP. Do not loosen the allowlist or trust caller forwarding headers. |
 | App Attest unavailable or rejected | Check a supported physical device, effective signing, app identity, root pin, environment, version allowlist, clock and genuine proof. Retry transient errors. Keep login/monitoring available; never bypass verification. |
 | Saved grant appears unconfirmed | Check Relay HTTPS reachability and grant inspection. A revoked grant is not valid because its stored expiry is still in the future. The app retains a pending renewed grant in Keychain and retries Server confirmation instead of claiming success. |
 | Pending / Retryable test | Check Server outbox and Relay connectivity without dumping payloads. Recover within the original 30-minute deadline. Do not create new event identities just to retry an ambiguous test response. |

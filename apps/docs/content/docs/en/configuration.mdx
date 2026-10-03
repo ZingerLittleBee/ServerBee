@@ -387,10 +387,13 @@ These variables belong to the separate Relay process, never the Server:
 
 | Variable | Meaning |
 | --- | --- |
+| `RELAY_TRUSTED_PROXY_IPS` | Required comma-separated exact proxy peer IPs (for example `127.0.0.1`); no implicit loopback trust, CIDRs or hostnames |
 | `APNS_TEAM_ID` | Publisher Apple team identifier |
 | `APNS_KEY_ID` | Publisher APNs signing key identifier |
 | `APNS_PRIVATE_KEY` | Private P-256 PEM file path, readable only by the Relay |
 | `APNS_TOPIC` | Official app bundle identifier, not the extension identifier |
+
+The Relay executable requires `RELAY_TRUSTED_PROXY_IPS` at startup. Existing operators must set it and have their TLS proxy overwrite `X-ServerBee-Client-IP` with one bare client IP. Only configured native socket peers may supply that header; missing, malformed or observable comma-list values return HTTP 400. Bun may hide repeated raw custom fields, so the proxy must overwrite them; the backend cannot establish wire-level uniqueness. Unlisted peers use their actual IP and other forwarding headers are ignored. The existing 30-request/minute limit is per normalized client IP, including failed requests; clients behind the same NAT still share a quota. Keep edge source-IP limits, 32 KiB bodies, connection/read/write timeouts and bounded concurrency. See the [Nginx overwrite example](/en/docs/push-relay#trusted-proxy-client-identity).
 
 Encrypted setup requires an HTTPS Server connection. The app and Notification Service Extension share a device-only Keychain group. APNs acceptance is a provider receipt, not proof of presentation. See [Mobile](/en/docs/mobile) for migration and [Push Relay Operations](/en/docs/push-relay) for isolated signing, metadata privacy, troubleshooting and the genuine-device acceptance record. All categories expire 30 minutes after original creation; already-presented authentic taps still request current authorized detail.
 

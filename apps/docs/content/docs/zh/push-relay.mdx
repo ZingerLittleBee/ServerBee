@@ -13,7 +13,7 @@ icon: Smartphone
 1. 记录 Server、Agent、Relay 和应用的精确版本、应用构建号、设备与 iOS 版本、UTC 时间及目标环境。使用独立 Server 账户、测试服务器和数据库、Relay 地址与状态、物理设备，与 Heeler 和生产服务隔离。告警、安全事件和命令输出使用无敏感内容的测试数据。
 2. 发布者提供具有 APNs、App Attest 和共享 Keychain entitlement 的正确签名应用、对应 provisioning profile，以及已授权的 Relay 运维者。官方应用用户和自托管 Server 运维者无需持有发布者密钥或个人 Apple 开发者账户。从源码构建的维护者需要适用的签名身份。
 3. 在已授权的 Relay 主机上使用 Bun 和 OpenSSL 3 安装锁定依赖。遵循仓库 `packageManager` 声明的版本，目前为 Bun 1.3.4；文档预览与检查使用 Node 24。文档 CI 的 Bun 安装步骤没有显式锁定版本。
-4. 准备私有持久 SQLite 目录与 HTTPS 反向代理。Relay 可执行程序仅监听 loopback。代理限制请求体为 32 KiB，并配置来源 IP 限流、有界并发及连接和时间限制。在代理端配置可信对端链，Relay 忽略调用方提供的转发头。允许出站 APNs HTTP/2，保持时钟同步。
+4. 准备私有持久 SQLite 目录与 HTTPS 反向代理。Relay 可执行程序仅监听 loopback。代理限制请求体为 32 KiB，并配置来源 IP 限流、有界并发及连接和时间限制。将 `RELAY_TRUSTED_PROXY_IPS` 设置为准确的代理 socket IP，并按下文覆盖固定客户端 IP 头；不得透传调用方控制的值。允许出站 APNs HTTP/2，保持时钟同步。
 
 ### 配置归属
 
@@ -22,8 +22,69 @@ icon: Smartphone
 | Server | `SERVERBEE_PUSH_RELAY__URL` 或 `[push_relay].url`，最终 HTTPS Relay 地址；应用也使用无重定向的最终 HTTPS Server 地址 |
 | Relay 信任 | `APP_ATTEST_ROOT_CA`，审核后的 Apple 根证书 PEM 路径；`APP_ATTEST_ROOT_SHA256`，独立核验的指纹；`APP_ATTEST_APP_ID`，App ID 前缀和应用 bundle 标识；`APP_ATTEST_BUNDLE_VERSIONS`，允许的签名构建版本 |
 | Relay APNs | `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_PRIVATE_KEY`（私有 PEM **路径**）、`APNS_TOPIC`（应用 bundle 标识，不是扩展标识） |
+| Relay 代理 | `RELAY_TRUSTED_PROXY_IPS`，必填的准确代理对端 IP 列表；代理覆盖 `X-ServerBee-Client-IP` 为单个纯客户端 IP |
 | Relay 状态 | `RELAY_DATABASE`，私有持久 SQLite 路径；`RELAY_PORT`，loopback 监听端口 |
 | Relay 环境 | `APNS_ENVIRONMENTS=sandbox,production` 支持共存；也可使用 `APNS_ENVIRONMENT` 限定单一环境。复数配置优先。 |
+
+### 可信代理客户端身份
+
+这是必需的部署升级：未设置 `RELAY_TRUSTED_PROXY_IPS` 时可执行程序拒绝启动。
+使用逗号分隔的准确 socket IP，不支持 CIDR 或主机名，也不默认信任 loopback。
+只有列表中的真实对端才能提供 `X-ServerBee-Client-IP`；缺失、格式错误或
+可见的逗号分隔多值会在准入前返回 HTTP 400。其他对端使用真实 socket IP。
+`Forwarded`、`X-Forwarded-For` 和 `X-Real-IP` 均不能选择 Relay 限流键。
+IPv6 不同写法和 IPv4-mapped IPv6 会被规范化为稳定的键。
+Bun 1.3.4 在 handler 收到请求前，仅保留重复自定义头的最后一个值，后端无法证明
+原始头的唯一性。可信代理必须丢弃所有调用方传入的实例，并覆盖为自己确定的客户端地址。
+
+原有 handler 防护保持不变：每个客户端 IP 每分钟 30 次请求（含错误路径与方法）、
+流式请求体最多 32 KiB、待完成 challenge 最多 10,000 个。不同代理客户端不再共享
+代理自身的限额；同一公网 NAT 后的客户端仍共享公网出口限额。边缘代理的限制也必须
+保留。Nginx 直接接收客户端连接时，在 Relay 环境中设置
+`RELAY_TRUSTED_PROXY_IPS=127.0.0.1`，并在 Nginx 的 `http` 上下文使用以下示例，
+替换域名与证书路径：
+
+```nginx
+limit_req_zone $binary_remote_addr zone=relay_rate:10m rate=30r/m;
+limit_conn_zone $binary_remote_addr zone=relay_client:10m;
+limit_conn_zone $server_name zone=relay_total:1m;
+
+server {
+    listen 443 ssl;
+    server_name relay.example.com;
+    ssl_certificate /etc/nginx/tls/relay.fullchain.pem;
+    ssl_certificate_key /etc/nginx/tls/relay.key;
+    client_max_body_size 32k;
+    client_header_timeout 10s;
+    client_body_timeout 10s;
+    keepalive_timeout 15s;
+    send_timeout 10s;
+    limit_req zone=relay_rate burst=10 nodelay;
+    limit_req_status 429;
+    limit_conn relay_client 5;
+    limit_conn relay_total 100;
+    limit_conn_status 429;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_set_header X-ServerBee-Client-IP $remote_addr;
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header Forwarded "";
+        proxy_request_buffering on;
+        proxy_connect_timeout 3s;
+        proxy_send_timeout 10s;
+        proxy_read_timeout 15s;
+    }
+}
+```
+
+代理必须替换客户端传入的值，不能复制 `$http_x_serverbee_client_ip` 或追加转发链。
+此示例假设 `$remote_addr` 为真实下游对端。如果 Nginx 前还有负载均衡器或 CDN，
+先在 Nginx 配置其准确可信对端链，不能盲目信任公网转发头。仅允许代理和可信本地
+进程访问 Relay；IP 允许列表无法区分同一主机上的进程。这些超时限制空闲间隔，
+并非请求总时长；边缘设施支持时还应保留总请求时限。
+参见 [Nginx 请求头处理](https://nginx.org/en/docs/http/ngx_http_proxy_module.html#proxy_set_header)
+与[连接限制](https://nginx.org/en/docs/http/ngx_http_limit_conn_module.html)。
 
 配置值和密钥文件保存在仓库之外、运维者保护的运行环境中。Apple 密钥仅属于 Relay。不要记录 bearer grant、attestation、receipt、请求体、明文内容或内容密钥。重启必须保留 SQLite 状态，包括 challenge 消费记录、assertion 计数器和 grant 撤销记录。使用一致的 SQLite 备份，恢复旧准入状态可能回退重放保护，重新开放准入前需要运维者决定恢复策略。
 
@@ -56,6 +117,7 @@ icon: Smartphone
 | --- | --- |
 | 登录时没有系统提示 | 符合预期，在通知页明确启用。曾拒绝权限时打开系统设置并返回应用，重复同步不能授予权限。 |
 | 订阅保存失败 | 保留可见错误和确认选项，检查 Server 当前角色与设置版本，重试允许的选项。注册成功本身不确认失败的订阅保存。 |
+| HTTP 400 `Invalid client address` | 核验真实代理 socket 对端已列入配置，且 Nginx 覆盖固定头为单个纯 IP。不要放宽允许列表或信任调用方转发头。 |
 | App Attest 不可用或被拒绝 | 检查受支持物理设备、实际签名、应用身份、根证书指纹、环境、版本允许列表、时钟和真实证明。临时错误可重试，登录与监控保持可用，不能绕过验证。 |
 | 已保存 grant 显示未确认 | 检查 Relay HTTPS 连通性及 grant inspection。已撤销 grant 不会因保存的有效期仍在未来而有效。应用将待确认的新 grant 保存在 Keychain，再尝试 Server 确认。 |
 | 测试等待发送或可重试 | 检查 Server 队列和 Relay 连接，不要导出负载。在原始 30 分钟期限内恢复，不要仅为重试结果不明的测试响应而创建新事件标识。 |
