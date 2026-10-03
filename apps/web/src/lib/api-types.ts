@@ -3401,7 +3401,7 @@ export interface components {
             device_token: string;
         };
         PushSetupResponse: {
-            /** @description Alert trigger and recovery delivery is available through subscriptions. */
+            /** @description Whether at least one event category is available for the current role. */
             delivery_available: boolean;
             /** Format: date-time */
             grant_expires_at?: string | null;
