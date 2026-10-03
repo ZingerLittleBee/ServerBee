@@ -64,9 +64,15 @@ mod tests {
     }
 
     async fn delivery_snapshots(db: &DatabaseConnection) -> Vec<serde_json::Value> {
+        // Keep cached result metadata stable when later migrations add columns.
         db.query_all(Statement::from_string(
             DatabaseBackend::Sqlite,
-            "SELECT * FROM mobile_push_outbox ORDER BY event_id".to_owned(),
+            "SELECT event_id, installation_id, user_id, mobile_session_id,
+                    registration_revision, recipient_role, created_at, expires_at,
+                    envelope, outcome, reason, attempts, next_attempt_at, lease_id,
+                    lease_until, category
+             FROM mobile_push_outbox ORDER BY event_id"
+                .to_owned(),
         ))
         .await
         .expect("read existing queue values")
