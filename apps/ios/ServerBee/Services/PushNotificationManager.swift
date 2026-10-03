@@ -28,9 +28,9 @@ final class PushNotificationManager: NSObject {
     private var uploadedToken: String?
     private var registrationErrorMessage: String?
     private var failedPreferences: FailedPreferenceSave?
-    // One write/permission operation owns setup at a time. Reads must still own
-    // their request and epoch, as Relay inspection can change at the same revision.
-    private var setupEpoch = UUID()
+    // One write/permission operation owns setup at a time. Each read owns a
+    // unique token, invalidated by writes and superseded by newer reads even
+    // when Relay inspection changes without a registration revision change.
     private var latestRead: UUID?
     private var activeWrite: UUID?
     private var permissionRequest: UUID?
@@ -57,12 +57,11 @@ final class PushNotificationManager: NSObject {
         guard !isSaving, acceptingRegistrations, let apiClient, context?.generation == captured.generation,
               apiClient.isCurrent(captured) else { return false }
         let read = UUID()
-        let epoch = setupEpoch
         latestRead = read
         do {
             let status = await system.authorization()
             var setup: PushSetup = try await apiClient.get("/api/mobile/push/settings", context: captured)
-            guard ownsRead(read, epoch: epoch, captured: captured),
+            guard ownsRead(read, captured: captured),
                   setup.revision >= (confirmed?.revision ?? 0) else { return false }
             authorizationStatus = status
             permissionGranted = status == .authorized || status == .provisional || status == .ephemeral
@@ -82,7 +81,7 @@ final class PushNotificationManager: NSObject {
             }
             return true
         } catch {
-            if ownsRead(read, epoch: epoch, captured: captured) { report(error, captured: captured) }
+            if ownsRead(read, captured: captured) { report(error, captured: captured) }
             return false
         }
     }
@@ -318,12 +317,11 @@ private extension PushNotificationManager {
         for task in tasks { await task.value }
     }
     func invalidateReads() {
-        setupEpoch = UUID()
         latestRead = nil
     }
 
-    func ownsRead(_ read: UUID, epoch: UUID, captured: MobileAuthenticationContext) -> Bool {
-        acceptingRegistrations && !isSaving && latestRead == read && setupEpoch == epoch
+    func ownsRead(_ read: UUID, captured: MobileAuthenticationContext) -> Bool {
+        acceptingRegistrations && !isSaving && latestRead == read
             && context?.generation == captured.generation && apiClient?.isCurrent(captured) == true
     }
 
