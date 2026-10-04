@@ -70,6 +70,9 @@ struct SavedMobileAuthentication: Codable, Sendable {
     var mobileSessionId: String?
     var confirmedDeletionProof: String?
     var proposedDeletionProof: String?
+    var requiresSessionRecovery: Bool?
+    var selectedRecoverySessionId: String?
+    var recoveryTargetSessionId: String? { mobileSessionId ?? selectedRecoverySessionId }
     static let key = "serverbee_authentication_v1"
     var revocation: PendingSessionRevocation? {
         guard let mobileSessionId, UUID(uuidString: mobileSessionId) != nil,

@@ -13,8 +13,10 @@ final class AuthManager {
     private var retryTask: Task<Void, Never>?
     private var ending = Set<UUID>()
     private var recoveryStatusOwner = UUID()
+    private var recoveryCandidates: [MobileRecoveryCandidate] = []
     private(set) var authenticationGeneration = UUID()
     private(set) var recoveryError: String?
+    private(set) var sessionRecovery: SessionRecoveryIdentity?
     var isLoading = true
     var isAuthenticated = false
     var user: MobileUser?
@@ -42,6 +44,9 @@ final class AuthManager {
             handleLoginResponse(MobileTokenResponse(accessToken: seed.accessToken, accessExpiresInSecs: 900,
                 refreshToken: seed.refreshToken, refreshExpiresInSecs: 3600, tokenType: "Bearer",
                 user: MobileUser(id: seed.userId, username: seed.username, role: seed.role)))
+            if UITestSupport.sessionRecovery, let context = captureContext() {
+                do { try suspendSessionForRecovery(context: context) } catch { recoveryError = error.localizedDescription }
+            }
             return
         }
         #endif
@@ -61,12 +66,23 @@ final class AuthManager {
                 await retryPendingRevocations()
                 return
             }
+            if restored.requiresSessionRecovery == true {
+                suspendSession(restored)
+                await retryPendingRevocations()
+                return
+            }
             user = restored.user
             isAuthenticated = true
             guard let context = captureContext() else { throw AuthError.staleIdentity }
-            do { _ = try await refreshAccessToken(context: context) }
-            catch AuthError.staleIdentity { return }
-            catch { await endSession(context: context) }
+            do {
+                _ = try await refreshAccessToken(context: context)
+            } catch AuthError.staleIdentity {
+                return
+            } catch AuthError.refreshUnauthorized {
+                await endSession(context: context, authenticationRejected: true)
+            } catch {
+                await endSession(context: context)
+            }
             await retryPendingRevocations()
         } catch { recoveryError = error.localizedDescription; isAuthenticated = false }
     }
@@ -128,6 +144,7 @@ final class AuthManager {
             authenticationGeneration = value.loginId
             user = value.user
             isAuthenticated = true
+            sessionRecovery = nil
             recoveryError = nil
         } catch AuthError.staleIdentity {
             // A later login owns the UI and credentials.
@@ -138,12 +155,14 @@ final class AuthManager {
         }
     }
 
-    func getAccessToken() -> String? { saved?.accessToken ?? KeychainService.loadString(for: KeychainService.accessTokenKey) }
+    func getAccessToken() -> String? {
+        guard sessionRecovery == nil else { return nil }
+        return saved?.accessToken ?? KeychainService.loadString(for: KeychainService.accessTokenKey)
+    }
 
     /// Low-level local reset. Production logout first persists a deletion record.
     func clearAuth() {
-        do { try clearPersistedAuthentication() }
-        catch { recoveryError = error.localizedDescription }
+        do { try clearPersistedAuthentication() } catch { recoveryError = error.localizedDescription }
     }
 
     private func clearPersistedAuthentication() throws {
@@ -155,6 +174,8 @@ final class AuthManager {
         authenticationGeneration = UUID()
         user = nil
         isAuthenticated = false
+        sessionRecovery = nil
+        recoveryCandidates = []
     }
 
     func captureContext() -> MobileAuthenticationContext? {
@@ -176,12 +197,13 @@ final class AuthManager {
     func accessToken(ifCurrent context: MobileAuthenticationContext) -> String? { isCurrent(context) ? getAccessToken() : nil }
 
     func refreshAccessToken(context: MobileAuthenticationContext? = nil) async throws -> String {
+        guard sessionRecovery == nil else { throw AuthError.secureLogoutNeedsConnection }
         if let context, !isCurrent(context) { throw AuthError.staleIdentity }
         let generation = authenticationGeneration
         let result = try await refreshCoordinator.refresh(generation: generation) { [self] in
             try await refreshCurrentIdentity(generation: generation)
         }
-        guard authenticationGeneration == generation, result.generation == generation else { throw AuthError.staleIdentity }
+        guard authenticationGeneration == generation, result.generation == generation, sessionRecovery == nil else { throw AuthError.staleIdentity }
         return result.accessToken
     }
 
@@ -203,14 +225,12 @@ final class AuthManager {
                 await withTaskGroup(of: PendingSessionRevocation?.self) { group in
                     for record in records {
                         group.addTask { [cleanupSession] in
-                            do { try await APIClient.revokeSavedSession(record, session: cleanupSession); return record }
-                            catch { return nil }
+                            do { try await APIClient.revokeSavedSession(record, session: cleanupSession); return record } catch { return nil }
                         }
                     }
                     for await completed in group {
                         guard let completed else { continue }
-                        do { try revocations.remove(completed) }
-                        catch { if recoveryStatusOwner == statusOwner { recoveryError = error.localizedDescription } }
+                        do { try revocations.remove(completed) } catch { if recoveryStatusOwner == statusOwner { recoveryError = error.localizedDescription } }
                     }
                 }
             } catch { if recoveryStatusOwner == statusOwner { recoveryError = error.localizedDescription } }
@@ -222,6 +242,7 @@ final class AuthManager {
 
     /// Explicit logout and every automatic-expiry path share this boundary.
     func endSession(context: MobileAuthenticationContext,
+                    authenticationRejected: Bool = false,
                     beforeRevocation: (@MainActor () async -> Void)? = nil) async {
         guard !ending.contains(context.generation) else { return }
         ending.insert(context.generation)
@@ -230,6 +251,7 @@ final class AuthManager {
         defer { ending.remove(context.generation) }
         let original = saved.flatMap { $0.loginId == context.generation ? $0 : nil }
         do {
+            if authenticationRejected { try suspendSessionForRecovery(context: context) }
             if let record = original?.revocation {
                 try revocations.enqueue(record)
                 await beforeRevocation?()
@@ -241,26 +263,106 @@ final class AuthManager {
             } else {
                 // Unknown legacy material never enters the durable journal.
                 await beforeRevocation?()
-                do { try await APIClient(authManager: self).revokeSession(context: context) }
-                catch { throw AuthError.secureLogoutNeedsConnection }
+                do {
+                    try await APIClient(authManager: self).revokeSession(context: context,
+                        expectedSessionId: original?.mobileSessionId, session: cleanupSession)
+                } catch {
+                    if authenticationRejected || Self.isPermanentRejection(error) {
+                        try suspendSessionForRecovery(context: context)
+                    }
+                    throw AuthError.secureLogoutNeedsConnection
+                }
                 if authenticationGeneration == context.generation { try clearPersistedAuthentication() }
             }
             if recoveryStatusOwner == statusOwner { recoveryError = nil }
         } catch { if recoveryStatusOwner == statusOwner { recoveryError = error.localizedDescription } }
     }
 
+}
+
+extension AuthManager {
     func accessTokenForReconnect() async -> String? {
+        guard sessionRecovery == nil else { return nil }
         let context = captureContext()
-        do { return try await refreshAccessToken() }
-        catch AuthError.refreshUnauthorized { if let context { await endSession(context: context) }; return nil }
-        catch AuthError.staleIdentity { return nil }
-        catch { return getAccessToken() }
+        do { return try await refreshAccessToken() } catch AuthError.refreshUnauthorized {
+            if let context { await endSession(context: context, authenticationRejected: true) }
+            return nil
+        } catch AuthError.staleIdentity { return nil } catch { return getAccessToken() }
+    }
+
+    /// Recovery is separate from normal login and never publishes new tokens.
+    @discardableResult
+    func recoverSession(username: String, password: String, totpCode: String? = nil,
+                        selectedSessionId: String? = nil) async throws -> [MobileRecoveryCandidate] {
+        guard var original = saved, sessionRecovery?.loginId == original.loginId,
+              authenticationGeneration == original.loginId else { throw AuthError.staleIdentity }
+        if let selectedSessionId, original.recoveryTargetSessionId == nil {
+            guard recoveryCandidates.contains(where: { $0.mobileSessionId == selectedSessionId }) else {
+                throw SessionRecoveryError.invalidConfirmation
+            }
+            // User-selected identity is durable before dispatch. A lost response
+            // can then confirm exact absence even if a replacement login exists.
+            original.selectedRecoverySessionId = selectedSessionId
+            try writeAuthentication(original)
+            saved = original
+            sessionRecovery = SessionRecoveryIdentity(original)
+        } else if let selectedSessionId, selectedSessionId != original.recoveryTargetSessionId {
+            throw AuthError.staleIdentity
+        }
+        let result = try await SessionRecoveryClient.recover(original, username: username, password: password,
+                                                             totpCode: totpCode, session: cleanupSession)
+        guard authenticationGeneration == original.loginId, saved?.loginId == original.loginId,
+              sessionRecovery?.loginId == original.loginId else { throw AuthError.staleIdentity }
+        if result.outcome == .selectionRequired {
+            recoveryCandidates = result.candidates ?? []
+            return recoveryCandidates
+        }
+        try clearPersistedAuthentication()
+        recoveryError = nil
+        return []
+    }
+
+    /// Retry only the captured cleanup credentials, never ordinary auth traffic.
+    func retrySessionCleanup() async throws {
+        guard let original = saved, sessionRecovery?.loginId == original.loginId,
+              authenticationGeneration == original.loginId else { throw AuthError.staleIdentity }
+        let context = MobileAuthenticationContext(serverUrl: original.serverUrl, userId: original.user.id,
+            installationId: original.installationId, generation: original.loginId, accessToken: original.accessToken,
+            revocationToken: original.revocationToken, refreshToken: original.refreshToken)
+        try await APIClient(authManager: self).revokeSession(context: context,
+            expectedSessionId: original.recoveryTargetSessionId, session: cleanupSession)
+        guard authenticationGeneration == original.loginId, saved?.loginId == original.loginId else { throw AuthError.staleIdentity }
+        try clearPersistedAuthentication()
+        recoveryError = nil
     }
 }
 
 private extension AuthManager {
+    static func isPermanentRejection(_ error: Error) -> Bool {
+        guard case APIError.httpError(let status, _) = error else { return false }
+        return status == 401 || status == 403
+    }
+
+    func suspendSession(_ original: SavedMobileAuthentication) {
+        sessionRecovery = SessionRecoveryIdentity(original)
+        SharedPushKeychain.delete()
+        isAuthenticated = false
+        user = nil
+    }
+
+    func suspendSessionForRecovery(context: MobileAuthenticationContext) throws {
+        guard authenticationGeneration == context.generation, var original = saved,
+              original.loginId == context.generation else { return }
+        // Suspend in memory even if Keychain is temporarily unwritable. Retain
+        // the authoritative record until persistence or confirmed cleanup works.
+        suspendSession(original)
+        original.requiresSessionRecovery = true
+        try writeAuthentication(original)
+        saved = original
+    }
+
     func refreshCurrentIdentity(generation: UUID) async throws -> String {
-        guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
+        guard authenticationGeneration == generation, sessionRecovery == nil else { throw AuthError.staleIdentity }
         try loadAuthenticationIfNeeded()
         guard var original = saved else { throw AuthError.refreshUnauthorized }
         if original.confirmedDeletionProof == nil, original.proposedDeletionProof == nil {
@@ -278,18 +380,16 @@ private extension AuthManager {
             installationId: original.installationId, revocationProof: original.proposedDeletionProof))
         let data: Data
         let response: URLResponse
-        do { (data, response) = try await ServerHTTPTransport.data(for: request) }
-        catch {
+        do { (data, response) = try await ServerHTTPTransport.data(for: request) } catch {
             guard authenticationGeneration == generation else { throw AuthError.staleIdentity }
             throw AuthError.refreshNetworkFailure(error)
         }
-        guard authenticationGeneration == generation, serverUrl == original.serverUrl else { throw AuthError.staleIdentity }
+        guard authenticationGeneration == generation, serverUrl == original.serverUrl, sessionRecovery == nil else { throw AuthError.staleIdentity }
         guard let http = response as? HTTPURLResponse else { throw AuthError.refreshNetworkFailure(nil) }
         if http.statusCode == 401 || http.statusCode == 403 { throw AuthError.refreshUnauthorized }
         guard http.statusCode == 200 else { throw AuthError.refreshNetworkFailure(nil) }
         let tokens: MobileTokenResponse
-        do { tokens = try JSONDecoder.snakeCase.decode(ApiResponse<MobileTokenResponse>.self, from: data).data }
-        catch { throw AuthError.refreshNetworkFailure(error) }
+        do { tokens = try JSONDecoder.snakeCase.decode(ApiResponse<MobileTokenResponse>.self, from: data).data } catch { throw AuthError.refreshNetworkFailure(error) }
         guard tokens.user.id == original.user.id else { throw AuthError.staleIdentity }
         if let session = tokens.mobileSessionId, UUID(uuidString: session) == nil { throw AuthError.invalidSessionResponse }
         if let known = original.mobileSessionId, let returned = tokens.mobileSessionId, known != returned {
@@ -352,121 +452,4 @@ private extension AuthManager {
     static let legacyCredentialKeys = [KeychainService.accessTokenKey, KeychainService.refreshTokenKey,
                                                KeychainService.revocationTokenKey, KeychainService.userKey]
 
-}
-
-// MARK: - Refresh Coordinator
-
-struct ScopedAccessToken: Sendable {
-    let generation: UUID
-    let accessToken: String
-}
-
-/// Serialises concurrent token-refresh attempts.
-///
-/// Semantics:
-/// - For each login generation at most one `refreshFn` is in flight.
-/// - While a refresh is in flight, callers for the same login `await` on the existing
-///   task so we don't hammer the refresh endpoint or burn a one-time-use
-///   refresh token.
-/// - **On success:** every waiter receives the new access token.
-/// - **On failure:** the in-flight attempt's error is propagated ONLY to the
-///   caller who initiated it. Subsequent waiters are released and each gets a
-///   fresh attempt at `refreshFn`. This lets a transient network failure for
-///   the first caller not penalise queued callers — the next one retries.
-///
-/// Internal so tests can drive `refresh(generation:using:)` directly without going
-/// through `AuthManager.refreshAccessToken()` — see RefreshCoordinatorTests.
-actor RefreshCoordinator {
-    private var inFlight: [UUID: (id: UUID, task: Task<ScopedAccessToken, Error>)] = [:]
-    // A scheduler boundary permits deterministic tests of a completed task
-    // whose owner has not resumed to remove it. Production does not suspend here.
-    private let beforeCompletion: (@Sendable (ScopedAccessToken) async -> Void)?
-
-    init(beforeCompletion: (@Sendable (ScopedAccessToken) async -> Void)? = nil) {
-        self.beforeCompletion = beforeCompletion
-    }
-
-    func refresh(
-        generation: UUID,
-        using refreshFn: @Sendable @escaping () async throws -> String
-    ) async throws -> ScopedAccessToken {
-        while let existing = inFlight[generation] {
-            do {
-                return try await existing.task.value
-            } catch {
-                if inFlight[generation]?.id == existing.id { inFlight[generation] = nil }
-            }
-        }
-
-        let id = UUID()
-        let task = Task {
-            let token = try await refreshFn()
-            return ScopedAccessToken(generation: generation, accessToken: token)
-        }
-        inFlight[generation] = (id, task)
-        do {
-            let result = try await task.value
-            if let beforeCompletion { await beforeCompletion(result) }
-            if inFlight[generation]?.id == id { inFlight[generation] = nil }
-            return result
-        } catch {
-            if inFlight[generation]?.id == id { inFlight[generation] = nil }
-            throw error
-        }
-    }
-}
-
-// MARK: - Auth Errors
-
-enum AuthError: Error, LocalizedError {
-    case noServerUrl
-    case staleIdentity
-    case refreshUnauthorized           // server returned 401 — credentials revoked
-    case refreshNetworkFailure(Error?) // transient: no network, 5xx, timeout
-    case invalidCredentials
-    case twoFactorRequired
-    case tooManyAttempts
-    case networkError(Error)
-    case secureLogoutNeedsConnection
-    case cleanupCapacity
-    case invalidSessionResponse
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidSessionResponse:
-            return String(localized: "The server returned an invalid session identity. Please retry.")
-        case .secureLogoutNeedsConnection:
-            return String(localized: "Connect to your server to complete secure sign-out before signing in again.")
-        case .cleanupCapacity:
-            return String(localized: "Pending sign-outs need to finish before another login. Connect to your servers and retry.")
-        case .noServerUrl:
-            return String(localized: "No server URL configured")
-        case .refreshUnauthorized, .staleIdentity:
-            return String(localized: "Session expired. Please log in again.")
-        case .refreshNetworkFailure:
-            return String(localized: "Could not reach the server. Please check your connection.")
-        case .invalidCredentials:
-            return String(localized: "Invalid username or password")
-        case .twoFactorRequired:
-            return String(localized: "Two-factor authentication is required")
-        case .tooManyAttempts:
-            return String(localized: "Too many attempts. Please try again later.")
-        case .networkError(let error):
-            return String(localized: "Network error: \(error.localizedDescription)")
-        }
-    }
-}
-
-/// Immutable identity for an in-flight mobile registration or logout request.
-struct MobileAuthenticationContext: Sendable {
-    let serverUrl: String
-    let userId: String
-    let installationId: String
-    let generation: UUID
-    let accessToken: String
-    let revocationToken: String?
-    // The saved proof may belong to a session replaced by an older Server.
-    // Capture this login's current secret before rotation can lose its response.
-    // It is sent only to the deletion endpoint, never as an access credential.
-    let refreshToken: String?
 }

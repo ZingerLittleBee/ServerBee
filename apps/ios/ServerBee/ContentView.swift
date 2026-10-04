@@ -138,9 +138,9 @@ struct ContentView: View {
                     router.dispatch(message)
                 }
             }
-            if let serverUrl = auth.serverUrl,
-               let token = auth.getAccessToken() {
-                await wsClient.connect(serverUrl: serverUrl, accessToken: token)
+            if let context = auth.captureContext() {
+                await wsClient.connect(serverUrl: context.serverUrl, accessToken: context.accessToken)
+                if !auth.isCurrent(context) { await wsClient.close() }
             }
 
             consumePushTarget()
@@ -171,14 +171,20 @@ struct ContentView: View {
                 Task { await resyncLive() }
             }
         }
+        .onDisappear {
+            Task { await wsClient.close() }
+        }
     }
 
     /// Rebuild the live socket for a fresh `full_sync` (online state and
     /// metrics only arrive over the WebSocket, never from REST).
     private func resyncLive() async {
+        guard let context = authManager.captureContext() else { return }
         await pushManager.reconcile()
+        guard authManager.isCurrent(context) else { return }
         consumePushTarget()
         await wsClient.reconnect(accessToken: authManager.getAccessToken())
+        if !authManager.isCurrent(context) { await wsClient.close() }
     }
 
     /// Route the three upgrade-related frames into the live job store. Full sync

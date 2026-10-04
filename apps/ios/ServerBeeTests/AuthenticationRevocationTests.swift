@@ -263,7 +263,8 @@ extension AuthenticationRevocationTests {
             XCTFail("A redirect cannot complete refresh")
         } catch AuthError.refreshNetworkFailure { } catch { XCTFail("Unexpected refresh error: \(error)") }
         do {
-            try await APIClient(authManager: auth).revokeSession(context: context)
+            try await APIClient(authManager: auth).revokeSession(context: context,
+                session: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
             XCTFail("A redirect cannot complete revocation")
         } catch APIError.httpError(let status, _) { XCTAssertEqual(status, 307) }
         XCTAssertTrue(auth.isCurrent(context))

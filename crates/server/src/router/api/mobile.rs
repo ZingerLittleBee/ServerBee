@@ -22,6 +22,7 @@ use crate::router::api::auth::login_audit_detail;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::mobile_auth::{MobileAuthService, MobileLoginParams, MobileTokenResponse};
+use crate::service::mobile_auth_recovery::{MobileRecoveryParams, MobileRecoveryResponse};
 use crate::state::{AppState, PendingPair};
 
 // ── DTOs ─────────────────────────────────────────────────────────────────────
@@ -33,6 +34,20 @@ pub struct MobileLoginRequest {
     installation_id: String,
     device_name: String,
     totp_code: Option<String>,
+}
+
+/// Reauthentication and captured identity for deletion-only login recovery.
+#[derive(Deserialize, utoipa::ToSchema)]
+pub struct MobileRecoveryRequest {
+    username: String,
+    password: String,
+    totp_code: Option<String>,
+    expected_user_id: String,
+    installation_id: String,
+    expected_session_id: Option<String>,
+    access_token: String,
+    refresh_token: String,
+    revocation_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -88,6 +103,7 @@ pub fn public_router() -> Router<Arc<AppState>> {
         .route("/mobile/auth/login", post(mobile_login))
         .route("/mobile/auth/refresh", post(mobile_refresh))
         .route("/mobile/auth/revoke", post(mobile_revoke))
+        .route("/mobile/auth/recover", post(mobile_recover))
         .route("/mobile/auth/pair", post(mobile_pair_redeem))
 }
 
@@ -191,6 +207,99 @@ pub async fn mobile_login(
     };
 
     ok(response)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/mobile/auth/recover",
+    tag = "mobile-auth",
+    request_body = MobileRecoveryRequest,
+    responses(
+        (status = 200, description = "Original session deleted, confirmed absent, or explicit session selection required", body = MobileRecoveryResponse),
+        (status = 401, description = "Invalid credentials or identity mismatch"),
+        (status = 403, description = "Password onboarding required"),
+        (status = 409, description = "Original session identity is ambiguous or unknown state remains"),
+        (status = 422, description = "Validation error or 2fa_required"),
+        (status = 429, description = "Too many login attempts"),
+    )
+)]
+pub async fn mobile_recover(
+    State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
+    Json(body): Json<MobileRecoveryRequest>,
+) -> Result<Json<ApiResponse<MobileRecoveryResponse>>, AppError> {
+    if body.username.is_empty()
+        || body.password.is_empty()
+        || body.expected_user_id.is_empty()
+        || body.installation_id.is_empty()
+        || body.access_token.is_empty()
+        || body.refresh_token.is_empty()
+    {
+        return Err(AppError::Validation(
+            "Credentials and original mobile identity are required".into(),
+        ));
+    }
+    let ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
+    if !state.check_login_rate(&ip) {
+        let _ = AuditService::log(
+            &state.db,
+            "anonymous",
+            "login_rate_limited",
+            Some(&login_audit_detail(&body.username)),
+            &ip,
+        )
+        .await;
+        return Err(AppError::TooManyRequests(
+            "Too many login attempts. Please try again later.".into(),
+        ));
+    }
+    let recovered = crate::service::mobile_auth_recovery::recover(
+        &state.db,
+        MobileRecoveryParams {
+            username: &body.username,
+            password: &body.password,
+            totp_code: body.totp_code.as_deref(),
+            expected_user_id: &body.expected_user_id,
+            installation_id: &body.installation_id,
+            expected_session_id: body.expected_session_id.as_deref(),
+            access_token: &body.access_token,
+            refresh_token: &body.refresh_token,
+            revocation_token: body.revocation_token.as_deref(),
+        },
+    )
+    .await;
+    match recovered {
+        Ok(response) => {
+            let _ = AuditService::log(
+                &state.db,
+                &response.user_id,
+                "mobile_session_recovered",
+                None,
+                &ip,
+            )
+            .await;
+            ok(response)
+        }
+        Err(error) => {
+            if matches!(error, AppError::Unauthorized) {
+                let _ = AuditService::log(
+                    &state.db,
+                    "anonymous",
+                    "login_failed",
+                    Some(&login_audit_detail(&body.username)),
+                    &ip,
+                )
+                .await;
+            }
+            Err(error)
+        }
+    }
 }
 
 #[utoipa::path(

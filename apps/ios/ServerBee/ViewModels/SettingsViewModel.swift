@@ -25,7 +25,7 @@ final class SettingsViewModel {
         } else {
             await closeWebSocket()
             await unregisterPush(nil)
-            if authManager.authenticationGeneration == generation { authManager.clearAuth() }
+            if authManager.authenticationGeneration == generation, authManager.sessionRecovery == nil { authManager.clearAuth() }
         }
     }
 }

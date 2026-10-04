@@ -1143,6 +1143,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mobile/auth/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mobile_recover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/auth/refresh": {
         parameters: {
             query?: never;
@@ -3045,6 +3061,33 @@ export interface components {
             code: string;
             device_name: string;
             installation_id: string;
+        };
+        MobileRecoveryCandidate: {
+            created_at: string;
+            device_name: string;
+            last_used_at: string;
+            mobile_session_id: string;
+        };
+        /** @enum {string} */
+        MobileRecoveryOutcome: "ok" | "already_absent" | "selection_required";
+        /** @description Reauthentication and captured identity for deletion-only login recovery. */
+        MobileRecoveryRequest: {
+            access_token: string;
+            expected_session_id?: string | null;
+            expected_user_id: string;
+            installation_id: string;
+            password: string;
+            refresh_token: string;
+            revocation_token?: string | null;
+            totp_code?: string | null;
+            username: string;
+        };
+        MobileRecoveryResponse: {
+            candidates: components["schemas"]["MobileRecoveryCandidate"][];
+            installation_id: string;
+            mobile_session_id?: string | null;
+            outcome: components["schemas"]["MobileRecoveryOutcome"];
+            user_id: string;
         };
         MobileRefreshRequest: {
             installation_id: string;
@@ -7058,6 +7101,65 @@ export interface operations {
             };
             /** @description Validation error */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    mobile_recover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Original session deleted, confirmed absent, or explicit session selection required */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileRecoveryResponse"];
+                };
+            };
+            /** @description Invalid credentials or identity mismatch */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password onboarding required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Original session identity is ambiguous or unknown state remains */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation error or 2fa_required */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many login attempts */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

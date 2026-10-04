@@ -565,7 +565,7 @@ impl MobileAuthService {
     /// Authentication/registration artifacts are fail-closed if damaged storage
     /// bypassed their FKs. Outbox/history is not authority: delivery eligibility
     /// independently requires the original live session and registration.
-    async fn has_operational_mobile_state(
+    pub(crate) async fn has_operational_mobile_state(
         txn: &DatabaseTransaction,
         mobile_session_id: &str,
     ) -> Result<bool, AppError> {
@@ -643,7 +643,7 @@ impl MobileAuthService {
     // ── Helpers ──────────────────────────────────────────────────────────
 
     /// Validate user credentials (username + password + optional TOTP).
-    async fn validate_credentials(
+    pub(crate) async fn validate_credentials(
         db: &DatabaseConnection,
         username: &str,
         password: &str,

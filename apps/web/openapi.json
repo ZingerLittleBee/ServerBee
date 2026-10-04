@@ -3581,6 +3581,51 @@
         }
       }
     },
+    "/api/mobile/auth/recover": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "mobile_recover",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Original session deleted, confirmed absent, or explicit session selection required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRecoveryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or identity mismatch"
+          },
+          "403": {
+            "description": "Password onboarding required"
+          },
+          "409": {
+            "description": "Original session identity is ambiguous or unknown state remains"
+          },
+          "422": {
+            "description": "Validation error or 2fa_required"
+          },
+          "429": {
+            "description": "Too many login attempts"
+          }
+        }
+      }
+    },
     "/api/mobile/auth/refresh": {
       "post": {
         "tags": [
@@ -10965,6 +11010,119 @@
             "type": "string"
           },
           "installation_id": {
+            "type": "string"
+          }
+        }
+      },
+      "MobileRecoveryCandidate": {
+        "type": "object",
+        "required": [
+          "mobile_session_id",
+          "device_name",
+          "created_at",
+          "last_used_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "device_name": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": "string"
+          },
+          "mobile_session_id": {
+            "type": "string"
+          }
+        }
+      },
+      "MobileRecoveryOutcome": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "already_absent",
+          "selection_required"
+        ]
+      },
+      "MobileRecoveryRequest": {
+        "type": "object",
+        "description": "Reauthentication and captured identity for deletion-only login recovery.",
+        "required": [
+          "username",
+          "password",
+          "expected_user_id",
+          "installation_id",
+          "access_token",
+          "refresh_token"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "expected_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected_user_id": {
+            "type": "string"
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "refresh_token": {
+            "type": "string"
+          },
+          "revocation_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "totp_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      },
+      "MobileRecoveryResponse": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "user_id",
+          "installation_id",
+          "candidates"
+        ],
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileRecoveryCandidate"
+            }
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "mobile_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MobileRecoveryOutcome"
+          },
+          "user_id": {
             "type": "string"
           }
         }

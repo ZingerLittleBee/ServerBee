@@ -7,6 +7,7 @@
 //! the shared harness; nothing reaches out to the network.
 
 mod common;
+mod mobile_auth_recovery;
 
 use common::{create_server, http_client, login_admin, login_as_new_user, start_test_server};
 use serde_json::{Value, json};

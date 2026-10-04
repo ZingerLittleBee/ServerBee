@@ -58,6 +58,8 @@ private struct RootView: View {
         Group {
             if authManager.isLoading {
                 ProgressView()
+            } else if authManager.sessionRecovery != nil {
+                SessionRecoveryView()
             } else if authManager.isAuthenticated {
                 ContentView(authManager: authManager)
             } else {
@@ -65,7 +67,7 @@ private struct RootView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if let error = authManager.recoveryError {
+            if authManager.sessionRecovery == nil, let error = authManager.recoveryError {
                 Text(error).font(.footnote).foregroundStyle(.red).padding()
             }
         }

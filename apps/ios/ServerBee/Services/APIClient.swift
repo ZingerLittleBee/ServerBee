@@ -96,19 +96,25 @@ actor APIClient {
     /// may be stale after iOS-first upgrades against a Server that replaced
     /// sessions on refresh. Its captured refresh secret can delete that session
     /// before consumption or through retained history after a lost response.
-    func revokeSession(context capturedContext: MobileAuthenticationContext) async throws {
+    func revokeSession(context capturedContext: MobileAuthenticationContext,
+                       expectedSessionId: String? = nil, session: URLSession? = nil) async throws {
+        let cleanupTransport = session ?? Self.makeCleanupSession()
         let context = await cleanupContext(capturedContext)
         var credentials = [String]()
         for candidate in [context.revocationToken, context.refreshToken] {
             if let candidate, !credentials.contains(candidate) { credentials.append(candidate) }
         }
         for credential in credentials {
-            let (_, response) = try await sendRequest(
+            let (data, response) = try await sendRequest(
                 "/api/mobile/auth/revoke",
-                body: MobileRevokeRequest(installationId: context.installationId, revocationToken: credential),
-                context: context, token: nil
+                body: MobileRevokeRequest(installationId: context.installationId, revocationToken: credential,
+                                         expectedSessionId: expectedSessionId),
+                context: context, token: nil, session: cleanupTransport
             )
-            if (200...299).contains(response.statusCode) { return }
+            if response.statusCode == 200 {
+                try Self.requireCleanupAcknowledgement(data)
+                return
+            }
             // A missing endpoint belongs to an older Server; additional proofs
             // cannot help. A rejected proof may be stale, so try the original
             // captured secret next, without refreshing or adopting a new login.
@@ -117,10 +123,22 @@ actor APIClient {
                 throw APIError.httpError(statusCode: response.statusCode, data: Data())
             }
         }
+        // Logout cannot fence its bearer credential to an expected session ID.
+        // A known original identity must keep its exact-target recovery boundary.
+        guard expectedSessionId == nil else { throw AuthError.secureLogoutNeedsConnection }
         let token = await authManager.accessToken(ifCurrent: context) ?? context.accessToken
-        let (_, response) = try await sendRequest("/api/mobile/auth/logout", context: context, token: token)
-        guard (200...299).contains(response.statusCode) else {
+        let (data, response) = try await sendRequest("/api/mobile/auth/logout", context: context,
+                                                 token: token, session: cleanupTransport)
+        guard response.statusCode == 200 else {
             throw APIError.httpError(statusCode: response.statusCode, data: Data())
+        }
+        try Self.requireCleanupAcknowledgement(data)
+    }
+
+    private static func requireCleanupAcknowledgement(_ data: Data) throws {
+        let acknowledgement = try JSONDecoder.snakeCase.decode(ApiResponse<String>.self, from: data).data
+        guard acknowledgement == "ok" || acknowledgement == "already_absent" else {
+            throw APIError.httpError(statusCode: 200, data: data)
         }
     }
 
@@ -153,10 +171,7 @@ actor APIClient {
             throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1, data: data)
         }
         // A malformed 200 is not evidence that the intended endpoint committed.
-        let acknowledgement = try JSONDecoder.snakeCase.decode(ApiResponse<String>.self, from: data).data
-        guard acknowledgement == "ok" || acknowledgement == "already_absent" else {
-            throw APIError.httpError(statusCode: 200, data: data)
-        }
+        try requireCleanupAcknowledgement(data)
     }
 
     func requireDeletionRecovery(context: MobileAuthenticationContext) async throws {
@@ -219,7 +234,7 @@ actor APIClient {
             do {
                 token = try await authManager.refreshAccessToken(context: context)
             } catch AuthError.refreshUnauthorized {
-                await authManager.endSession(context: context)
+                await authManager.endSession(context: context, authenticationRejected: true)
                 throw APIError.unauthorized
             } catch AuthError.staleIdentity {
                 throw AuthError.staleIdentity
@@ -231,7 +246,7 @@ actor APIClient {
             result = try await sendRequest(path, method: method, body: body, context: context, token: token)
             guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
             if result.1.statusCode == 401 {
-                await authManager.endSession(context: context)
+                await authManager.endSession(context: context, authenticationRejected: true)
                 throw APIError.unauthorized
             }
         }
@@ -246,7 +261,8 @@ actor APIClient {
         method: String = "POST",
         body: (any Encodable & Sendable)? = nil,
         context: MobileAuthenticationContext,
-        token: String?
+        token: String?,
+        session: URLSession = .shared
     ) async throws -> (Data, HTTPURLResponse) {
         guard let url = URL(string: "\(context.serverUrl)\(path)") else { throw APIError.noServerUrl }
         // Enforce this at the transport entry, so every registration caller and
@@ -259,7 +275,7 @@ actor APIClient {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let body { request.httpBody = try JSONEncoder.snakeCase.encode(body) }
-        let (data, response) = try await ServerHTTPTransport.data(for: request)
+        let (data, response) = try await ServerHTTPTransport.data(for: request, session: session)
         guard let response = response as? HTTPURLResponse else {
             throw APIError.httpError(statusCode: -1, data: data)
         }

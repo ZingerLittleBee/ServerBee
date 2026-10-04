@@ -1,6 +1,176 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Selected session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已选会话"
+          }
+        }
+      }
+    },
+    "Sign out selected session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出所选会话"
+          }
+        }
+      }
+    },
+    "Sign out selected session?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出所选会话？"
+          }
+        }
+      }
+    },
+    "Only the selected session will be signed out. Other sessions stay signed in.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅退出所选会话。其他会话会保持登录。"
+          }
+        }
+      }
+    },
+    "Choose the original session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择原会话"
+          }
+        }
+      }
+    },
+    "The saved credentials no longer identify a session. Choose the original session by its device name and dates. Nothing is selected automatically.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存的凭据无法再定位会话。请根据设备名称和时间选择原会话。应用不会自动选择。"
+          }
+        }
+      }
+    },
+    "Created %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建于 %@"
+          }
+        }
+      }
+    },
+    "Verification code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证码"
+          }
+        }
+      }
+    },
+    "Saved session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存的会话"
+          }
+        }
+      }
+    },
+    "Your saved session could not be signed out securely. Verify the original account to finish cleanup, then sign in again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法安全退出已保存的会话。请验证原账号以完成清理，然后重新登录。"
+          }
+        }
+      }
+    },
+    "Verify account and finish sign-out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证账号并完成退出"
+          }
+        }
+      }
+    },
+    "Retry secure sign-out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试安全退出"
+          }
+        }
+      }
+    },
+    "Only the original session is cleaned up. Your saved identity stays on this device until the server confirms cleanup.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅清理原会话。在服务器确认清理完成之前，已保存的身份会保留在此设备上。"
+          }
+        }
+      }
+    },
+    "Recover session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复会话"
+          }
+        }
+      }
+    },
+    "This server needs an update before it can recover this session. Your saved identity has been kept.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此服务器需要更新后才能恢复该会话。已保存的身份仍然保留。"
+          }
+        }
+      }
+    },
+    "The server could not identify the original session safely. No other session was removed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器无法安全定位原会话。未移除其他会话。"
+          }
+        }
+      }
+    },
+    "The server did not confirm cleanup of this identity. Your saved identity has been kept.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器未确认此身份已清理。已保存的身份仍然保留。"
+          }
+        }
+      }
+    },
     "The server returned an invalid session identity. Please retry.": {
       "extractionState": "manual",
       "localizations": {
