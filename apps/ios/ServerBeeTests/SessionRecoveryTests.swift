@@ -307,6 +307,7 @@ final class SessionRecoveryTests: XCTestCase {
         let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), cleanupSession: session)
         await auth.initialize()
         XCTAssertEqual(auth.sessionRecovery?.loginId, original.loginId)
+        XCTAssertEqual(auth.sessionRecovery?.serverUrl, original.serverUrl)
         XCTAssertNil(auth.captureContext())
         XCTAssertEqual(try AuthManager.readAuthentication()?.refreshToken, "old-refresh")
     }

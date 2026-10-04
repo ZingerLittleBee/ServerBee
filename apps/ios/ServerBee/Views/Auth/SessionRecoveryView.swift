@@ -10,7 +10,14 @@ struct SessionRecoveryView: View {
             Form {
                 if let identity = authManager.sessionRecovery {
                     Section {
-                        LabeledContent("Server", value: identity.serverUrl)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Server")
+                            Text(verbatim: identity.serverUrl)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
                         LabeledContent("Account", value: identity.username)
                         if let selected = identity.selectedSessionId {
                             LabeledContent("Selected session", value: selected).font(.caption)
