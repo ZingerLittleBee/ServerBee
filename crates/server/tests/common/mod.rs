@@ -23,6 +23,20 @@ use serverbee_server::state::AppState;
 /// Returns `(base_url, temp_dir)`. Keep `temp_dir` alive for the duration of
 /// the test — dropping it removes the on-disk SQLite database.
 pub async fn start_test_server() -> (String, tempfile::TempDir) {
+    let (base, tmp, _) = start_test_server_with_state().await;
+    (base, tmp)
+}
+
+/// The same HTTP harness with its state retained for deterministic TTL fixtures.
+pub async fn start_test_server_with_state() -> (String, tempfile::TempDir, std::sync::Arc<AppState>)
+{
+    start_test_server_with_login_limit(AppConfig::default().rate_limit.login_max).await
+}
+
+/// Longer identity scenarios isolate their assertions from the separate rate tests.
+pub async fn start_test_server_with_login_limit(
+    login_max: u32,
+) -> (String, tempfile::TempDir, std::sync::Arc<AppState>) {
     let tmp = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = tmp.path().to_str().unwrap().to_string();
 
@@ -40,6 +54,10 @@ pub async fn start_test_server() -> (String, tempfile::TempDir) {
             session_ttl: 86400,
             secure_cookie: false,
             max_servers: 0,
+        },
+        rate_limit: serverbee_server::config::RateLimitConfig {
+            login_max,
+            ..Default::default()
         },
         ..AppConfig::default()
     };
@@ -74,7 +92,7 @@ pub async fn start_test_server() -> (String, tempfile::TempDir) {
         .await
         .expect("Failed to create AppState");
     let security_recovery = state.security_service.start_recovery();
-    let app = create_router(state);
+    let app = create_router(state.clone());
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -94,7 +112,7 @@ pub async fn start_test_server() -> (String, tempfile::TempDir) {
 
     tokio::time::sleep(Duration::from_millis(50)).await;
 
-    (base_url, tmp)
+    (base_url, tmp, state)
 }
 
 /// Build a reqwest client that stores cookies automatically (for session auth).

@@ -11,6 +11,70 @@ use super::{
     registration_db, start_test_server,
 };
 
+async fn pairing_code(client: &reqwest::Client, base: &str) -> String {
+    super::login_admin(client, base).await;
+    let response = client
+        .post(format!("{base}/api/mobile/pair"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    response.json::<Value>().await.unwrap()["data"]["code"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn qr_recovery_request(tokens: &Value, code: &str) -> Value {
+    let mut body = recovery_request(tokens);
+    body.as_object_mut().unwrap().remove("username");
+    body.as_object_mut().unwrap().remove("password");
+    body["pairing_code"] = json!(code);
+    body
+}
+
+#[tokio::test]
+async fn qr_recovery_consumes_pairing_code_without_minting_login_tokens() {
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let code = pairing_code(&client, &base).await;
+    let response = recover(&client, &base, &qr_recovery_request(&original, &code)).await;
+    assert_eq!(
+        response.status(),
+        200,
+        "QR-only accounts must be able to recover without a password"
+    );
+    let result = response.json::<Value>().await.unwrap()["data"].clone();
+    assert_eq!(result["outcome"], "ok");
+    assert_eq!(
+        result["mobile_session_id"],
+        original["data"]["mobile_session_id"]
+    );
+    assert!(
+        result["recovery_token"]
+            .as_str()
+            .is_some_and(|token| token.starts_with("sb_recover_"))
+    );
+    assert!(result.get("access_token").is_none());
+    assert!(result.get("refresh_token").is_none());
+    let db = registration_db(&tmp).await;
+    assert!(
+        mobile_session::Entity::find()
+            .all(&db)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    let replay = client
+        .post(format!("{base}/api/mobile/auth/pair"))
+        .json(&json!({"code":code,"installation_id":INST_ID,"device_name":"Must not log in"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(replay.status(), 400);
+}
+
 fn recovery_request(tokens: &Value) -> Value {
     json!({
         "username": "admin", "password": "testpass",
@@ -814,4 +878,455 @@ async fn recovery_candidate_capacity_never_truncates_or_selects_a_subset() {
         .unwrap();
     assert_eq!(count, 65);
     assert_exists(&db, &id).await;
+}
+
+fn grant_request(mut body: Value, response: &Value) -> Value {
+    body.as_object_mut().unwrap().remove("pairing_code");
+    body["recovery_token"] = response["recovery_token"].clone();
+    body
+}
+
+fn discard_captured_mapping(body: &mut Value) {
+    body["expected_session_id"] = Value::Null;
+    body["access_token"] = json!("lost-access");
+    body["refresh_token"] = json!("lost-refresh");
+    body["revocation_token"] = json!("lost-revocation");
+}
+
+#[tokio::test]
+async fn qr_candidates_are_frozen_and_selected_lost_response_retry_preserves_new_logins() {
+    let (base, tmp, _) = super::common::start_test_server_with_login_limit(30).await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    expire_original(&registration_db(&tmp).await).await;
+    let code = pairing_code(&client, &base).await;
+    let mut body = qr_recovery_request(&original, &code);
+    discard_captured_mapping(&mut body);
+    let offered = recover(&client, &base, &body).await;
+    assert_eq!(offered.status(), 200);
+    let offered = offered.json::<Value>().await.unwrap()["data"].clone();
+    assert_eq!(offered["outcome"], "selection_required");
+    assert_eq!(offered["candidates"].as_array().unwrap().len(), 1);
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    let other = mobile_admin_token(&client, &base, "other-installation").await;
+    let db = registration_db(&tmp).await;
+    body = grant_request(body, &offered);
+    let repeated = recover(&client, &base, &body).await;
+    assert_eq!(repeated.status(), 200);
+    assert_eq!(
+        repeated.json::<Value>().await.unwrap()["data"]["candidates"],
+        offered["candidates"]
+    );
+    let mut wrong = body.clone();
+    wrong["expected_session_id"] = replacement["data"]["mobile_session_id"].clone();
+    assert_eq!(recover(&client, &base, &wrong).await.status(), 401);
+    assert_exists(&db, original["data"]["mobile_session_id"].as_str().unwrap()).await;
+    body["expected_session_id"] = original["data"]["mobile_session_id"].clone();
+    let committed = recover(&client, &base, &body).await;
+    assert_eq!(committed.status(), 200);
+    drop(committed); // Simulate losing the acknowledgement after committed deletion.
+    let retry = recover(&client, &base, &body).await;
+    assert_eq!(retry.status(), 200);
+    let result = retry.json::<Value>().await.unwrap()["data"].clone();
+    assert_eq!(result["outcome"], "already_absent");
+    assert_eq!(
+        result["mobile_session_id"],
+        original["data"]["mobile_session_id"]
+    );
+    assert_eq!(result["candidates"], json!([]));
+    assert_eq!(recover(&client, &base, &wrong).await.status(), 401);
+    assert_exists(
+        &db,
+        replacement["data"]["mobile_session_id"].as_str().unwrap(),
+    )
+    .await;
+    assert_exists(&db, other["data"]["mobile_session_id"].as_str().unwrap()).await;
+}
+
+#[tokio::test]
+async fn qr_terminal_grant_pins_implicitly_resolved_original_for_idless_concurrent_retries() {
+    let (base, tmp, _) = super::common::start_test_server_with_login_limit(30).await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let code = pairing_code(&client, &base).await;
+    let mut body = qr_recovery_request(&original, &code);
+    body["expected_session_id"] = Value::Null;
+    let first = recover(&client, &base, &body).await;
+    assert_eq!(first.status(), 200);
+    let first = first.json::<Value>().await.unwrap()["data"].clone();
+    assert_eq!(first["outcome"], "ok");
+    body = grant_request(body, &first);
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    let (a, b) = tokio::join!(
+        recover(&client, &base, &body),
+        recover(&client, &base, &body)
+    );
+    for response in [a, b] {
+        assert_eq!(response.status(), 200);
+        let data = response.json::<Value>().await.unwrap()["data"].clone();
+        assert_eq!(data["outcome"], "already_absent");
+        assert_eq!(
+            data["mobile_session_id"],
+            original["data"]["mobile_session_id"]
+        );
+    }
+    assert_exists(
+        &registration_db(&tmp).await,
+        replacement["data"]["mobile_session_id"].as_str().unwrap(),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn qr_grant_rejects_changed_account_installation_and_each_captured_secret() {
+    for field in [
+        "expected_user_id",
+        "installation_id",
+        "access_token",
+        "refresh_token",
+        "revocation_token",
+    ] {
+        let (base, tmp) = start_test_server().await;
+        let client = http_client();
+        let original = mobile_admin_token(&client, &base, INST_ID).await;
+        let code = pairing_code(&client, &base).await;
+        let mut body = qr_recovery_request(&original, &code);
+        discard_captured_mapping(&mut body);
+        let offered = recover(&client, &base, &body).await;
+        assert_eq!(offered.status(), 200);
+        body = grant_request(body, &offered.json::<Value>().await.unwrap()["data"]);
+        body[field] = json!("changed-binding");
+        assert_eq!(
+            recover(&client, &base, &body).await.status(),
+            401,
+            "changed {field}"
+        );
+        assert_exists(
+            &registration_db(&tmp).await,
+            original["data"]["mobile_session_id"].as_str().unwrap(),
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn qr_code_wrong_user_is_consumed_and_cannot_be_replayed_for_normal_login() {
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let code = pairing_code(&client, &base).await;
+    let mut body = qr_recovery_request(&original, &code);
+    body["expected_user_id"] = json!(uuid::Uuid::new_v4().to_string());
+    assert_eq!(recover(&client, &base, &body).await.status(), 401);
+    body["expected_user_id"] = original["data"]["user"]["id"].clone();
+    assert_eq!(recover(&client, &base, &body).await.status(), 401);
+    let ordinary = client
+        .post(format!("{base}/api/mobile/auth/pair"))
+        .json(&json!({"code":code,"installation_id":INST_ID,"device_name":"replay"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ordinary.status(), 400);
+    assert_exists(
+        &registration_db(&tmp).await,
+        original["data"]["mobile_session_id"].as_str().unwrap(),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn qr_and_grant_modes_reject_mixed_password_and_totp_without_consuming_code() {
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let code = pairing_code(&client, &base).await;
+    let body = qr_recovery_request(&original, &code);
+    for (field, value) in [
+        ("username", json!("admin")),
+        ("password", json!("testpass")),
+        ("totp_code", json!("123456")),
+        ("recovery_token", json!("sb_recover_invalid")),
+    ] {
+        let mut mixed = body.clone();
+        mixed[field] = value;
+        assert_eq!(recover(&client, &base, &mixed).await.status(), 422);
+    }
+    let mut missing = body.clone();
+    missing.as_object_mut().unwrap().remove("pairing_code");
+    assert_eq!(recover(&client, &base, &missing).await.status(), 422);
+    assert_exists(
+        &registration_db(&tmp).await,
+        original["data"]["mobile_session_id"].as_str().unwrap(),
+    )
+    .await;
+    let good = recover(&client, &base, &body).await;
+    assert_eq!(good.status(), 200);
+    let mut grant = grant_request(body, &good.json::<Value>().await.unwrap()["data"]);
+    grant["totp_code"] = json!("123456");
+    assert_eq!(recover(&client, &base, &grant).await.status(), 422);
+}
+
+#[tokio::test]
+async fn qr_code_and_cleanup_grant_expire_without_deleting_original() {
+    for expire_grant in [false, true] {
+        let (base, _tmp, state) = super::common::start_test_server_with_state().await;
+        let client = http_client();
+        let original = mobile_admin_token(&client, &base, INST_ID).await;
+        let code = pairing_code(&client, &base).await;
+        let mut body = qr_recovery_request(&original, &code);
+        if expire_grant {
+            discard_captured_mapping(&mut body);
+            let offered = recover(&client, &base, &body).await;
+            assert_eq!(offered.status(), 200);
+            body = grant_request(body, &offered.json::<Value>().await.unwrap()["data"]);
+            let mut entries = state.mobile_recovery_grants.entries.lock().await;
+            for grant in entries.values_mut() {
+                std::sync::Arc::get_mut(grant).unwrap().created_at -= chrono::Duration::minutes(6);
+            }
+        } else {
+            state.pending_pairs.get_mut(&code).unwrap().created_at -= chrono::Duration::minutes(6);
+        }
+        assert_eq!(recover(&client, &base, &body).await.status(), 401);
+        assert_exists(
+            &state.db,
+            original["data"]["mobile_session_id"].as_str().unwrap(),
+        )
+        .await;
+        assert!(state.mobile_recovery_grants.entries.lock().await.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn qr_snapshot_and_grant_reject_password_totp_and_onboarding_policy_changes() {
+    for after_grant in [false, true] {
+        for mutation in ["password_hash", "totp_secret", "must_change_password"] {
+            let (base, tmp) = start_test_server().await;
+            let client = http_client();
+            let original = mobile_admin_token(&client, &base, INST_ID).await;
+            let code = pairing_code(&client, &base).await;
+            let mut body = qr_recovery_request(&original, &code);
+            if after_grant {
+                discard_captured_mapping(&mut body);
+                let offered = recover(&client, &base, &body).await;
+                assert_eq!(offered.status(), 200);
+                body = grant_request(body, &offered.json::<Value>().await.unwrap()["data"]);
+                body["expected_session_id"] = original["data"]["mobile_session_id"].clone();
+            }
+            let db = registration_db(&tmp).await;
+            let statement = match mutation {
+                "password_hash" => "UPDATE users SET password_hash='changed-security-snapshot'",
+                "totp_secret" => "UPDATE users SET totp_secret='changed-security-snapshot'",
+                _ => "UPDATE users SET must_change_password=1",
+            };
+            db.execute_unprepared(statement).await.unwrap();
+            assert_eq!(
+                recover(&client, &base, &body).await.status(),
+                if mutation == "must_change_password" {
+                    403
+                } else {
+                    401
+                }
+            );
+            assert_exists(&db, original["data"]["mobile_session_id"].as_str().unwrap()).await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn qr_grant_capacity_is_bounded_and_expired_entries_are_cleaned() {
+    use serverbee_server::service::mobile_recovery_grant::MAX_RECOVERY_GRANTS;
+    let (base, _tmp, state) = super::common::start_test_server_with_login_limit(30).await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let code = pairing_code(&client, &base).await;
+    let mut body = qr_recovery_request(&original, &code);
+    discard_captured_mapping(&mut body);
+    assert_eq!(recover(&client, &base, &body).await.status(), 200);
+    {
+        let mut entries = state.mobile_recovery_grants.entries.lock().await;
+        let fixture = entries.values().next().unwrap().clone();
+        for index in 1..MAX_RECOVERY_GRANTS {
+            entries.insert(format!("fixture-{index}"), fixture.clone());
+        }
+    }
+    let code = pairing_code(&client, &base).await;
+    body["pairing_code"] = json!(code);
+    assert_eq!(recover(&client, &base, &body).await.status(), 429);
+    assert_eq!(
+        state.mobile_recovery_grants.entries.lock().await.len(),
+        MAX_RECOVERY_GRANTS
+    );
+    assert_exists(
+        &state.db,
+        original["data"]["mobile_session_id"].as_str().unwrap(),
+    )
+    .await;
+    {
+        let mut entries = state.mobile_recovery_grants.entries.lock().await;
+        entries.retain(|key, _| !key.starts_with("fixture-"));
+        std::sync::Arc::get_mut(entries.values_mut().next().unwrap())
+            .unwrap()
+            .created_at -= chrono::Duration::minutes(6);
+    }
+    let code = pairing_code(&client, &base).await;
+    body["pairing_code"] = json!(code);
+    assert_eq!(recover(&client, &base, &body).await.status(), 200);
+    assert_eq!(state.mobile_recovery_grants.entries.lock().await.len(), 1);
+}
+
+#[tokio::test]
+async fn qr_absence_only_terminal_grant_cannot_offer_or_delete_replacement() {
+    let (base, tmp, _) = super::common::start_test_server_with_login_limit(30).await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let cleanup = recover(&client, &base, &recovery_request(&original)).await;
+    assert_eq!(cleanup.status(), 200);
+    assert!(
+        cleanup.json::<Value>().await.unwrap()["data"]
+            .get("recovery_token")
+            .is_none()
+    );
+    let code = pairing_code(&client, &base).await;
+    let mut body = qr_recovery_request(&original, &code);
+    discard_captured_mapping(&mut body);
+    let response = recover(&client, &base, &body).await;
+    assert_eq!(response.status(), 200);
+    let response = response.json::<Value>().await.unwrap()["data"].clone();
+    assert_eq!(response["outcome"], "already_absent");
+    assert_eq!(response["mobile_session_id"], Value::Null);
+    body = grant_request(body, &response);
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    assert_eq!(recover(&client, &base, &body).await.status(), 409);
+    body["expected_session_id"] = replacement["data"]["mobile_session_id"].clone();
+    assert_eq!(recover(&client, &base, &body).await.status(), 401);
+    assert_exists(
+        &registration_db(&tmp).await,
+        replacement["data"]["mobile_session_id"].as_str().unwrap(),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn qr_code_is_single_use_under_concurrency_and_grant_cannot_authenticate_normal_routes() {
+    let (base, tmp, _) = super::common::start_test_server_with_login_limit(30).await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let code = pairing_code(&client, &base).await;
+    let body = qr_recovery_request(&original, &code);
+    let (a, b) = tokio::join!(
+        recover(&client, &base, &body),
+        recover(&client, &base, &body)
+    );
+    let (success, failed) = if a.status() == 200 { (a, b) } else { (b, a) };
+    assert_eq!(success.status(), 200);
+    assert_eq!(failed.status(), 401);
+    let token = success.json::<Value>().await.unwrap()["data"]["recovery_token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let replacement = mobile_admin_token(&client, &base, INST_ID).await;
+    let anonymous = http_client();
+    let pair = anonymous
+        .post(format!("{base}/api/mobile/auth/pair"))
+        .json(&json!({"code":token,"installation_id":INST_ID,"device_name":"No grant login"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(pair.status(), 400);
+    let refresh = anonymous
+        .post(format!("{base}/api/mobile/auth/refresh"))
+        .json(&json!({"refresh_token":token,"installation_id":INST_ID}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(refresh.status(), 401);
+    let logout = anonymous
+        .post(format!("{base}/api/mobile/auth/logout"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(logout.status(), 401);
+    let login = mobile_login(&anonymous, &base, "admin", &token, INST_ID).await;
+    assert_eq!(login.status(), 401);
+    let db = registration_db(&tmp).await;
+    assert_exists(
+        &db,
+        replacement["data"]["mobile_session_id"].as_str().unwrap(),
+    )
+    .await;
+    assert_eq!(
+        mobile_session::Entity::find().all(&db).await.unwrap().len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn qr_recovery_shares_password_login_rate_limit_and_audit_without_logging_code() {
+    let (base, _tmp, state) = super::common::start_test_server_with_state().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let code = pairing_code(&client, &base).await;
+    let mut body = qr_recovery_request(&original, &code);
+    body["pairing_code"] = json!("sb_pair_invalid-not-logged");
+    for _ in 0..3 {
+        assert_eq!(recover(&client, &base, &body).await.status(), 401);
+    }
+    body["pairing_code"] = json!(code);
+    assert_eq!(recover(&client, &base, &body).await.status(), 429);
+    assert!(
+        state.pending_pairs.contains_key(&code),
+        "rate denial does not consume the valid QR"
+    );
+    assert_eq!(
+        mobile_login(&client, &base, "admin", "testpass", INST_ID)
+            .await
+            .status(),
+        429
+    );
+    let row=state.db.query_one(sea_orm::Statement::from_string(sea_orm::DatabaseBackend::Sqlite,
+        "SELECT COUNT(*) AS count FROM audit_logs WHERE action='login_failed' AND detail LIKE '%qr-recovery%'".to_owned())).await.unwrap().unwrap();
+    assert_eq!(row.try_get::<i64>("", "count").unwrap(), 3);
+    let row=state.db.query_one(sea_orm::Statement::from_string(sea_orm::DatabaseBackend::Sqlite,
+        "SELECT COUNT(*) AS count FROM audit_logs WHERE detail LIKE '%sb_pair_%' OR detail LIKE '%sb_recover_%'".to_owned())).await.unwrap().unwrap();
+    assert_eq!(row.try_get::<i64>("", "count").unwrap(), 0);
+    assert_exists(
+        &state.db,
+        original["data"]["mobile_session_id"].as_str().unwrap(),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn qr_recovery_preserves_orphan_operational_state_and_refuses_unknown_absence() {
+    use sqlx::Connection;
+    let (base, tmp) = start_test_server().await;
+    let client = http_client();
+    let original = mobile_admin_token(&client, &base, INST_ID).await;
+    let code = pairing_code(&client, &base).await;
+    let mut body = qr_recovery_request(&original, &code);
+    discard_captured_mapping(&mut body);
+    let mut fixture = sqlx::SqliteConnection::connect(&format!(
+        "sqlite://{}?mode=rw",
+        tmp.path().join("test.db").display()
+    ))
+    .await
+    .unwrap();
+    sqlx::query("PRAGMA foreign_keys=OFF")
+        .execute(&mut fixture)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM mobile_sessions")
+        .execute(&mut fixture)
+        .await
+        .unwrap();
+    assert_eq!(recover(&client, &base, &body).await.status(), 409);
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE source='mobile'")
+        .fetch_one(&mut fixture)
+        .await
+        .unwrap();
+    assert_eq!(
+        count, 1,
+        "unattributed access authority must remain untouched"
+    );
 }

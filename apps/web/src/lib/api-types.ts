@@ -3076,17 +3076,23 @@ export interface components {
             expected_session_id?: string | null;
             expected_user_id: string;
             installation_id: string;
-            password: string;
+            /** @description One-use QR pairing code, mutually exclusive with password or grant. */
+            pairing_code?: string | null;
+            password?: string | null;
+            /** @description Five-minute cleanup-only grant, never an ordinary login token. */
+            recovery_token?: string | null;
             refresh_token: string;
             revocation_token?: string | null;
             totp_code?: string | null;
-            username: string;
+            username?: string | null;
         };
         MobileRecoveryResponse: {
             candidates: components["schemas"]["MobileRecoveryCandidate"][];
             installation_id: string;
             mobile_session_id?: string | null;
             outcome: components["schemas"]["MobileRecoveryOutcome"];
+            /** @description Five-minute cleanup-only grant for QR recovery. Never a login token. */
+            recovery_token?: string | null;
             user_id: string;
         };
         MobileRefreshRequest: {

@@ -294,6 +294,27 @@ extension AuthManager {
     @discardableResult
     func recoverSession(username: String, password: String, totpCode: String? = nil,
                         selectedSessionId: String? = nil) async throws -> [MobileRecoveryCandidate] {
+        let result = try await recoverSession(authorization: .password(username: username, password: password, totpCode: totpCode),
+                                              selectedSessionId: selectedSessionId)
+        return result.candidates ?? []
+    }
+
+    func recoverSession(serverUrl scannedServer: String, pairingCode: String,
+                        selectedSessionId: String? = nil) async throws -> MobileSessionRecoveryResponse {
+        guard let original = saved, SessionRecoveryClient.matchesSavedServer(scannedServer, saved: original.serverUrl) else {
+            throw SessionRecoveryError.mismatchedQRServer
+        }
+        guard !pairingCode.isEmpty else { throw SessionRecoveryError.invalidRecoveryCode }
+        return try await recoverSession(authorization: .pairingCode(pairingCode), selectedSessionId: selectedSessionId)
+    }
+
+    func recoverSession(recoveryToken: String, selectedSessionId: String? = nil) async throws -> MobileSessionRecoveryResponse {
+        guard !recoveryToken.isEmpty else { throw SessionRecoveryError.invalidRecoveryCode }
+        return try await recoverSession(authorization: .recoveryToken(recoveryToken), selectedSessionId: selectedSessionId)
+    }
+
+    private func recoverSession(authorization: SessionRecoveryAuthorization,
+                                selectedSessionId: String?) async throws -> MobileSessionRecoveryResponse {
         guard var original = saved, sessionRecovery?.loginId == original.loginId,
               authenticationGeneration == original.loginId else { throw AuthError.staleIdentity }
         if let selectedSessionId, original.recoveryTargetSessionId == nil {
@@ -309,17 +330,21 @@ extension AuthManager {
         } else if let selectedSessionId, selectedSessionId != original.recoveryTargetSessionId {
             throw AuthError.staleIdentity
         }
-        let result = try await SessionRecoveryClient.recover(original, username: username, password: password,
-                                                             totpCode: totpCode, session: cleanupSession)
+        let result = try await SessionRecoveryClient.recover(original, authorization: authorization, session: cleanupSession)
         guard authenticationGeneration == original.loginId, saved?.loginId == original.loginId,
               sessionRecovery?.loginId == original.loginId else { throw AuthError.staleIdentity }
         if result.outcome == .selectionRequired {
+            if authorization.passwordCredentials == nil {
+                guard let token = result.recoveryToken, token.hasPrefix("sb_recover_"), token.count > "sb_recover_".count else {
+                    throw SessionRecoveryError.invalidConfirmation
+                }
+            }
             recoveryCandidates = result.candidates ?? []
-            return recoveryCandidates
+            return result
         }
         try clearPersistedAuthentication()
         recoveryError = nil
-        return []
+        return result
     }
 
     /// Retry only the captured cleanup credentials, never ordinary auth traffic.

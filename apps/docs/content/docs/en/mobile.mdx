@@ -60,6 +60,10 @@ refresh_ttl = 2592000 # Refresh token lifetime in seconds (default: 30 days)
 3. Point your camera at the QR code displayed in the web app
 4. The app will automatically authenticate and show your server list
 
+## Recovering an Expired Login
+
+If the app cannot refresh or safely sign out an old login, it preserves the original Server and account and opens session recovery. On the same Server's web app, log in as that original account and generate a fresh pairing QR code from **Settings** → **Mobile Devices**. In the iOS recovery page, use **Scan QR Code to recover session**. This scan verifies the account for cleanup; it does not sign in a replacement login. If the page lists sessions, select the original session by its device name and timestamps, then confirm **Sign out selected session**. The app retains that exact selection for retries and leaves other devices and newer logins intact. Once cleanup is confirmed, use the normal pairing flow to log in again. After a restart or an expired recovery QR authorization, scan a fresh code. Password and TOTP recovery is also available when you use those credentials.
+
 ## Managing Paired Devices
 
 ### View Paired Devices

@@ -4,6 +4,8 @@ struct SessionRecoveryView: View {
     @Environment(AuthManager.self) private var authManager
     @State private var viewModel = SessionRecoveryViewModel()
     @State private var confirmSelection = false
+    @State private var confirmationUsesQR = false
+    @State private var showQRScanner = false
 
     var body: some View {
         NavigationStack {
@@ -29,32 +31,35 @@ struct SessionRecoveryView: View {
                     } footer: {
                         Text("Your saved session could not be signed out securely. Verify the original account to finish cleanup, then sign in again.")
                     }
+                    qrRecoverySection
                     if !viewModel.candidates.isEmpty { selectionSection }
                     Section {
-                        TextField("Username", text: $viewModel.username)
-                            .textContentType(.username)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                        SecureField("Password", text: $viewModel.password)
-                            .textContentType(.password)
-                        if viewModel.requiresTOTP {
-                            TextField("Verification code", text: $viewModel.totpCode)
-                                .textContentType(.oneTimeCode)
-                                .keyboardType(.numberPad)
-                        }
-                        Button {
-                            if viewModel.candidates.isEmpty {
-                                Task { await viewModel.recover(authManager: authManager) }
-                            } else { confirmSelection = true }
-                        } label: {
-                            HStack {
-                                if viewModel.candidates.isEmpty { Text("Verify account and finish sign-out") } else { Text("Sign out selected session") }
-                                if viewModel.isWorking { Spacer(); ProgressView() }
+                        DisclosureGroup("Use account password instead") {
+                            TextField("Username", text: $viewModel.username)
+                                .textContentType(.username)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                            SecureField("Password", text: $viewModel.password)
+                                .textContentType(.password)
+                            if viewModel.requiresTOTP {
+                                TextField("Verification code", text: $viewModel.totpCode)
+                                    .textContentType(.oneTimeCode)
+                                    .keyboardType(.numberPad)
                             }
+                            Button {
+                                if viewModel.candidates.isEmpty {
+                                    Task { await viewModel.recover(authManager: authManager) }
+                                } else { confirmationUsesQR = false; confirmSelection = true }
+                            } label: {
+                                HStack {
+                                    if viewModel.candidates.isEmpty { Text("Verify account and finish sign-out") } else { Text("Sign out selected session") }
+                                    if viewModel.isWorking { Spacer(); ProgressView() }
+                                }
+                            }
+                            .disabled(viewModel.isWorking || viewModel.username.isEmpty || viewModel.password.isEmpty
+                                || (viewModel.requiresTOTP && viewModel.totpCode.isEmpty)
+                                || (!viewModel.candidates.isEmpty && viewModel.selectedSessionId == nil))
                         }
-                        .disabled(viewModel.isWorking || viewModel.username.isEmpty || viewModel.password.isEmpty
-                            || (viewModel.requiresTOTP && viewModel.totpCode.isEmpty)
-                            || (!viewModel.candidates.isEmpty && viewModel.selectedSessionId == nil))
                     }
                     InsecureURLBanner(serverUrl: identity.serverUrl)
                     Section {
@@ -66,7 +71,7 @@ struct SessionRecoveryView: View {
                         Text("Only the original session is cleaned up. Your saved identity stays on this device until the server confirms cleanup.")
                     }
                 }
-                if let error = viewModel.errorMessage ?? authManager.recoveryError {
+                if let error = viewModel.errorMessage ?? (viewModel.candidates.isEmpty ? authManager.recoveryError : nil) {
                     Section { Text(error).foregroundStyle(.red) }
                 }
             }
@@ -74,12 +79,23 @@ struct SessionRecoveryView: View {
             .navigationTitle("Recover session")
             .task(id: authManager.sessionRecovery?.loginId) {
                 viewModel.username = authManager.sessionRecovery?.username ?? ""
-                viewModel.password = ""
-                viewModel.totpCode = ""
+                viewModel.clearCredentials()
             }
-            .onDisappear { viewModel.password = ""; viewModel.totpCode = "" }
+            .onDisappear { viewModel.clearCredentials() }
+            .sheet(isPresented: $showQRScanner) {
+                QRScannerView { serverUrl, code in
+                    showQRScanner = false
+                    Task { await viewModel.recoverWithQRCode(serverUrl: serverUrl, code: code, authManager: authManager) }
+                }
+            }
             .confirmationDialog("Sign out selected session?", isPresented: $confirmSelection, titleVisibility: .visible) {
-                Button("Sign Out", role: .destructive) { Task { await viewModel.recover(authManager: authManager) } }
+                Button("Sign Out", role: .destructive) {
+                    Task {
+                        if confirmationUsesQR { await viewModel.confirmQRSelection(authManager: authManager) } else {
+                            await viewModel.recover(authManager: authManager)
+                        }
+                    }
+                }
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Only the selected session will be signed out. Other sessions stay signed in.")
@@ -89,6 +105,23 @@ struct SessionRecoveryView: View {
 }
 
 private extension SessionRecoveryView {
+    var qrRecoverySection: some View {
+        Section {
+            Button {
+                showQRScanner = true
+            } label: {
+                Label("Scan QR Code to recover session", systemImage: "qrcode.viewfinder")
+            }
+            .disabled(viewModel.isWorking)
+            if !viewModel.candidates.isEmpty {
+                Button("Sign out selected session") { confirmationUsesQR = true; confirmSelection = true }
+                    .disabled(!viewModel.canConfirmQRSelection)
+            }
+        } footer: {
+            Text("Open the saved server's web dashboard as the original account and generate a pairing code. Scan it to finish cleanup without entering a password, then scan a new code to sign in.")
+        }
+    }
+
     var selectionSection: some View {
         Section {
             ForEach(viewModel.candidates) { candidate in

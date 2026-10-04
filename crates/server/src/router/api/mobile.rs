@@ -39,8 +39,12 @@ pub struct MobileLoginRequest {
 /// Reauthentication and captured identity for deletion-only login recovery.
 #[derive(Deserialize, utoipa::ToSchema)]
 pub struct MobileRecoveryRequest {
-    username: String,
-    password: String,
+    username: Option<String>,
+    password: Option<String>,
+    /// One-use QR pairing code, mutually exclusive with password or grant.
+    pairing_code: Option<String>,
+    /// Five-minute cleanup-only grant, never an ordinary login token.
+    recovery_token: Option<String>,
     totp_code: Option<String>,
     expected_user_id: String,
     installation_id: String,
@@ -229,17 +233,29 @@ pub async fn mobile_recover(
     headers: HeaderMap,
     Json(body): Json<MobileRecoveryRequest>,
 ) -> Result<Json<ApiResponse<MobileRecoveryResponse>>, AppError> {
-    if body.username.is_empty()
-        || body.password.is_empty()
+    let password_mode = body.username.is_some() || body.password.is_some();
+    let qr_mode = body.pairing_code.is_some();
+    let grant_mode = body.recovery_token.is_some();
+    if u8::from(password_mode) + u8::from(qr_mode) + u8::from(grant_mode) != 1
+        || (!password_mode && body.totp_code.is_some())
+        || (password_mode
+            && (body.username.as_deref().is_none_or(str::is_empty)
+                || body.password.as_deref().is_none_or(str::is_empty)))
+        || body.pairing_code.as_deref().is_some_and(str::is_empty)
+        || body.recovery_token.as_deref().is_some_and(str::is_empty)
         || body.expected_user_id.is_empty()
         || body.installation_id.is_empty()
         || body.access_token.is_empty()
         || body.refresh_token.is_empty()
     {
         return Err(AppError::Validation(
-            "Credentials and original mobile identity are required".into(),
+            "Exactly one authentication mode and original mobile identity are required".into(),
         ));
     }
+    crate::service::mobile_auth_recovery::normalize_session_id(
+        body.expected_session_id.as_deref(),
+    )?;
+    let audit_username = body.username.as_deref().unwrap_or("qr-recovery");
     let ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
@@ -251,7 +267,7 @@ pub async fn mobile_recover(
             &state.db,
             "anonymous",
             "login_rate_limited",
-            Some(&login_audit_detail(&body.username)),
+            Some(&login_audit_detail(audit_username)),
             &ip,
         )
         .await;
@@ -259,21 +275,40 @@ pub async fn mobile_recover(
             "Too many login attempts. Please try again later.".into(),
         ));
     }
-    let recovered = crate::service::mobile_auth_recovery::recover(
-        &state.db,
-        MobileRecoveryParams {
-            username: &body.username,
-            password: &body.password,
-            totp_code: body.totp_code.as_deref(),
-            expected_user_id: &body.expected_user_id,
-            installation_id: &body.installation_id,
-            expected_session_id: body.expected_session_id.as_deref(),
-            access_token: &body.access_token,
-            refresh_token: &body.refresh_token,
-            revocation_token: body.revocation_token.as_deref(),
-        },
-    )
-    .await;
+    let params = MobileRecoveryParams {
+        username: body.username.as_deref().unwrap_or(""),
+        password: body.password.as_deref().unwrap_or(""),
+        totp_code: body.totp_code.as_deref(),
+        expected_user_id: &body.expected_user_id,
+        installation_id: &body.installation_id,
+        expected_session_id: body.expected_session_id.as_deref(),
+        access_token: &body.access_token,
+        refresh_token: &body.refresh_token,
+        revocation_token: body.revocation_token.as_deref(),
+    };
+    let recovered = if let Some(code) = &body.pairing_code {
+        // Remove once before any asynchronous validation. A failed recovery or
+        // lost response cannot turn this code into a normal replacement login.
+        match state.pending_pairs.remove(code) {
+            Some((_, pending))
+                if Utc::now() - pending.created_at
+                    < chrono::Duration::seconds(PAIR_CODE_TTL_SECS) =>
+            {
+                state
+                    .mobile_recovery_grants
+                    .issue_and_recover(&state.db, params, pending.recovery_account)
+                    .await
+            }
+            _ => Err(AppError::Unauthorized),
+        }
+    } else if let Some(token) = &body.recovery_token {
+        state
+            .mobile_recovery_grants
+            .recover(&state.db, params, token)
+            .await
+    } else {
+        crate::service::mobile_auth_recovery::recover(&state.db, params).await
+    };
     match recovered {
         Ok(response) => {
             let _ = AuditService::log(
@@ -292,7 +327,7 @@ pub async fn mobile_recover(
                     &state.db,
                     "anonymous",
                     "login_failed",
-                    Some(&login_audit_detail(&body.username)),
+                    Some(&login_audit_detail(audit_username)),
                     &ip,
                 )
                 .await;
@@ -479,6 +514,10 @@ pub async fn generate_pair_code(
     State(state): State<Arc<AppState>>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<ApiResponse<MobilePairCodeResponse>>, AppError> {
+    let recovery_account = crate::entity::user::Entity::find_by_id(&current_user.user_id)
+        .one(&state.db)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
     // Clean up expired codes (5 min TTL) and existing codes for this user
     let now = chrono::Utc::now();
     state.pending_pairs.retain(|_, v| {
@@ -495,6 +534,7 @@ pub async fn generate_pair_code(
         PendingPair {
             user_id: current_user.user_id.clone(),
             created_at: chrono::Utc::now(),
+            recovery_account,
         },
     );
 

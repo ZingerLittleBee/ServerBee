@@ -11049,8 +11049,6 @@
         "type": "object",
         "description": "Reauthentication and captured identity for deletion-only login recovery.",
         "required": [
-          "username",
-          "password",
           "expected_user_id",
           "installation_id",
           "access_token",
@@ -11072,8 +11070,25 @@
           "installation_id": {
             "type": "string"
           },
+          "pairing_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One-use QR pairing code, mutually exclusive with password or grant."
+          },
           "password": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recovery_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Five-minute cleanup-only grant, never an ordinary login token."
           },
           "refresh_token": {
             "type": "string"
@@ -11091,7 +11106,10 @@
             ]
           },
           "username": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -11121,6 +11139,13 @@
           },
           "outcome": {
             "$ref": "#/components/schemas/MobileRecoveryOutcome"
+          },
+          "recovery_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Five-minute cleanup-only grant for QR recovery. Never a login token."
           },
           "user_id": {
             "type": "string"

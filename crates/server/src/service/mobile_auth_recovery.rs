@@ -1,4 +1,4 @@
-//! Password reauthentication permits deletion of one captured mobile identity only.
+//! Account verification permits deletion of one captured mobile identity only.
 //! Expired credentials identify that login; they never authenticate or mint tokens.
 
 use std::collections::BTreeSet;
@@ -31,7 +31,7 @@ pub struct MobileRecoveryParams<'a> {
     pub revocation_token: Option<&'a str>,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MobileRecoveryOutcome {
     Ok,
@@ -39,7 +39,7 @@ pub enum MobileRecoveryOutcome {
     SelectionRequired,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[derive(Clone, Debug, Serialize, utoipa::ToSchema)]
 pub struct MobileRecoveryCandidate {
     pub mobile_session_id: String,
     pub device_name: String,
@@ -47,27 +47,22 @@ pub struct MobileRecoveryCandidate {
     pub last_used_at: String,
 }
 
-#[derive(Debug, Serialize, utoipa::ToSchema)]
+#[derive(Clone, Serialize, utoipa::ToSchema)]
 pub struct MobileRecoveryResponse {
     pub outcome: MobileRecoveryOutcome,
     pub user_id: String,
     pub installation_id: String,
     pub mobile_session_id: Option<String>,
     pub candidates: Vec<MobileRecoveryCandidate>,
+    /// Five-minute cleanup-only grant for QR recovery. Never a login token.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub recovery_token: Option<String>,
 }
 
 pub async fn recover(
     db: &DatabaseConnection,
     params: MobileRecoveryParams<'_>,
 ) -> Result<MobileRecoveryResponse, AppError> {
-    let expected = params
-        .expected_session_id
-        .map(|id| {
-            Uuid::parse_str(id)
-                .map(|id| id.to_string())
-                .map_err(|_| AppError::Validation("Invalid expected_session_id".into()))
-        })
-        .transpose()?;
     let verified_user = MobileAuthService::validate_credentials(
         db,
         params.username,
@@ -75,6 +70,18 @@ pub async fn recover(
         params.totp_code,
     )
     .await?;
+    recover_for_verified_user(db, params, verified_user, None, false).await
+}
+
+/// The pairing-code/grant adapter supplies account authority, never mobile tokens.
+pub(crate) async fn recover_for_verified_user(
+    db: &DatabaseConnection,
+    params: MobileRecoveryParams<'_>,
+    verified_user: user::Model,
+    verified_until: Option<chrono::DateTime<chrono::Utc>>,
+    absence_only: bool,
+) -> Result<MobileRecoveryResponse, AppError> {
+    let expected = normalize_session_id(params.expected_session_id)?;
     if verified_user.id != params.expected_user_id {
         return Err(AppError::Unauthorized);
     }
@@ -102,7 +109,44 @@ pub async fn recover(
         }
     }
 
-    recover_validated(db, params, expected, verified_user, refresh_matches).await
+    recover_validated(
+        db,
+        params,
+        expected,
+        verified_user,
+        refresh_matches,
+        verified_until,
+        absence_only,
+    )
+    .await
+}
+
+pub(crate) fn normalize_session_id(id: Option<&str>) -> Result<Option<String>, AppError> {
+    id.map(|id| {
+        Uuid::parse_str(id)
+            .map(|id| id.to_string())
+            .map_err(|_| AppError::Validation("Invalid expected_session_id".into()))
+    })
+    .transpose()
+}
+
+pub(crate) async fn recheck_verified_user(
+    txn: &DatabaseTransaction,
+    verified_user: &user::Model,
+) -> Result<(), AppError> {
+    let current = user::Entity::find_by_id(&verified_user.id)
+        .one(txn)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    if current.password_hash != verified_user.password_hash
+        || current.totp_secret != verified_user.totp_secret
+        || current.password_changed_at != verified_user.password_changed_at
+        || current.username != verified_user.username
+        || current.role != verified_user.role
+    {
+        return Err(AppError::Unauthorized);
+    }
+    ensure_mobile_policy(&current)
 }
 
 /// Keep slow validation outside the writer transaction, then recheck its
@@ -113,26 +157,23 @@ async fn recover_validated(
     expected: Option<String>,
     verified_user: user::Model,
     refresh_matches: Vec<mobile_session::Model>,
+    verified_until: Option<chrono::DateTime<chrono::Utc>>,
+    absence_only: bool,
 ) -> Result<MobileRecoveryResponse, AppError> {
     let txn = db.begin().await?;
     txn.execute_unprepared("UPDATE mobile_sessions SET id = id WHERE 0")
         .await?;
-    let current_user = user::Entity::find_by_id(&verified_user.id)
-        .one(&txn)
-        .await?
-        .ok_or(AppError::Unauthorized)?;
-    // Reauthentication must fail if password, TOTP or onboarding policy changed
-    // while the expensive credential verification was in flight.
-    if current_user.password_hash != verified_user.password_hash
-        || current_user.totp_secret != verified_user.totp_secret
-        || current_user.password_changed_at != verified_user.password_changed_at
-        || current_user.username != verified_user.username
-    {
+    if verified_until.is_some_and(|deadline| chrono::Utc::now() >= deadline) {
         return Err(AppError::Unauthorized);
     }
-    ensure_mobile_policy(&current_user)?;
+    // Reauthentication must fail if password, TOTP or onboarding policy changed
+    // while the expensive credential verification was in flight.
+    recheck_verified_user(&txn, &verified_user).await?;
 
     let identities = resolve_captured_identities(&txn, &params, refresh_matches).await?;
+    if absence_only && !identities.is_empty() {
+        return Err(unresolved());
+    }
     let target_id = if let Some(expected) = expected {
         if identities.iter().any(|id| id != &expected) {
             return Err(AppError::Unauthorized);
@@ -405,6 +446,7 @@ fn response(
         installation_id: params.installation_id.to_string(),
         mobile_session_id,
         candidates: Vec::new(),
+        recovery_token: None,
     }
 }
 
@@ -415,7 +457,7 @@ mod tests {
 
     #[tokio::test]
     async fn credential_change_after_validation_preserves_original_session() {
-        for change_password in [true, false] {
+        for mutation in ["password", "totp", "expired_grant"] {
             let (db, _tmp) = crate::test_utils::setup_test_db().await;
             let account = AuthService::create_user(&db, "alice", "old-password", "member")
                 .await
@@ -439,13 +481,19 @@ mod tests {
             // authentication. Change durable policy before entering that same
             // production boundary, without sleeps or a test-only hook.
             let mut current: user::ActiveModel = account.clone().into();
-            if change_password {
+            if mutation == "password" {
                 current.password_hash = Set(AuthService::hash_password("new-password").unwrap());
-            } else {
+            } else if mutation == "totp" {
                 current.totp_secret =
                     Set(Some(AuthService::generate_totp_secret("alice").unwrap().0));
             }
-            current.update(&db).await.unwrap();
+            if mutation != "expired_grant" {
+                current.update(&db).await.unwrap();
+            }
+            // A QR grant expiring while awaiting the writer must also fail
+            // inside the production transaction, independently of map lookup.
+            let deadline = (mutation == "expired_grant")
+                .then(|| chrono::Utc::now() - chrono::Duration::minutes(1));
             let result = recover_validated(
                 &db,
                 MobileRecoveryParams {
@@ -462,6 +510,8 @@ mod tests {
                 Some(tokens.mobile_session_id.clone()),
                 snapshot,
                 Vec::new(),
+                deadline,
+                false,
             )
             .await;
             assert!(matches!(result, Err(AppError::Unauthorized)));

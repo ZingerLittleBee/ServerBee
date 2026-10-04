@@ -18571,6 +18571,86 @@
           }
         }
       }
+    },
+    "Open the saved server's web dashboard as the original account and generate a pairing code. Scan it to finish cleanup without entering a password, then scan a new code to sign in.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the saved server's web dashboard as the original account and generate a pairing code. Scan it to finish cleanup without entering a password, then scan a new code to sign in."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用原账户打开已保存服务器的网页控制台，生成配对二维码。扫码完成清理，无需输入密码；然后扫描新的二维码登录。"
+          }
+        }
+      }
+    },
+    "Scan QR Code to recover session": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan QR Code to recover session"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫码恢复会话"
+          }
+        }
+      }
+    },
+    "Scan a code from the saved server and original account. Your saved identity has been kept.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan a code from the saved server and original account. Your saved identity has been kept."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请扫描已保存服务器上原账户生成的二维码。已保留原身份。"
+          }
+        }
+      }
+    },
+    "This QR code or recovery authorization is invalid or expired. Scan a new code from the original account.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This QR code or recovery authorization is invalid or expired. Scan a new code from the original account."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此二维码或恢复授权无效或已过期。请扫描原账户生成的新二维码。"
+          }
+        }
+      }
+    },
+    "Use account password instead": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use account password instead"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "改用账户密码"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
