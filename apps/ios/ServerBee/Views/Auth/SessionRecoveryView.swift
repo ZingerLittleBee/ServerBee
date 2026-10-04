@@ -14,13 +14,15 @@ struct SessionRecoveryView: View {
                             Text("Server")
                             Text(verbatim: identity.serverUrl)
                                 .font(.footnote)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(.primary)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
                         }
-                        LabeledContent("Account", value: identity.username)
+                        LabeledContent("Account") { Text(verbatim: identity.username).foregroundStyle(.primary) }
                         if let selected = identity.selectedSessionId {
-                            LabeledContent("Selected session", value: selected).font(.caption)
+                            LabeledContent("Selected session") {
+                                Text(verbatim: selected).font(.caption).foregroundStyle(.primary)
+                            }
                         }
                     } header: {
                         Text("Saved session")
@@ -100,7 +102,7 @@ private extension SessionRecoveryView {
                                 .foregroundStyle(.secondary)
                             Text(String(localized: "Last used \(Formatters.formatRelativeTime(candidate.lastUsedAt))"))
                                 .foregroundStyle(.secondary)
-                            Text(candidate.mobileSessionId).font(.caption2).foregroundStyle(.secondary)
+                            Text(verbatim: candidate.mobileSessionId).font(.caption2).foregroundStyle(.primary)
                         }
                         Spacer()
                         Image(systemName: viewModel.selectedSessionId == candidate.mobileSessionId ? "checkmark.circle.fill" : "circle")
