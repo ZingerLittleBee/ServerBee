@@ -201,7 +201,9 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
 
     func testRejectedOldServerLogoutFallbackCannotReenterExpiryOrDiscardCredentials() async throws {
         let auth = AuthManager(cleanupSession: APIClient.makeCleanupSession(protocolClasses: [AuthenticationURLProtocol.self]))
+        auth.clearAuth()
         signIn(auth, legacy: true)
+        let original = try XCTUnwrap(AuthManager.readAuthentication())
         let log = AuthenticationRequestLog()
         AuthenticationURLProtocol.handler = { request in
             let count = log.append(request.request)
@@ -216,8 +218,19 @@ final class AutomaticAuthenticationExpiryTests: XCTestCase {
             let _: String = try await APIClient(authManager: auth).get("/api/servers")
             XCTFail("Expired legacy Server credentials must remain unauthorized")
         } catch APIError.unauthorized { /* expected */ }
-        XCTAssertTrue(auth.isAuthenticated, "Unknown legacy material must be retained until reachable cleanup succeeds")
-        XCTAssertEqual((try AuthManager.readAuthentication())?.refreshToken, "refresh-alice")
+        XCTAssertFalse(auth.isAuthenticated, "Rejected credentials must suspend normal authentication until recovery succeeds")
+        XCTAssertNil(auth.user)
+        XCTAssertNil(auth.captureContext())
+        XCTAssertNil(auth.getAccessToken())
+        XCTAssertEqual(auth.sessionRecovery?.loginId, original.loginId)
+        let retained = try XCTUnwrap(AuthManager.readAuthentication())
+        XCTAssertEqual(retained.loginId, original.loginId)
+        XCTAssertEqual(retained.serverUrl, original.serverUrl)
+        XCTAssertEqual(retained.installationId, original.installationId)
+        XCTAssertEqual(retained.user.id, original.user.id)
+        XCTAssertEqual(retained.accessToken, original.accessToken)
+        XCTAssertEqual(retained.refreshToken, "refresh-alice")
+        XCTAssertEqual(retained.requiresSessionRecovery, true)
         XCTAssertNotNil(auth.recoveryError)
         XCTAssertTrue(try PendingSessionRevocations().records().isEmpty)
         XCTAssertEqual(log.snapshot().map { $0.url?.path }, [
