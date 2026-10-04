@@ -15,7 +15,6 @@ struct LoginView: View {
     @State private var isPairing = false
     @FocusState private var focusedField: Field?
     @Environment(AuthManager.self) private var authManager
-    @ScaledMetric(relativeTo: .largeTitle) private var logoSize: CGFloat = 88
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -143,31 +142,12 @@ struct LoginView: View {
 
 private extension LoginView {
     var header: some View {
-        VStack(spacing: 14) {
-            Image("Logo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: min(logoSize, 132), height: min(logoSize, 132))
-                .overlay(Circle().strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5))
-                .shadow(color: .black.opacity(0.10), radius: 15, y: 10)
-                .accessibilityHidden(true)
-
-            VStack(spacing: 4) {
-                Text("ServerBee")
-                    .font(.largeTitle.bold())
-                    .accessibilityAddTraits(.isHeader)
-                Text("Sign in to your server")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
+        AuthenticationHeader(title: "ServerBee", subtitle: "Sign in to your server")
     }
 
     var credentialsCard: some View {
         VStack(spacing: 0) {
-            LoginFieldRow(label: String(localized: "Server")) {
+            AuthenticationFieldRow(label: String(localized: "Server")) {
                 focusedField = .server
             } field: {
                 TextField(
@@ -184,9 +164,9 @@ private extension LoginView {
                 .onSubmit { focusedField = .username }
             }
 
-            LoginFieldDivider()
+            AuthenticationFieldDivider()
 
-            LoginFieldRow(label: String(localized: "Username")) {
+            AuthenticationFieldRow(label: String(localized: "Username")) {
                 focusedField = .username
             } field: {
                 TextField(String(localized: "Username"), text: $viewModel.username, prompt: Text("Required"))
@@ -198,9 +178,9 @@ private extension LoginView {
                     .onSubmit { focusedField = .password }
             }
 
-            LoginFieldDivider()
+            AuthenticationFieldDivider()
 
-            LoginFieldRow(label: String(localized: "Password")) {
+            AuthenticationFieldRow(label: String(localized: "Password")) {
                 focusedField = .password
             } field: {
                 SecureField(String(localized: "Password"), text: $viewModel.password, prompt: Text("Required"))
@@ -226,7 +206,7 @@ private extension LoginView {
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
 
-            LoginFieldRow(label: String(localized: "Code")) {
+            AuthenticationFieldRow(label: String(localized: "Code")) {
                 focusedField = .totp
             } field: {
                 TextField(String(localized: "Code"), text: $viewModel.totpCode, prompt: Text("000000"))
@@ -268,7 +248,7 @@ private extension LoginView {
                 Text("Log In")
             }
         }
-        .buttonStyle(LoginButtonStyle(prominent: true, isBusy: viewModel.isLoading))
+        .buttonStyle(AuthenticationButtonStyle(prominent: true, isBusy: viewModel.isLoading))
         .disabled(viewModel.isLoading || isPairing || !canSubmit)
         .accessibilityLabel(Text("Log In"))
     }
@@ -288,110 +268,7 @@ private extension LoginView {
                 Text("Scan QR Code")
             }
         }
-        .buttonStyle(LoginButtonStyle(prominent: false, isBusy: isPairing))
+        .buttonStyle(AuthenticationButtonStyle(prominent: false, isBusy: isPairing))
         .disabled(isPairing)
-    }
-}
-
-// MARK: - Field Row
-
-/// One row of the grouped credentials card: a fixed-width leading label and a
-/// trailing field. At accessibility text sizes the label stacks above the
-/// field so neither is truncated. Like a native form row, a tap anywhere in
-/// the row (label or padding) focuses the field.
-private struct LoginFieldRow<FieldContent: View>: View {
-    let label: String
-    let onRowTap: () -> Void
-    @ViewBuilder let field: FieldContent
-
-    @ScaledMetric(relativeTo: .body) private var labelWidth: CGFloat = 92
-    @ScaledMetric(relativeTo: .body) private var minRowHeight: CGFloat = 46
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        let stacked = dynamicTypeSize.isAccessibilitySize
-        let layout = stacked
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-            : AnyLayout(HStackLayout(spacing: 12))
-
-        layout {
-            Text(label)
-                .frame(width: stacked ? nil : labelWidth, alignment: .leading)
-                // Let label taps fall through to the row's tap target below.
-                .allowsHitTesting(false)
-                // The field below speaks this label instead.
-                .accessibilityHidden(true)
-            field
-                .frame(maxWidth: .infinity, alignment: .leading)
-                // A field with a prompt outside a Form exposes no label of its
-                // own, so VoiceOver would only read the placeholder.
-                .accessibilityLabel(Text(label))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(minHeight: minRowHeight)
-        .background {
-            // Sits behind the field, so taps on the field itself still reach
-            // the text input; only the label and padding land here.
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onRowTap)
-                .accessibilityHidden(true)
-        }
-    }
-}
-
-/// Hairline separator inset 16pt from the leading edge, as in a grouped list.
-private struct LoginFieldDivider: View {
-    var body: some View {
-        Divider()
-            .padding(.leading, 16)
-    }
-}
-
-// MARK: - Button Style
-
-/// Full-width 50pt (Dynamic Type scaled) button: accent fill with white text
-/// when prominent, accent text on a light accent tint otherwise. A busy button
-/// keeps full opacity so its spinner stays legible; any other disabled button
-/// is dimmed.
-private struct LoginButtonStyle: ButtonStyle {
-    let prominent: Bool
-    let isBusy: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        LoginButtonBody(configuration: configuration, prominent: prominent, isBusy: isBusy)
-    }
-}
-
-private struct LoginButtonBody: View {
-    let configuration: ButtonStyleConfiguration
-    let prominent: Bool
-    let isBusy: Bool
-
-    @ScaledMetric(relativeTo: .headline) private var height: CGFloat = 50
-    @Environment(\.isEnabled) private var isEnabled
-
-    private var opacity: Double {
-        if configuration.isPressed { return 0.7 }
-        return isEnabled || isBusy ? 1 : 0.6
-    }
-
-    private var shape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-    }
-
-    var body: some View {
-        configuration.label
-            .font(.headline)
-            .foregroundStyle(prominent ? Color.white : Color.accentColor)
-            .multilineTextAlignment(.center)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: height)
-            .background(prominent ? Color.accentColor : Color.accentColor.opacity(0.15), in: shape)
-            .contentShape(shape)
-            .opacity(opacity)
-            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
     }
 }

@@ -18651,6 +18651,76 @@
           }
         }
       }
+    },
+    "Verify your original account to finish signing out.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证原账户，完成安全退出。"
+          }
+        }
+      }
+    },
+    "Scan a new QR code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "扫描新的二维码"
+          }
+        }
+      }
+    },
+    "Get a recovery code": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成恢复二维码"
+          }
+        }
+      }
+    },
+    "Use a new code to sign in": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用新二维码登录"
+          }
+        }
+      }
+    },
+    "Generate a pairing code from Settings → Mobile Devices → Add Device on the original account's web dashboard.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用原账户打开网页，在“设置 → 移动设备 → 添加设备”生成配对码。"
+          }
+        }
+      }
+    },
+    "After recovery, close the QR dialog and add a device again to get a new sign-in code.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复完成后，关闭二维码弹窗，再点“添加设备”生成新的登录码。"
+          }
+        }
+      }
+    },
+    "Session details": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话详情"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
