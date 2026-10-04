@@ -1,4 +1,6 @@
 mod common;
+#[path = "mobile_push/device_tokens.rs"]
+mod device_tokens;
 #[path = "mobile_push/security.rs"]
 mod security_push;
 

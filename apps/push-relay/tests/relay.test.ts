@@ -32,16 +32,26 @@ function streamed(stream: ReadableStream<Uint8Array>, headers: Record<string, st
   })
 }
 function setup(options: Parameters<typeof createRelay>[0] = {}) {
-  const network = vi.fn(async () => new Response(null, { status: 200 }))
+  const network = vi.fn(async (_url: string, _init: RequestInit) => new Response(null, { status: 200 }))
   return { network, relay: createRelay({ now: () => now * 1000, network, ...options }) }
 }
 
 test('runs the configured default Worker and real outbound fetch boundary in workerd', async () => {
   expect(bindings.APNS_TOPIC).toBe('app.serverbee')
   const value = body()
+  value.device_token = 'ab'.repeat(80)
   value.expires_at = Math.floor(Date.now() / 1000) + 1800
   const response = await (exports as unknown as { default: Fetcher }).default.fetch(request(value))
   expect(await response.json()).toEqual({ outcome: 'accepted', reason: 'Accepted', device_invalid: false })
+})
+
+test.each([2, 64, 160, 1024])('forwards an unchanged %i-character device token to APNs', async (length) => {
+  const { relay, network } = setup()
+  const value = { ...body(), device_token: 'ab'.repeat(length / 2) }
+  const response = await relay.fetch(request(value), bindings)
+  expect(await response.json()).toEqual({ outcome: 'accepted', reason: 'Accepted', device_invalid: false })
+  expect(network).toHaveBeenCalledTimes(1)
+  expect(network.mock.calls[0][0]).toBe(`https://api.sandbox.push.apple.com/3/device/${value.device_token}`)
 })
 
 test('forwards the unchanged cross-language envelope with fixed alert, hosts, topic and APNs headers', async () => {
@@ -156,6 +166,20 @@ test.each([
       v.device_token = 'A'.repeat(64)
     }
   ],
+  ...[
+    ['', 'empty'],
+    ['a'.repeat(159), 'odd length'],
+    ['a'.repeat(1026), 'oversized'],
+    ['ag', 'non-hexadecimal'],
+    ['ab/../cd', 'path characters'],
+    ['ab\r\n', 'line ending'],
+    ['ａｂ', 'non-ASCII']
+  ].map(([token, name]): [string, (v: Record<string, unknown>) => void] => [
+    `${name} token`,
+    (v) => {
+      v.device_token = token
+    }
+  ]),
   [
     'bad environment',
     (v: Record<string, unknown>) => {
@@ -204,6 +228,7 @@ test.each([
   { version: 2 },
   { key_id: 'bad' },
   { identity: 'x'.repeat(64) },
+  { identity: 'a'.repeat(160) },
   { nonce: 'ab==' },
   { ciphertext: 'YQ==' },
   { ciphertext: `${'A'.repeat(2764)}` },

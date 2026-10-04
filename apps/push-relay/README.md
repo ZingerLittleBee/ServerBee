@@ -57,7 +57,7 @@ Use `Content-Type: application/json`. The exact request fields are:
 
 ```json
 {
-  "device_token": "<64 lowercase hexadecimal characters>",
+  "device_token": "<2-1024 lowercase hexadecimal characters, even length>",
   "environment": "sandbox",
   "event_id": "11111111-1111-4111-8111-111111111111",
   "expires_at": 2000001800,
@@ -75,6 +75,11 @@ There is no Authorization header or issuance/inspection/renewal/revocation API.
 Unknown top-level and envelope fields are rejected. UUIDs are lowercase;
 `expires_at` is a positive integer Unix timestamp at most 30 minutes ahead.
 Already-expired valid requests return `expired` without contacting APNs.
+
+APNs device tokens have variable length, including longer Simulator tokens.
+Server and Relay accept complete lowercase hex byte encodings up to 1024
+characters as a resource limit and forward them unchanged. The envelope identity
+remains exactly 64 characters.
 Ciphertext must decode to 16–2070 bytes (maximum 2760 base64 characters).
 The unchanged envelope is placed in `serverbee_envelope`; the only plaintext
 alert is `ServerBee` / `Open ServerBee to view this notification.`, with

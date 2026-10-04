@@ -11,11 +11,14 @@ export interface Env {
 }
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/
 const hex64 = /^[a-f0-9]{64}$/
+const nonHex = /[^a-f0-9]/
 const base64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 const keyIdPattern = /^[A-Z0-9]{10}$/
 const topicPattern = /^[A-Za-z0-9.-]{1,255}$/
 const lengthPattern = /^\d+$/
 const MAX_REQUEST_BYTES = 8192
+// Resource ceiling for variable-length APNs tokens, not a provider token size.
+const MAX_DEVICE_TOKEN_CHARS = 1024
 export const LIMITS = { ip: 120, target: 60, isolate: 600, entries: 4096, concurrency: 32 } as const
 
 function object(value: unknown, keys: string[]): value is Record<string, unknown> {
@@ -40,7 +43,10 @@ export function validate(value: unknown, now: number): SendRequest | undefined {
   }
   if (
     typeof value.device_token !== 'string' ||
-    !hex64.test(value.device_token) ||
+    value.device_token.length < 2 ||
+    value.device_token.length > MAX_DEVICE_TOKEN_CHARS ||
+    value.device_token.length % 2 !== 0 ||
+    nonHex.test(value.device_token) ||
     (value.environment !== 'sandbox' && value.environment !== 'production') ||
     typeof value.event_id !== 'string' ||
     !uuid.test(value.event_id) ||

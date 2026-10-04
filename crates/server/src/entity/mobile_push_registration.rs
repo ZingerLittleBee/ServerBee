@@ -1,5 +1,9 @@
 use sea_orm::entity::prelude::*;
 
+// APNs tokens are variable-length bytes encoded as lowercase hex. This is a
+// resource bound, not an assumed provider token size.
+const MAX_DEVICE_TOKEN_CHARS: usize = 1024;
+
 /// Encrypted push registrations are separate from legacy direct-APNs tokens.
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
 #[sea_orm(table_name = "mobile_push_registrations")]
@@ -53,7 +57,8 @@ pub fn valid_registration(
     deployment_id: &str,
 ) -> bool {
     use base64::{Engine, engine::general_purpose::STANDARD};
-    token.len() == 64
+    (2..=MAX_DEVICE_TOKEN_CHARS).contains(&token.len())
+        && token.len().is_multiple_of(2)
         && token
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
