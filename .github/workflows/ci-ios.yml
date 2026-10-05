@@ -9,6 +9,9 @@ on:
       - 'tests/fixtures/push*-envelope-v1.json'
       - 'tests/check-push-secret-boundaries.py'
       - 'scripts/ios-install.sh'
+      - 'scripts/ios-renewal-ui-check.sh'
+      - 'tests/fixtures/ios-renewal-http.py'
+      - 'tests/check-ios-renewal-*.py'
       - 'crates/server/**'
       - 'apps/push-relay/**'
       - 'bun.lock'
@@ -21,6 +24,9 @@ on:
       - 'tests/fixtures/push*-envelope-v1.json'
       - 'tests/check-push-secret-boundaries.py'
       - 'scripts/ios-install.sh'
+      - 'scripts/ios-renewal-ui-check.sh'
+      - 'tests/fixtures/ios-renewal-http.py'
+      - 'tests/check-ios-renewal-*.py'
       - 'crates/server/**'
       - 'apps/push-relay/**'
       - 'bun.lock'
@@ -66,7 +72,6 @@ jobs:
           path: ${{ runner.temp }}/push-traces
           if-no-files-found: error
           retention-days: 1
-
   test:
     name: iOS Test
     needs: push-trace
@@ -110,3 +115,21 @@ jobs:
           path: apps/ios/test.xcresult
           if-no-files-found: error
           retention-days: 1
+
+      - name: Validate native units and run renewal controls on installed Simulator
+        if: ${{ !cancelled() }}
+        timeout-minutes: 25
+        env:
+          SERVERBEE_RENEWAL_EVIDENCE_DIR: ${{ runner.temp }}/serverbee-renewal-ui
+          RENEWAL_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RENEWAL_PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: bash ../../scripts/ios-renewal-ui-check.sh
+
+      - name: Preserve renewal Simulator acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-renewal-ui-${{ github.sha }}
+          path: ${{ runner.temp }}/serverbee-renewal-ui
+          if-no-files-found: error
+          retention-days: 7
