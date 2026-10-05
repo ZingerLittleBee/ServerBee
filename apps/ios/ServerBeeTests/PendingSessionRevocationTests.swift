@@ -49,6 +49,29 @@ final class PendingSessionRevocationTests: XCTestCase {
             mobileSessionId: confirmed ? (name == "alice" ? "11111111-1111-4111-8111-111111111111" : "22222222-2222-4222-8222-222222222222") : nil))
     }
 
+    #if DEBUG
+    func testUISeedReplacementRetainsOriginalProof() throws {
+        let seed = UITestSupport.Seed(serverUrl: "http://127.0.0.1:9527",
+            accessToken: "fixture-access", refreshToken: "fixture-refresh",
+            userId: "fixture-user", username: "fixture-admin", role: "admin",
+            installationId: "fixture-installation", revocationToken: "fixture-deletion",
+            mobileSessionId: "11111111-1111-4111-8111-111111111111")
+        let journal = MemorySessionRevocations()
+        let normal = MemoryAuthentication()
+        let auth = AuthManager(revocations: PendingSessionRevocations(storage: journal), authenticationStorage: normal,
+            cleanupSession: cleanupSession)
+        auth.handleLoginResponse(seed.tokenResponse, origin: seed.serverUrl, installationId: seed.installationId)
+        let original = try XCTUnwrap(normal.value)
+        XCTAssertEqual(original.confirmedDeletionProof, "fixture-deletion")
+        XCTAssertEqual(original.mobileSessionId, seed.mobileSessionId)
+        auth.handleLoginResponse(seed.tokenResponse, origin: seed.serverUrl, installationId: seed.installationId)
+        XCTAssertTrue(auth.isAuthenticated)
+        XCTAssertNil(auth.recoveryError)
+        XCTAssertEqual(journal.values, [try XCTUnwrap(original.revocation)])
+        XCTAssertNotEqual(normal.value?.loginId, original.loginId)
+    }
+    #endif
+
     func testOfflineLogoutRestartsSignedOutAndReplaysOnlyOriginalDeletionProof() async throws {
         let journal = MemorySessionRevocations()
         let normal = MemoryAuthentication()

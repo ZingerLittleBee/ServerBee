@@ -45,7 +45,7 @@ final class RenewalBillingUITests: XCTestCase {
         try await launch(scenario: "switch")
         assertSwitch(enabled: false)
         assertDate("Jan 31, 2026")
-        reveal("renewal.enabled").tap()
+        tapRenewalSwitch()
         assertSwitch(enabled: true)
         screenshot("enable-selected")
         try await save(expectedCount: 1)
@@ -60,7 +60,7 @@ final class RenewalBillingUITests: XCTestCase {
         let projected = try await fixtureState()
         let projectedRenewal = try renewal(in: projected)
 
-        reveal("renewal.enabled").tap()
+        tapRenewalSwitch()
         assertSwitch(enabled: false)
         try await save(expectedCount: 2)
         let disabledBody = try await capturedSave(index: 1)
@@ -146,11 +146,20 @@ private extension RenewalBillingUITests {
               url.path.isEmpty, url.query == nil, url.user == nil else { throw FixtureError.invalidURL }
         fixtureURL = url
         _ = try await request("/__test/reset", body: ["scenario": scenario])
+        let sessions = [
+            "switch": "11111111-1111-4111-8111-111111111111",
+            "timezone": "22222222-2222-4222-8222-222222222222",
+            "manual": "33333333-3333-4333-8333-333333333333"
+        ]
+        guard let session = sessions[scenario] else { throw FixtureError.invalidState }
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launchEnvironment = [
             "SB_UITEST_SERVER": raw,
             "SB_UITEST_ACCESS": "fixture-renewal-access",
             "SB_UITEST_REFRESH": "fixture-renewal-refresh",
+            "SB_UITEST_REVOCATION": "fixture-renewal-deletion",
+            "SB_UITEST_MOBILE_SESSION_ID": session,
+            "SB_UITEST_INSTALLATION_ID": "renewal-ui-installation-\(scenario)",
             "SB_UITEST_USERNAME": "fixture-admin", "SB_UITEST_USER_ID": "fixture-user",
             "SB_UITEST_ROLE": "admin", "SB_UITEST_DEEPLINK": "server:renewal-ui-server",
             "SB_UITEST_PRESENT": "edit-server", "SB_UITEST_RENEWAL_CONTEXT": "1"
@@ -203,6 +212,16 @@ private extension RenewalBillingUITests {
     func assertSwitch(enabled: Bool) {
         let toggle = reveal("renewal.enabled")
         XCTAssertEqual(toggle.value as? String, enabled ? "1" : "0", toggle.debugDescription)
+    }
+
+    func tapRenewalSwitch() {
+        // SwiftUI exposes both the full labelled row and its physical switch
+        // as Switch elements. A tap at the row center hits the label, whereas
+        // the actual control is the small trailing descendant switch.
+        let row = reveal("renewal.enabled")
+        let control = row.switches.firstMatch
+        XCTAssertTrue(control.exists && control.isHittable, row.debugDescription)
+        control.tap()
     }
 
     func assertExplanation(_ text: String) {
