@@ -93,23 +93,11 @@ with open(sys.argv[2], 'w') as log:
                    stderr=subprocess.STDOUT, timeout=180, check=True)
 PY
 
-python3 "$RENEWAL_ROOT/tests/fixtures/ios-renewal-http.py" --evidence-dir "$RENEWAL_EVIDENCE_DIR" \
+python3 -u "$RENEWAL_ROOT/tests/fixtures/ios-renewal-http.py" --evidence-dir "$RENEWAL_EVIDENCE_DIR" \
   > "$RENEWAL_EVIDENCE_DIR/fixture.log" 2>&1 &
 RENEWAL_FIXTURE_PID=$!
-python3 - "$RENEWAL_EVIDENCE_DIR" <<'PY'
-import pathlib, sys, time, urllib.request
-directory = pathlib.Path(sys.argv[1])
-for attempt in range(100):
-    try:
-        url = directory.joinpath('fixture-url.txt').read_text().strip()
-        with urllib.request.urlopen(url + '/__test/state', timeout=1) as response:
-            if response.status == 200:
-                break
-    except (OSError, ValueError):
-        time.sleep(0.1)
-else:
-    raise SystemExit('Loopback renewal fixture did not become ready within 10 seconds')
-PY
+python3 "$RENEWAL_ROOT/tests/check-ios-renewal-startup.py" \
+  --evidence-dir "$RENEWAL_EVIDENCE_DIR" --pid "$RENEWAL_FIXTURE_PID"
 export TEST_RUNNER_SERVERBEE_RENEWAL_FIXTURE_URL="$(cat "$RENEWAL_EVIDENCE_DIR/fixture-url.txt")"
 set +e
 xcodebuild -project ServerBee.xcodeproj -scheme ServerBeeUI -configuration Debug \
