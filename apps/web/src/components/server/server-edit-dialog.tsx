@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
 import { CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
-import { type FormEvent, useMemo, useReducer, useState } from 'react'
+import { type FormEvent, useId, useMemo, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -87,6 +87,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
 interface ServerEditState {
   billingCycle: string
   billingStartDay: string
+  billingTimezone: string
   countryCode: string
   currency: string
   expiredAt: string
@@ -111,9 +112,10 @@ function serverEditStateFromServer(server: ServerResponse): ServerEditState {
   return {
     billingCycle: server.billing_cycle ?? '',
     billingStartDay: server.billing_start_day?.toString() ?? '',
+    billingTimezone: server.renewal?.billing_timezone ?? 'UTC',
     countryCode: server.geo_manual ? (server.country_code ?? '') : '',
     currency: server.currency ?? 'USD',
-    expiredAt: server.expired_at?.slice(0, 10) ?? '',
+    expiredAt: server.renewal ? (server.renewal.expiry_date ?? '') : (server.expired_at?.slice(0, 10) ?? ''),
     groupId: server.group_id ?? '',
     hidden: server.hidden,
     name: server.name,
@@ -261,6 +263,11 @@ function ServerEditBillingFields({
   state: ServerEditState
   t: TFunction
 }) {
+  const timezoneListId = useId()
+  const timezones = useMemo(
+    () => ['UTC', ...(typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [])],
+    []
+  )
   return (
     <fieldset className="space-y-3">
       <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
@@ -332,6 +339,24 @@ function ServerEditBillingFields({
           value={state.expiredAt}
         />
       </Field>
+      <Field label={t('edit_billing_timezone')}>
+        <Input
+          aria-label={t('edit_billing_timezone')}
+          autoComplete="off"
+          list={timezoneListId}
+          name="billing_timezone"
+          onChange={(e) => dispatch({ type: 'patch', value: { billingTimezone: e.target.value } })}
+          placeholder="America/New_York"
+          type="text"
+          value={state.billingTimezone}
+        />
+        <datalist id={timezoneListId}>
+          {timezones.map((timezone) => (
+            <option key={timezone} value={timezone} />
+          ))}
+        </datalist>
+        <p className="mt-1 text-[11px] text-muted-foreground">{t('edit_billing_timezone_hint')}</p>
+      </Field>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label={t('edit_traffic_limit')}>
           <Input
@@ -393,6 +418,8 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
   // override; otherwise we leave it blank and surface the auto-detected value as
   // a hint, so saving an untouched form never accidentally pins GeoIP.
   const initialCountryCode = server.geo_manual ? (server.country_code ?? '') : ''
+  const initialExpiryDate = serverEditStateFromServer(server).expiredAt
+  const initialBillingTimezone = server.renewal?.billing_timezone ?? 'UTC'
   const [state, dispatch] = useReducer(serverEditReducer, server, serverEditStateFromServer)
 
   const { data: groups } = useQuery<ServerGroup[]>({
@@ -414,6 +441,10 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
   })
 
   const buildPayload = (): UpdateServerInput => {
+    const renewal = {
+      ...(state.expiredAt !== initialExpiryDate && { expiry_date: state.expiredAt || null }),
+      ...(state.billingTimezone !== initialBillingTimezone && { billing_timezone: state.billingTimezone || null })
+    }
     const payload: UpdateServerInput = {
       name: state.name,
       weight: state.weight,
@@ -424,10 +455,10 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
       price: state.price ? Number.parseFloat(state.price) : null,
       billing_cycle: state.billingCycle || null,
       currency: state.currency || null,
-      expired_at: state.expiredAt ? `${state.expiredAt}T00:00:00Z` : null,
       traffic_limit: state.trafficLimit ? Math.round(Number.parseFloat(state.trafficLimit) * 1024 ** 3) : null,
       traffic_limit_type: state.trafficLimitType || null,
       billing_start_day: state.billingStartDay ? Number.parseInt(state.billingStartDay, 10) : null,
+      ...(Object.keys(renewal).length > 0 && { renewal }),
       ...countryCodePatch(state.countryCode, initialCountryCode)
     }
     return payload
@@ -671,6 +702,11 @@ function DatePickerField({ ariaLabel, onChange, value }: DatePickerFieldProps) {
           />
         </PopoverContent>
       </Popover>
+      {value && (
+        <Button className="mt-1" onClick={() => onChange('')} size="sm" type="button" variant="ghost">
+          {t('edit_expiration_clear')}
+        </Button>
+      )}
     </div>
   )
 }
