@@ -72,7 +72,7 @@ export function IpQualityTab({ serverId, serverName, capabilities, agentLocalCap
 
   return (
     <ScrollArea className="w-full">
-      <div className="space-y-6 pt-4 pb-4">
+      <div className="space-y-6 px-px pt-4 pb-4">
         {/* Header row */}
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-base">{t('tab_title')}</h2>
