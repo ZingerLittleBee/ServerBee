@@ -104,8 +104,8 @@ function setup() {
     queryClient,
     fetchSpy,
     wrapper,
-    advance() {
-      currentServer = { ...server, expired_at: '2026-02-28T23:59:59Z' }
+    advance(expiredAt = '2026-02-28T23:59:59Z') {
+      currentServer = { ...server, expired_at: expiredAt }
       expired = false
     },
     receive(message: unknown) {
@@ -122,6 +122,142 @@ afterEach(() => {
 })
 
 describe('renewal catalog refresh through the browser WebSocket', () => {
+  it.each([
+    'server_catalog_changed',
+    'full_sync'
+  ])('retains the newest deadline when %s arrives during an older catalog fetch', async (messageType) => {
+    const fixture = setup()
+    const { result } = renderHook(
+      () => {
+        useServersWs()
+        return { list: useServerList(), detail: useServerDetail('srv-1') }
+      },
+      { wrapper: fixture.wrapper }
+    )
+    await waitFor(() => expect(result.current.list.data?.[0].expired_at).toBe(server.expired_at))
+    await waitFor(() => expect(result.current.detail.data?.expired_at).toBe(server.expired_at))
+
+    let release: (response: Response) => void = () => {
+      throw new Error('Deferred request not initialized')
+    }
+    const blocked = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    fixture.fetchSpy.mockImplementationOnce(() => blocked)
+    fixture.advance()
+    fixture.receive({ type: 'server_catalog_changed', server_ids: ['srv-1'] })
+    await waitFor(() => expect(fixture.fetchSpy.mock.calls.filter(([path]) => path === '/api/servers')).toHaveLength(2))
+
+    fixture.advance('2026-03-31T23:59:59Z')
+    fixture.receive(
+      messageType === 'full_sync'
+        ? { type: 'full_sync', servers: fixture.queryClient.getQueryData(['server-catalog', 'live']) }
+        : { type: 'server_catalog_changed', server_ids: ['srv-1'] }
+    )
+    await act(async () => {
+      release(Response.json({ data: [{ ...server, expired_at: '2026-02-28T23:59:59Z' }] }))
+      await blocked
+    })
+
+    await waitFor(() => expect(result.current.list.data?.[0].expired_at).toBe('2026-03-31T23:59:59Z'))
+    await waitFor(() => expect(result.current.detail.data?.expired_at).toBe('2026-03-31T23:59:59Z'))
+  })
+
+  it('keeps an older pending detail request from overwriting a refreshed renewal deadline', async () => {
+    const fixture = setup()
+    let release: (response: Response) => void = () => {
+      throw new Error('Deferred request not initialized')
+    }
+    const blocked = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    const network = fixture.fetchSpy.getMockImplementation()
+    let held = false
+    fixture.fetchSpy.mockImplementation((input, options) => {
+      if (String(input) === '/api/servers/srv-1' && !held) {
+        held = true
+        return blocked
+      }
+      if (!network) {
+        throw new Error('Fixture network not initialized')
+      }
+      return network(input, options)
+    })
+    const { result } = renderHook(
+      () => {
+        useServersWs()
+        return { list: useServerList(), detail: useServerDetail('srv-1') }
+      },
+      { wrapper: fixture.wrapper }
+    )
+    await waitFor(() => expect(result.current.list.data?.[0].expired_at).toBe(server.expired_at))
+
+    fixture.advance()
+    fixture.receive({ type: 'server_catalog_changed', server_ids: ['srv-1'] })
+    await waitFor(() => expect(result.current.list.data?.[0].expired_at).toBe('2026-02-28T23:59:59Z'))
+    await act(async () => {
+      release(Response.json({ data: server }))
+      await blocked
+    })
+
+    await waitFor(() => expect(result.current.detail.data?.expired_at).toBe('2026-02-28T23:59:59Z'))
+    expect(result.current.list.data?.[0].expired_at).toBe('2026-02-28T23:59:59Z')
+  })
+
+  it.each([
+    '/api/servers/srv-1/cost-insights',
+    '/api/cost/overview'
+  ])('refreshes cost advisories when a catalog change arrives during the first %s request', async (path) => {
+    const fixture = setup()
+    let release: (response: Response) => void = () => {
+      throw new Error('Deferred request not initialized')
+    }
+    const blocked = new Promise<Response>((resolve) => {
+      release = resolve
+    })
+    const network = fixture.fetchSpy.getMockImplementation()
+    let held = false
+    fixture.fetchSpy.mockImplementation((input, options) => {
+      if (String(input) === path && !held) {
+        held = true
+        return blocked
+      }
+      if (!network) {
+        throw new Error('Fixture network not initialized')
+      }
+      return network(input, options)
+    })
+    const { result } = renderHook(
+      () => {
+        useServersWs()
+        return { insights: useCostInsights('srv-1'), overview: useCostOverview() }
+      },
+      { wrapper: fixture.wrapper }
+    )
+    await waitFor(() => expect(fixture.fetchSpy).toHaveBeenCalledWith(path, expect.any(Object)))
+    fixture.advance()
+    fixture.receive({ type: 'server_catalog_changed', server_ids: ['srv-1'] })
+    await act(async () => {
+      release(
+        Response.json({
+          data:
+            path === '/api/cost/overview'
+              ? {
+                  currencies: [],
+                  servers: [
+                    { server_id: 'srv-1', name: server.name, configured: true, advisories: ['expired_billing'] }
+                  ]
+                }
+              : { server_id: 'srv-1', configured: true, advisories: ['expired_billing'] }
+        })
+      )
+      await blocked
+    })
+
+    await waitFor(() => expect(result.current.insights.data?.advisories).toEqual([]))
+    await waitFor(() => expect(result.current.overview.data?.servers[0].advisories).toEqual([]))
+  })
+
   it('refreshes current detail, list, dashboard and cost advisories after an affected catalog change', async () => {
     const fixture = setup()
     const { result } = renderHook(
