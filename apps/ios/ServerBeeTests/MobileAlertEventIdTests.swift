@@ -2,6 +2,22 @@ import XCTest
 @testable import ServerBee
 
 final class MobileAlertEventIdTests: XCTestCase {
+    @MainActor
+    func testSupersededRenewalIsVisibleWithoutRecovery() throws {
+        let json = """
+        {"rule_id":"expiry","rule_name":"Renewal","server_id":"server","server_name":"Server","status":"superseded",
+        "event_at":"2026-03-01T00:00:00Z","resolved_at":null,"count":1,"alert_key":"prior-occurrence"}
+        """
+        let event = try JSONDecoder.snakeCase.decode(MobileAlertEvent.self, from: Data(json.utf8))
+        let model = AlertsViewModel()
+        model.events = [event]
+        XCTAssertEqual(event.status.label, String(localized: "Superseded"))
+        XCTAssertNil(event.resolvedAt)
+        XCTAssertEqual(model.firingCount, 0)
+        XCTAssertEqual(model.events(matching: .all).map(\.alertKey), ["prior-occurrence"])
+        XCTAssertTrue(model.events(matching: .resolved).isEmpty)
+    }
+
     private func make(status: AlertStatus, eventAt: String) -> MobileAlertEvent {
         MobileAlertEvent(
             ruleId: "rule-1",

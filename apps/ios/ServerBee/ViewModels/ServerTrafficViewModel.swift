@@ -23,6 +23,20 @@ final class ServerTrafficViewModel {
         await reload(serverId: serverId, apiClient: apiClient)
     }
 
+    func refreshCost(serverId: String, apiClient: APIClient) async {
+        let refreshed = await fetchCost(serverId: serverId, apiClient: apiClient)
+        guard !Task.isCancelled else { return }
+        cost = refreshed
+    }
+
+    func loadForCatalogRevision(serverId: String, apiClient: APIClient) async {
+        if hasLoaded {
+            await refreshCost(serverId: serverId, apiClient: apiClient)
+        } else {
+            await reload(serverId: serverId, apiClient: apiClient)
+        }
+    }
+
     func reload(serverId: String, apiClient: APIClient) async {
         isLoading = true
         defer {
@@ -36,6 +50,7 @@ final class ServerTrafficViewModel {
         async let uptimeResult = fetchUptime(serverId: serverId, apiClient: apiClient)
 
         let (t, c, u) = await (trafficResult, costResult, uptimeResult)
+        guard !Task.isCancelled else { return }
         traffic = t
         cost = c
         uptime = u

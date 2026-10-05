@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Superseded": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已被替代"
+          }
+        }
+      }
+    },
+    "A newer renewal deadline superseded this reminder.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新的续费截止日期已替代此提醒。"
+          }
+        }
+      }
+    },
     "Renewal": {
       "localizations": {
         "zh-Hans": {

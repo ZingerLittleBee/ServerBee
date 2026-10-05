@@ -7,6 +7,18 @@ import XCTest
 /// and capabilities vanish the instant the first WS frame arrived.
 @MainActor
 final class ServersViewModelMergeTests: XCTestCase {
+    func test_catalogRefreshKeepsLiveStateAndAppliesEdits() {
+        let vm = ServersViewModel()
+        vm.applyConfig([config("1")])
+        vm.handleWSMessage(.update(servers: [liveFrame("1", online: true, cpu: 42)]))
+        vm.applyConfig([ServerStatus(id: "1", name: "Renamed")])
+
+        XCTAssertEqual(vm.servers.first?.name, "Renamed")
+        XCTAssertNil(vm.servers.first?.ipv4)
+        XCTAssertEqual(vm.servers.first?.cpuUsage, 42)
+        XCTAssertEqual(vm.servers.first?.online, true)
+    }
+
     private func config(_ id: String) -> ServerStatus {
         var s = ServerStatus(
             id: id, name: "srv-\(id)", online: nil, cpuUsage: nil,

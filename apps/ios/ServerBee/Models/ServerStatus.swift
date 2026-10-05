@@ -238,19 +238,12 @@ extension ServerStatus {
         return ISO8601DateFormatter.shared.date(from: lastActiveAt)
     }
 
-    /// Merge non-nil fields from another status (used for WebSocket partial
-    /// updates AND for overlaying a live WS frame onto REST config). Fields that
-    /// are `nil` in `other` preserve the local value, so a metrics-only frame
-    /// never erases config fields like `ipv4`, `capabilities`, or billing.
-    mutating func merge(from other: ServerStatus) {
+    /// Preserve only runtime fields when replacing the authoritative REST catalog.
+    mutating func mergeLiveMetrics(from other: ServerStatus) {
         if let v = other.online { online = v }
         if let v = other.cpuUsage { cpuUsage = v }
-        if let v = other.cpuCores { cpuCores = v }
-        if let v = other.memoryTotal, v > 0 { memoryTotal = v }
         if let v = other.memoryUsed { memoryUsed = v }
-        if let v = other.swapTotal { swapTotal = v }
         if let v = other.swapUsed { swapUsed = v }
-        if let v = other.diskTotal, v > 0 { diskTotal = v }
         if let v = other.diskUsed { diskUsed = v }
         if let v = other.diskReadPerSec { diskReadPerSec = v }
         if let v = other.diskWritePerSec { diskWritePerSec = v }
@@ -265,6 +258,18 @@ extension ServerStatus {
         if let v = other.tcpCount { tcpCount = v }
         if let v = other.udpCount { udpCount = v }
         if let v = other.uptime { uptime = v }
+    }
+
+    /// Merge non-nil fields from another status (used for WebSocket partial
+    /// updates AND for overlaying a live WS frame onto REST config). Fields that
+    /// are `nil` in `other` preserve the local value, so a metrics-only frame
+    /// never erases config fields like `ipv4`, `capabilities`, or billing.
+    mutating func merge(from other: ServerStatus) {
+        mergeLiveMetrics(from: other)
+        if let v = other.cpuCores { cpuCores = v }
+        if let v = other.memoryTotal, v > 0 { memoryTotal = v }
+        if let v = other.swapTotal { swapTotal = v }
+        if let v = other.diskTotal, v > 0 { diskTotal = v }
         if let v = other.os { os = v }
         if let v = other.cpuName { cpuName = v }
         if let v = other.ipv4 { ipv4 = v }

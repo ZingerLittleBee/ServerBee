@@ -68,7 +68,7 @@ private extension AlertsListView {
     var eventsList: some View {
         let visible = viewModel.events(matching: filter)
         let firing = visible.filter { $0.status == .firing }
-        let earlier = visible.filter { $0.status == .resolved }
+        let earlier = visible.filter { $0.status != .firing }
         return List {
             Section {
                 filterPicker
