@@ -93,6 +93,12 @@ private extension EditServerSheet {
     @ViewBuilder
     var renewalSection: some View {
         Section(String(localized: "Renewal")) {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["SB_UITEST_RENEWAL_CONTEXT"] == "1" {
+                Text(verbatim: TimeZone.current.identifier)
+                    .accessibilityIdentifier("renewal.deviceTimezone")
+            }
+            #endif
             Picker(String(localized: "Billing timezone"), selection: $viewModel.billingTimezone) {
                 ForEach(Self.billingTimezones, id: \.self) { Text(verbatim: $0).tag($0) }
             }
