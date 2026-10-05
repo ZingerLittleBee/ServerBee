@@ -120,6 +120,7 @@ struct ServerDetailView: View {
                     Button { showEdit = true } label: {
                         Label(String(localized: "Edit server"), systemImage: "pencil")
                     }
+                    .accessibilityIdentifier("server.edit")
                 }
             }
         }

@@ -20,6 +20,32 @@ struct ServerRenewal: Decodable, Hashable, Sendable {
     }
 }
 
+extension ServerRenewal {
+    var deadlineOriginLabel: String? {
+        switch deadlineOrigin {
+        case "confirmed": String(localized: "Confirmed renewal deadline")
+        case "projected": String(localized: "Projected renewal deadline")
+        case "frozen": String(localized: "Frozen renewal deadline")
+        default: nil
+        }
+    }
+
+    var deadlineExplanation: String? {
+        switch deadlineOrigin {
+        case "confirmed": String(localized: "This deadline was recorded by an operator from provider information.")
+        case "projected": String(localized: "This deadline is a forecast. It does not confirm provider renewal or payment.")
+        case "frozen": String(localized: "Automatic renewal is off. This forecast is frozen; it does not confirm provider renewal or payment.")
+        default: nil
+        }
+    }
+
+    var confirmedDisplayDate: String? {
+        guard let confirmedExpiredAt,
+              let date = ISO8601DateFormatter.shared.date(from: confirmedExpiredAt) else { return nil }
+        return BillingDate.display(from: date, timezone: billingTimezone)
+    }
+}
+
 /// Server group (`/api/server-groups`). Used to resolve `group_id` to a name.
 struct ServerGroup: Decodable, Identifiable, Hashable, Sendable {
     let id: String
