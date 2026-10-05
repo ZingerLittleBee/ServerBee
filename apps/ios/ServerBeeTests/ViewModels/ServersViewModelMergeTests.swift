@@ -7,6 +7,27 @@ import XCTest
 /// and capabilities vanish the instant the first WS frame arrived.
 @MainActor
 final class ServersViewModelMergeTests: XCTestCase {
+    func test_restRefreshPreservesWebSocketCatalogFields() throws {
+        let vm = ServersViewModel()
+        let fullSync = try JSONDecoder.snakeCase.decode(BrowserMessage.self, from: Data(
+            #"{"type":"full_sync","servers":[{"id":"1","name":"Original","online":true,"tags":["production"],"group_name":"Legacy group"}]}"#.utf8
+        ))
+        vm.handleWSMessage(fullSync)
+        let rest = try JSONDecoder.snakeCase.decode([ServerStatus].self, from: Data(
+            #"[{"id":"1","name":"Renamed","ipv4":null,"group_id":null,"renewal":null,"expired_at":null}]"#.utf8
+        ))
+        vm.applyConfig(rest)
+        XCTAssertEqual(vm.servers.first?.name, "Renamed")
+        XCTAssertEqual(vm.servers.first?.tags, ["production"])
+        XCTAssertEqual(vm.servers.first?.groupName, "Legacy group")
+        XCTAssertEqual(vm.servers.first?.online, true)
+        XCTAssertNil(vm.servers.first?.groupId)
+
+        // Explicit tag updates remain authoritative, including clearing all tags.
+        vm.applyConfig([ServerStatus(id: "1", name: "Renamed", tags: [])])
+        XCTAssertEqual(vm.servers.first?.tags, [])
+    }
+
     func test_catalogRefreshKeepsLiveStateAndAppliesEdits() {
         let vm = ServersViewModel()
         var original = config("1")
