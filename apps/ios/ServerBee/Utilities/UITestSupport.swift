@@ -43,6 +43,11 @@ enum UITestSupport {
         )
     }
 
+    /// Exercise the recovery screen with the supplied fixture identity only.
+    static var sessionRecovery: Bool {
+        ProcessInfo.processInfo.environment["SB_UITEST_SESSION_RECOVERY"] == "1"
+    }
+
     /// Optional deep link to push on launch, e.g. "server:<id>".
     static var deepLink: ServerDeepLink? {
         guard let raw = ProcessInfo.processInfo.environment["SB_UITEST_DEEPLINK"] else { return nil }

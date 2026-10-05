@@ -147,21 +147,13 @@ final class QRScannerViewController: UIViewController, @preconcurrency AVCapture
             return
         }
 
-        guard let data = stringValue.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String,
-              type == "serverbee_pair",
-              let serverUrl = json["server_url"] as? String,
-              let code = json["code"] as? String
-        else {
-            return
-        }
+        guard let payload = PairingQRCode.decode(stringValue) else { return }
 
         hasScanned = true
         stopSession()
 
         AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
-        onScanned?(serverUrl, code)
+        onScanned?(payload.serverUrl, payload.code)
     }
 
     // MARK: - Error + permission UI

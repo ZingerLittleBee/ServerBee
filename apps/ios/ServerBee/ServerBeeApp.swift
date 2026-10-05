@@ -11,6 +11,7 @@ struct ServerBeeApp: App {
     @State private var networkMonitor = NetworkMonitor()
     @State private var securityFeed = SecurityFeedStore()
     @State private var upgradeJobs = UpgradeJobsStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -32,17 +33,18 @@ struct ServerBeeApp: App {
 
                     await authManager.initialize()
                 }
-                // Ask for notification permission once the user is signed in,
-                // whether the session was restored at launch or just created
-                // by logging in, rather than on some later cold launch.
-                .onChange(of: authManager.isAuthenticated) { _, isAuthenticated in
-                    guard isAuthenticated else { return }
-                    #if DEBUG
-                    if UITestSupport.seed != nil { return }
-                    #endif
-                    Task { await pushManager.requestPermission() }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { Task { await recoverSignOuts() } }
+                }
+                .onChange(of: networkMonitor.isConnected) { _, connected in
+                    if connected { Task { await recoverSignOuts() } }
                 }
         }
+    }
+    @MainActor
+    private func recoverSignOuts() async {
+        await authManager.retryPendingRevocations()
+        if authManager.isAuthenticated { await pushManager.reconcile() }
     }
 }
 
@@ -56,10 +58,17 @@ private struct RootView: View {
         Group {
             if authManager.isLoading {
                 ProgressView()
+            } else if authManager.sessionRecovery != nil {
+                SessionRecoveryView()
             } else if authManager.isAuthenticated {
                 ContentView(authManager: authManager)
             } else {
                 LoginView()
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if authManager.sessionRecovery == nil, let error = authManager.recoveryError {
+                Text(error).font(.footnote).foregroundStyle(.red).padding()
             }
         }
         // Applied at the root so the Appearance choice covers every screen.
@@ -70,9 +79,22 @@ private struct RootView: View {
 
 // MARK: - AppDelegate
 
+@MainActor
 final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
-    var pushManager: PushNotificationManager?
-    var pushRouter: PushNotificationRouter?
+    var pushManager: PushNotificationManager? {
+        didSet {
+            if let pendingToken { pushManager?.didRegisterForRemoteNotifications(deviceToken: pendingToken) }
+            pendingToken = nil
+        }
+    }
+    private var pendingToken: Data?
+    private var pendingEnvelope: PushEnvelope?
+    var pushRouter: PushNotificationRouter? {
+        didSet {
+            if let pendingEnvelope { pushRouter?.enqueue(envelope: pendingEnvelope) }
+            pendingEnvelope = nil
+        }
+    }
 
     /// Cold-launch from a push tap. iOS does not invoke
     /// `userNotificationCenter(_:didReceive:)` for the launch notification
@@ -93,7 +115,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUser
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
-        pushManager?.didRegisterForRemoteNotifications(deviceToken: deviceToken)
+        if let pushManager { pushManager.didRegisterForRemoteNotifications(deviceToken: deviceToken) } else { pendingToken = deviceToken }
     }
 
     func application(
@@ -109,10 +131,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate, @preconcurrency UNUser
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        if let link = pushManager?.handleNotificationResponse(response) {
-            pushRouter?.enqueue(link)
-        }
+        bufferNotification(userInfo: response.notification.request.content.userInfo)
         completionHandler()
+    }
+
+    @MainActor
+    func bufferNotification(userInfo: [AnyHashable: Any]) {
+        guard let object = userInfo["serverbee_envelope"], JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object), data.count <= 4096,
+              let envelope = try? JSONDecoder().decode(PushEnvelope.self, from: data) else { return }
+        if let pushRouter { pushRouter.enqueue(envelope: envelope) } else { pendingEnvelope = envelope }
     }
 
     func userNotificationCenter(

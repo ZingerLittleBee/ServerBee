@@ -127,7 +127,7 @@ function defaultConfigFieldsForType(type: NotifyType): Record<string, string> {
         key_id: '',
         team_id: '',
         private_key: '',
-        bundle_id: 'com.serverbee.mobile',
+        bundle_id: 'app.serverbee',
         sandbox: 'true'
       }
     default:

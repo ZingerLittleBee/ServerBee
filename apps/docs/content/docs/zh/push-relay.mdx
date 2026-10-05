@@ -1,0 +1,83 @@
+---
+title: Push Relay 运维
+description: 无状态 Cloudflare Worker 设置、已接受的滥用风险、签名与真机验收。
+icon: Smartphone
+---
+
+链路为 **Server → 独立 ServerBee Cloudflare Worker → APNs → iOS Notification Service Extension**。Server 负责订阅、用户/会话授权、加密待投递任务和最终任务汇总。Relay 保管发布者 APNs 凭据并转发密文。[移动端](/zh/docs/mobile)介绍用户设置，[配置](/zh/docs/configuration#push_relay--已验证移动通知设置)介绍 Server 地址。
+
+修订后的未发布架构仅提供公开 `POST /v1/send`，没有 App Attest、版本/分发策略、challenge、投递 grant、Relay 持久数据库或替代授权系统。Server 自己数据库中的持久业务 outbox 保留。本地测试与模拟器结果不证明真实 APNs 投递或签名设备展示。本手册描述另行授权的运维操作，本身不部署、不配置凭据、不修改 Apple 账户。
+
+## 公开 Relay 的已接受风险
+
+任何人都能提交请求。知道有效设备令牌后可提交垃圾密文或重放，可能造成通用通知骚扰。不知道他人令牌也能用无效请求或攻击者自己的令牌消耗资源和请求配额。令牌保密有帮助，但不是发送授权。
+
+每安装密钥保密时，AES-256-GCM 保护业务内容及已认证身份，不认证公开 Relay 调用方。原始 APNs alert 使用固定通用文字，因为 Notification Service Extension 可能失败或超时；无效密文不保证静默丢弃。应用拒绝无效或旧账号导航。
+
+防护包括严格字段与大小限制、解析前的流式读取硬上限、读取/发送期限、固定 APNs 主机/topic/环境允许列表、有界并发、来源与目标 Map 容量硬上限，以及 isolate 整体请求上限。限流状态仅在各 Worker isolate 内尽力生效，会随重启清除且可独立扩容，不是全局费用预算、精确全局限流、重放数据库或抗拒绝服务保证。部署前单独确认平台限制与账户费用控制，不假定付费方案或 WAF 功能已具备。
+
+## Cloudflare 快速设置
+
+使用独立 ServerBee Worker 和合成测试数据，与 Heeler、生产服务隔离。记录准确版本、签名构建、APNs 环境和 UTC 时间。
+
+1. 使用仓库声明的 Bun 版本和 Node 24 安装锁定的开发依赖。生产代码使用 Web API、WebCrypto 和 fetch；Bun 仅为工具，不是部署运行时。
+2. 检查 `apps/push-relay/wrangler.jsonc`。选择独立 Worker 名称，固定 `APNS_TOPIC`、`APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_ENVIRONMENTS`。官方 topic 为 `app.serverbee`，必须与主应用 bundle 标识一致，不能使用扩展标识 `app.serverbee.notifications`。可选环境允许列表为 `sandbox`、`production` 或逗号分隔两者；省略时允许两者。
+3. 将发布者 PKCS#8 P-256 PEM 内容配置为 Worker secret `APNS_PRIVATE_KEY`。使用已授权的安全凭据输入流程，不写入 Git、公开变量、应用或 Server。Worker 不使用 PEM 文件路径。
+4. 按 `apps/push-relay/README.md` 运行类型检查、Workers 运行时测试与部署 dry run。dry run 仅在本地打包，不验证 Apple 凭据，也不执行部署。
+5. 另行授权后才能部署，然后将 Server 的 `SERVERBEE_PUSH_RELAY__URL` 设置为最终 HTTPS Worker 地址。应用也应使用最终 HTTPS Server 地址，含密钥的 Server 请求拒绝重定向。
+6. 使用签名应用完成下方真机验收。注册成功或 APNs 回执不证明手机展示。
+
+### 配置归属
+
+| 所有者 | 配置 |
+| --- | --- |
+| 自托管 Server | `SERVERBEE_PUSH_RELAY__URL` 或 `[push_relay].url`；加密持久 outbox 和接收方/会话/注册版本检查 |
+| Worker 变量 | `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_TOPIC`、`APNS_ENVIRONMENTS` |
+| Worker secret | `APNS_PRIVATE_KEY`，仅由发布者控制的 PKCS#8 PEM 内容 |
+| 签名 iOS 应用与 NSE | 匹配的 APNs 环境、嵌入扩展与应用/扩展共享 Keychain 组；登录凭据留在应用私有组 |
+
+Cloudflare 管理入站 HTTPS 与出站连接。不需要 Bun 监听器、可信反向代理头配置、OpenSSL 子进程、自建 HTTP/2 池、容器或 Relay SQLite 卷。来源限流使用平台提供的客户端 IP，不信任任意转发头。禁止记录请求正文、设备令牌或内容密钥。
+
+## 注册、投递与隐私
+
+应用调用已认证的 `POST /api/mobile/push/encrypted-register`，提交令牌、环境、注册版本、部署绑定与每安装内容密钥，不调用 Relay。Server 继续检查账号/安装/移动会话归属与版本。旧客户端的直连 APNs 注册路由独立保留。
+
+Server 向 `POST /v1/send` 提交 `device_token`、`environment`、`event_id`、`expires_at` 与版本化加密 `envelope`。Relay 可见令牌、来源 IP、时间、大小、环境、事件/投递元数据和密文，不能收到内容密钥或业务明文。不得记录请求体、设备令牌、密钥或服务商认证头。
+
+原始 30 分钟期限在重试和 Server 重启后不变。每次发送前重新核验归属、会话、角色、订阅和注册版本。可重试结果保留密文；终态清除密文并保留无秘密的回执。退出/撤销不能撤回已发送或接受的请求。仅删除原目标会话的离线退出清理与 Relay 无关，继续保留。
+
+APNs 状态与原因区分接受、可重试服务/限流/网络错误、永久载荷/配置错误和过期。只有确认的 `410 Unregistered` 才使准确匹配、仍为当前的注册失效；`BadDeviceToken` 或其他 HTTP 400 不会一概删除令牌。应用/NSE 检查加密内容身份，拒绝无效导航。
+
+## 签名与排障
+
+源码中的标识为：主应用 `app.serverbee`、通知服务扩展 `app.serverbee.notifications`、测试 bundle `app.serverbee.tests`。主应用首先列出私有 Keychain 组 `$(AppIdentifierPrefix)app.serverbee`，然后列出共享组 `$(AppIdentifierPrefix)app.serverbee.push`；扩展仅拥有共享 `.push` 组。保留实际描述文件的 App ID 前缀，不要用猜测的 Team ID 替换。
+
+Keychain **service 标签** `com.serverbee.mobile` 和 `com.serverbee.mobile.push` 有意保持不变。它们是条目查询命名空间，不是 Bundle ID 或 APNs topic。保留私有 service 标签和原有默认访问组，可以继续读取已有 `app.serverbee` 的凭据、安装标识和待处理退出恢复记录。这不证明能够从独立安装的 `com.serverbee.mobile` 应用或使用其他实际访问组／前缀的构建迁移。升级前应检查旧签名构建并验证会话连续性；如果启用推送的测试构建曾使用旧共享组，应重新进行通知设置，在修正后的组中创建并注册密钥。不要为了迁移让扩展访问私有凭据组。
+
+检查应用与扩展的实际签名 entitlement。保留 APNs 和共享 Keychain，扩展不得拥有主应用私有凭据组。Debug 使用 sandbox APNs，分发构建使用 production。本次源码改造不会修改 Apple 账户已启用的 App Attest 能力或扩展注册，协议也不依赖它们。
+
+| 现象 | 检查 |
+| --- | --- |
+| 注册不可用 | 最终 HTTPS Server 地址、Relay 配置、移动会话归属、版本冲突和可订阅类别 |
+| 通用通知 | 共享 Keychain 签名/访问、密钥与账号绑定、有效密文、原始期限、NSE 包装与执行 |
+| 可重试投递 | Worker 超时/限流/并发和 APNs 服务/网络状态；原始期限后停止重试 |
+| 永久服务商失败 | 固定 topic/环境/签名配置、载荷大小和准确 APNs 原因；不要将所有 400 当作设备撤销 |
+| 接受后没有横幅 | 系统通知权限、专注模式、网络/应用状态和 NSE；接受本身不证明展示 |
+| 旧通知无法导航 | 账号/部署/安装不匹配或当前无 Server 权限；拒绝属于预期 |
+
+## 真实设备验收记录
+
+每项单独观察前保持 **NOT RUN**，记录候选 SHA、应用/扩展构建及实际 entitlement、实体设备/iOS 版本、APNs 环境、UTC 时间和语言。合成夹具、模拟器成功与 dry run 是独立证据。
+
+| 场景 | 服务商回执 | 原生展示 | 已认证导航 |
+| --- | --- | --- | --- |
+| 当前安装测试：前台/后台/终止 | NOT RUN | NOT RUN | NOT RUN |
+| 告警触发/恢复及旧周期回退 | NOT RUN | NOT RUN | NOT RUN |
+| 管理员安全规则及不可用目标 | NOT RUN | NOT RUN | NOT RUN |
+| 任务最终失败/主动成功及所有者隔离 | NOT RUN | NOT RUN | NOT RUN |
+| 英语与简体中文渲染 | NOT RUN | NOT RUN | NOT RUN |
+| sandbox 与 production 签名/环境 | NOT RUN | NOT RUN | NOT RUN |
+| 刷新/令牌变化、退出/账号替换和撤销 | NOT RUN | NOT RUN | NOT RUN |
+| 故障恢复重试、过期和已展示通知的延迟点击 | NOT RUN | NOT RUN | NOT RUN |
+
+[组合验证](https://github.com/ZingerLittleBee/ServerBee/blob/main/tests/manual/mobile-push-integration.md)保留 HTTP、存储、Rust/Swift 共享加密和原生生命周期检查。绿色 CI 不代表已部署、已配置秘密或完成真机验收。

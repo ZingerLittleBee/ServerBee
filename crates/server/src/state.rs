@@ -63,6 +63,8 @@ impl std::fmt::Debug for OAuthFlowState {
 pub struct PendingPair {
     pub user_id: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    /// Security snapshot for QR cleanup; not logged or used to mint tokens.
+    pub recovery_account: crate::entity::user::Model,
 }
 
 /// Rate limiter entry: (count, window_start).
@@ -114,6 +116,8 @@ pub struct AppState {
     pub agent_desired_state: AgentDesiredStateReconciler,
     /// Pending mobile pairing codes for QR login, keyed by code.
     pub pending_pairs: DashMap<String, PendingPair>,
+    /// Bounded, ephemeral cleanup-only QR authorization, keyed by token hash.
+    pub mobile_recovery_grants: crate::service::mobile_recovery_grant::RecoveryGrantStore,
     /// Terminal session audit contexts keyed by session_id.
     pub terminal_audit_contexts: DashMap<String, TerminalAuditContext>,
     /// Docker logs audit contexts keyed by session_id.
@@ -283,6 +287,7 @@ impl AppState {
             firewall,
             agent_desired_state,
             pending_pairs: DashMap::new(),
+            mobile_recovery_grants: Default::default(),
             terminal_audit_contexts: DashMap::new(),
             docker_logs_audit_contexts: DashMap::new(),
             exec_audit_contexts: DashMap::new(),

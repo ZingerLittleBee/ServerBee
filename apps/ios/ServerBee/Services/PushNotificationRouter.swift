@@ -11,6 +11,23 @@ final class PushNotificationRouter {
     /// The next deep link to consume. ContentView is responsible for clearing
     /// it once it has updated navigation state.
     var pendingDeepLink: ServerDeepLink?
+    private(set) var pendingEnvelope: PushEnvelope?
+
+    func enqueue(envelope: PushEnvelope) { pendingEnvelope = envelope }
+
+    func consumeTarget(context: MobileAuthenticationContext, key: PushContentKey?) -> ServerDeepLink? {
+        guard let envelope = pendingEnvelope, let key else { return nil }
+        pendingEnvelope = nil
+        guard key.scope == context.pushScope, key.deploymentId == context.serverUrl,
+              key.userId == context.userId, key.installationId == context.installationId,
+              let content = try? PushEnvelopeDecoder.decrypt(envelope, key: key, purpose: .notificationTap) else { return nil }
+        if let alert = content.alert { return .alertDetail(alertKey: alert.alertKey) }
+        if let run = content.taskRun { return .taskRun(taskId: run.taskId, runId: run.runId) }
+        if content.kind == "security", let serverId = content.serverId, let eventId = content.securityEventId {
+            return .securityDetail(serverId: serverId, eventId: eventId)
+        }
+        return .account
+    }
 
     func enqueue(_ link: ServerDeepLink) {
         self.pendingDeepLink = link

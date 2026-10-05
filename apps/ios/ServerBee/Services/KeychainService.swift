@@ -4,7 +4,9 @@ import Security
 /// A generic Keychain wrapper using Security.framework.
 ///
 /// All items are stored as `kSecClassGenericPassword` entries under the
-/// `com.serverbee.mobile` service namespace.
+/// `com.serverbee.mobile` service namespace. This stable storage label is not
+/// the app Bundle ID. Keep it so existing `app.serverbee` installations can read
+/// their credentials after an update; access is controlled by the signed group.
 ///
 /// **Accessibility policy:** items use `kSecAttrAccessibleAfterFirstUnlock`,
 /// which means the token survives device reboots but cannot be read while the
@@ -19,11 +21,23 @@ enum KeychainService {
 
     static let accessTokenKey = "serverbee_access_token"
     static let refreshTokenKey = "serverbee_refresh_token"
+    static let revocationTokenKey = "serverbee_revocation_token"
     static let userKey = "serverbee_user"
     static let serverUrlKey = "serverbee_server_url"
     static let installationIdKey = "serverbee_installation_id"
 
     private static let serviceName = "com.serverbee.mobile"
+
+    /// Always scope reads, updates and deletion as well as creation. Unscoped
+    /// Keychain queries would also search the extension-shared access group.
+    private static func query(for key: String) -> [String: Any]? {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "PrivateKeychainAccessGroup") as? String,
+              !group.isEmpty, !group.contains("$(") else { return nil }
+        return [kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: serviceName,
+                kSecAttrAccount as String: key,
+                kSecAttrAccessGroup as String: group]
+    }
 
     // MARK: - Codable Configuration
 
@@ -50,11 +64,7 @@ enum KeychainService {
     /// Save raw data to the Keychain for the given key.
     /// Updates the existing item if one already exists.
     static func save(_ data: Data, for key: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key
-        ]
+        guard let query = query(for: key) else { throw KeychainError.saveFailed(errSecMissingEntitlement) }
 
         // Delete any existing item first (SecItemUpdate sometimes fails on mismatched attrs).
         SecItemDelete(query as CFDictionary)
@@ -72,13 +82,9 @@ enum KeychainService {
     /// Load raw data from the Keychain for the given key.
     /// Returns `nil` if the item does not exist.
     static func load(for key: String) -> Data? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
+        guard var query = query(for: key) else { return nil }
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
 
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -92,13 +98,43 @@ enum KeychainService {
 
     /// Delete an item from the Keychain for the given key.
     static func delete(for key: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: key
-        ]
+        guard let query = query(for: key) else { return }
 
         SecItemDelete(query as CFDictionary)
+    }
+
+    /// Auth transitions must never delete the previous value before replacement.
+    static func saveAtomically(_ data: Data, for key: String) throws {
+        guard let query = query(for: key) else { throw KeychainError.saveFailed(errSecMissingEntitlement) }
+        let attributes = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecSuccess { return }
+        guard status == errSecItemNotFound else { throw KeychainError.saveFailed(status) }
+        var add = query
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        let added = SecItemAdd(add as CFDictionary, nil)
+        if added == errSecDuplicateItem {
+            let retried = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+            guard retried == errSecSuccess else { throw KeychainError.saveFailed(retried) }
+        } else if added != errSecSuccess { throw KeychainError.saveFailed(added) }
+    }
+
+    static func readThrowing(for key: String) throws -> Data? {
+        guard var query = query(for: key) else { throw KeychainError.saveFailed(errSecMissingEntitlement) }
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data else { throw KeychainError.saveFailed(status) }
+        return data
+    }
+
+    static func deleteThrowing(for key: String) throws {
+        guard let query = query(for: key) else { throw KeychainError.saveFailed(errSecMissingEntitlement) }
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw KeychainError.saveFailed(status) }
     }
 
     // MARK: - String Convenience

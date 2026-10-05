@@ -63,6 +63,12 @@ pub(super) struct ConnectionRuntime {
     firewall_manager: Arc<FirewallManager>,
 }
 
+impl Drop for ConnectionRuntime {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
 impl ConnectionRuntime {
     /// Build the runtime and hand back the event receivers the select! loop
     /// drains. Docker starts absent; call [`Self::probe_docker`] before
@@ -118,7 +124,7 @@ impl ConnectionRuntime {
     }
 
     /// Tear down every in-flight resource this connection owns. Called on all
-    /// connection-exit paths (server close, WS error, stream end).
+    /// connection-exit paths, including errors and cancellation, by Drop.
     pub(super) fn shutdown(&mut self) {
         self.ping_manager.stop_all();
         self.terminal_manager.close_all();

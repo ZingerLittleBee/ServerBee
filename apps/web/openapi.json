@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.1"
+    "version": "1.0.0-beta.4"
   },
   "paths": {
     "/api/about": {
@@ -277,7 +277,7 @@
           {
             "name": "alert_key",
             "in": "path",
-            "description": "Alert key in the format `rule_id:server_id`",
+            "description": "Versioned complete alert key from the event list; legacy rule_id:server_id selects only the general dimension",
             "required": true,
             "schema": {
               "type": "string"
@@ -2322,7 +2322,7 @@
           {
             "name": "cursor",
             "in": "query",
-            "description": "RFC3339 timestamp from a previous `next_cursor` response.",
+            "description": "Opaque cursor from a previous `next_cursor` response.",
             "required": false,
             "schema": {
               "type": [
@@ -3581,6 +3581,51 @@
         }
       }
     },
+    "/api/mobile/auth/recover": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "mobile_recover",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileRecoveryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Original session deleted, confirmed absent, or explicit session selection required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MobileRecoveryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid credentials or identity mismatch"
+          },
+          "403": {
+            "description": "Password onboarding required"
+          },
+          "409": {
+            "description": "Original session identity is ambiguous or unknown state remains"
+          },
+          "422": {
+            "description": "Validation error or 2fa_required"
+          },
+          "429": {
+            "description": "Too many login attempts"
+          }
+        }
+      }
+    },
     "/api/mobile/auth/refresh": {
       "post": {
         "tags": [
@@ -3610,6 +3655,35 @@
           },
           "401": {
             "description": "Invalid or expired refresh token"
+          }
+        }
+      }
+    },
+    "/api/mobile/auth/revoke": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "mobile_revoke",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MobileRevokeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Original mobile session revoked (ok) or confirmed absent (already_absent)"
+          },
+          "401": {
+            "description": "Invalid installation revocation credential"
+          },
+          "422": {
+            "description": "Missing credential or invalid expected session UUID"
           }
         }
       }
@@ -3648,6 +3722,47 @@
         ]
       }
     },
+    "/api/mobile/push/encrypted-register": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "encrypted_register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushRegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSetupResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Installation forbidden or notifications disabled"
+          },
+          "409": {
+            "description": "Stale revision"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/mobile/push/register": {
       "post": {
         "tags": [
@@ -3673,6 +3788,150 @@
           },
           "422": {
             "description": "Validation error"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/mobile/push/settings": {
+      "get": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "settings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSetupResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "save_preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushPreferencesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSetupResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Category or installation forbidden"
+          },
+          "409": {
+            "description": "Stale revision"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/mobile/push/test": {
+      "post": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "test_mobile_push",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestPushRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestPushResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Setup unavailable"
+          },
+          "409": {
+            "description": "Stale revision"
+          }
+        },
+        "security": [
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/mobile/push/test/{event_id}": {
+      "get": {
+        "tags": [
+          "mobile-auth"
+        ],
+        "operationId": "test_status",
+        "parameters": [
+          {
+            "name": "event_id",
+            "in": "path",
+            "description": "Logical test UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TestPushResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Test unavailable for this login"
           }
         },
         "security": [
@@ -7378,6 +7637,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "run_id",
+            "in": "query",
+            "description": "Restrict results to one exact scheduled run.",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
@@ -7609,7 +7880,7 @@
           {
             "name": "from",
             "in": "query",
-            "description": "Inclusive start date as `YYYY-MM-DD` (default: 30 days before `to`).",
+            "description": "Inclusive start date as `YYYY-MM-DD` (default: start of a 30-day\ninclusive window ending at `to`, i.e. `to` minus 29 days).",
             "required": false,
             "schema": {
               "type": [
@@ -8157,6 +8428,7 @@
       "AlertEventResponse": {
         "type": "object",
         "required": [
+          "alert_key",
           "rule_id",
           "rule_name",
           "server_id",
@@ -8166,6 +8438,9 @@
           "count"
         ],
         "properties": {
+          "alert_key": {
+            "type": "string"
+          },
           "count": {
             "type": "integer",
             "format": "int32"
@@ -10739,6 +11014,144 @@
           }
         }
       },
+      "MobileRecoveryCandidate": {
+        "type": "object",
+        "required": [
+          "mobile_session_id",
+          "device_name",
+          "created_at",
+          "last_used_at"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "device_name": {
+            "type": "string"
+          },
+          "last_used_at": {
+            "type": "string"
+          },
+          "mobile_session_id": {
+            "type": "string"
+          }
+        }
+      },
+      "MobileRecoveryOutcome": {
+        "type": "string",
+        "enum": [
+          "ok",
+          "already_absent",
+          "selection_required"
+        ]
+      },
+      "MobileRecoveryRequest": {
+        "type": "object",
+        "description": "Reauthentication and captured identity for deletion-only login recovery.",
+        "required": [
+          "expected_user_id",
+          "installation_id",
+          "access_token",
+          "refresh_token"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "expected_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expected_user_id": {
+            "type": "string"
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "pairing_code": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "One-use QR pairing code, mutually exclusive with password or grant."
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "recovery_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Five-minute cleanup-only grant, never an ordinary login token."
+          },
+          "refresh_token": {
+            "type": "string"
+          },
+          "revocation_token": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "totp_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MobileRecoveryResponse": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "user_id",
+          "installation_id",
+          "candidates"
+        ],
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileRecoveryCandidate"
+            }
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "mobile_session_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MobileRecoveryOutcome"
+          },
+          "recovery_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Five-minute cleanup-only grant for QR recovery. Never a login token."
+          },
+          "user_id": {
+            "type": "string"
+          }
+        }
+      },
       "MobileRefreshRequest": {
         "type": "object",
         "required": [
@@ -10751,6 +11164,36 @@
           },
           "refresh_token": {
             "type": "string"
+          },
+          "revocation_proof": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Persisted by the client before dispatch; accepted only with rotation."
+          }
+        }
+      },
+      "MobileRevokeRequest": {
+        "type": "object",
+        "description": "A deletion-only proof for one installation's original mobile session.",
+        "required": [
+          "installation_id",
+          "revocation_token"
+        ],
+        "properties": {
+          "expected_session_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required by durable callers to fence recovery to the original login."
+          },
+          "installation_id": {
+            "type": "string"
+          },
+          "revocation_token": {
+            "type": "string"
           }
         }
       },
@@ -10758,6 +11201,7 @@
         "type": "object",
         "description": "Token pair returned after successful login or refresh.",
         "required": [
+          "mobile_session_id",
           "access_token",
           "access_expires_in_secs",
           "refresh_token",
@@ -10773,12 +11217,23 @@
           "access_token": {
             "type": "string"
           },
+          "mobile_session_id": {
+            "type": "string",
+            "description": "Stable identity shared by every token rotation of this login."
+          },
           "refresh_expires_in_secs": {
             "type": "integer",
             "format": "int64"
           },
           "refresh_token": {
             "type": "string"
+          },
+          "revocation_token": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Deletion-only credential issued at login, or accepted from a refresh proposal."
           },
           "token_type": {
             "type": "string"
@@ -11912,6 +12367,51 @@
           }
         }
       },
+      "PushPreferences": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "alerts",
+          "security",
+          "task_failure",
+          "task_success"
+        ],
+        "properties": {
+          "alerts": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "security": {
+            "type": "boolean"
+          },
+          "task_failure": {
+            "type": "boolean"
+          },
+          "task_success": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PushPreferencesRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "preferences"
+        ],
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PushPreferences"
+          }
+        },
+        "additionalProperties": false
+      },
       "PushRegisterRequest": {
         "type": "object",
         "required": [
@@ -11921,6 +12421,83 @@
           "device_token": {
             "type": "string",
             "description": "The APNs device token obtained from the iOS device."
+          }
+        }
+      },
+      "PushRegistrationRequest": {
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "device_token",
+          "environment",
+          "content_key_id",
+          "content_key",
+          "deployment_id"
+        ],
+        "properties": {
+          "content_key": {
+            "type": "string"
+          },
+          "content_key_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "device_token": {
+            "type": "string"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "PushSetupResponse": {
+        "type": "object",
+        "required": [
+          "revision",
+          "preferences",
+          "security_allowed",
+          "tasks_allowed",
+          "task_failure_available",
+          "registered",
+          "delivery_available",
+          "test_available"
+        ],
+        "properties": {
+          "delivery_available": {
+            "type": "boolean",
+            "description": "Whether at least one event category is available for the current role."
+          },
+          "preferences": {
+            "$ref": "#/components/schemas/PushPreferences"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "security_allowed": {
+            "type": "boolean",
+            "description": "Whether the current account role permits security subscriptions."
+          },
+          "task_failure_available": {
+            "type": "boolean"
+          },
+          "tasks_allowed": {
+            "type": "boolean",
+            "description": "Task routes require the current administrator role."
+          },
+          "test_available": {
+            "type": "boolean",
+            "description": "A test is scoped to the authenticated installation."
           }
         }
       },
@@ -13764,6 +14341,58 @@
           "granted_at": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "TestPushOutcome": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "accepted",
+          "retryable",
+          "permanent",
+          "expired"
+        ]
+      },
+      "TestPushRequest": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "expected_revision"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Client-generated UUID retained when retrying the same logical test."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "TestPushResponse": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "outcome",
+          "reason",
+          "presentation"
+        ],
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/TestPushOutcome"
+          },
+          "presentation": {
+            "type": "string",
+            "description": "APNs acceptance cannot establish native presentation."
+          },
+          "reason": {
+            "type": "string"
           }
         }
       },

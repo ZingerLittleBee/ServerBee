@@ -259,10 +259,10 @@ async fn main() -> anyhow::Result<()> {
     // Process-wide capability authority: owns the effective bitmask (base +
     // temporary grants) and drives every transition. Consumers gate on it;
     // its transition loop runs for the agent's lifetime.
-    let capabilities = crate::capability_grants::CapabilityAuthority::new(
+    let capabilities = crate::capability_grants::CapabilityAuthority::try_new(
         agent_local_capabilities,
         config.capabilities.grants_path(),
-    );
+    )?;
     tokio::spawn(std::sync::Arc::clone(&capabilities).run(std::time::Duration::from_secs(3)));
 
     // Security pipeline, supervised against the authority so a temporary

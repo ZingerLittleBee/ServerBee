@@ -20,6 +20,12 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>PrivateKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)app.serverbee</string>
+	<key>PushKeychainAccessGroup</key>
+	<string>$(AppIdentifierPrefix)app.serverbee.push</string>
+	<key>ServerBeeAPNSEnvironment</key>
+	<string>$(PUSH_APNS_ENVIRONMENT)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<!--

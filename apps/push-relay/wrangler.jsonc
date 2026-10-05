@@ -1,0 +1,16 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "serverbee-push-relay",
+  "main": "src/relay.ts",
+  "tsconfig": "tsconfig.json",
+  "compatibility_date": "2026-07-30",
+  "compatibility_flags": ["enable_request_signal"],
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  "vars": {
+    "APNS_TOPIC": "app.serverbee",
+    "APNS_ENVIRONMENTS": "sandbox,production"
+  }
+  // Set APNS_TEAM_ID, APNS_KEY_ID and APNS_PRIVATE_KEY with `wrangler secret put`.
+  // No nodejs_compat, storage bindings, service bindings or custom APNs endpoint.
+}

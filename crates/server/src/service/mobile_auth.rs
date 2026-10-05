@@ -5,12 +5,16 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use rand::RngCore;
+use sea_orm::sea_query::Expr;
 use sea_orm::*;
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::config::MobileConfig;
-use crate::entity::{device_token, mobile_session, session, user};
+use crate::entity::{
+    device_token, mobile_push_registration, mobile_session,
+    mobile_session_revocation_proof, session, user,
+};
 use crate::error::AppError;
 use crate::service::auth::AuthService;
 
@@ -28,11 +32,16 @@ pub struct MobileLoginParams<'a> {
 /// Token pair returned after successful login or refresh.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct MobileTokenResponse {
+    /// Stable identity shared by every token rotation of this login.
+    pub mobile_session_id: String,
     pub access_token: String,
     pub access_expires_in_secs: i64,
     pub refresh_token: String,
     pub refresh_expires_in_secs: i64,
     pub token_type: String,
+    /// Deletion-only credential issued at login, or accepted from a refresh proposal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub revocation_token: Option<String>,
     pub user: MobileUserResponse,
 }
 
@@ -85,6 +94,24 @@ impl MobileAuthService {
             .is_ok())
     }
 
+    /// Client proposals use a disjoint namespace from access/refresh secrets.
+    fn validate_revocation_proof(proof: &str) -> Result<(), AppError> {
+        let valid = proof
+            .strip_prefix("sb-revoke-v1.")
+            .filter(|encoded| encoded.len() == 43)
+            .and_then(|encoded| {
+                URL_SAFE_NO_PAD
+                    .decode(encoded)
+                    .ok()
+                    .filter(|bytes| bytes.len() == 32 && URL_SAFE_NO_PAD.encode(bytes) == encoded)
+            })
+            .is_some();
+        if !valid {
+            return Err(AppError::Validation("Invalid revocation_proof".to_string()));
+        }
+        Ok(())
+    }
+
     // ── Login ────────────────────────────────────────────────────────────
 
     /// Authenticate via username/password (+ optional TOTP), create a mobile session,
@@ -135,6 +162,7 @@ impl MobileAuthService {
         let refresh_token = Self::generate_refresh_token();
         let refresh_token_hash = Self::hash_refresh_token(&refresh_token)?;
 
+        let revocation_token = Self::generate_refresh_token();
         let mobile_session_id = Uuid::new_v4().to_string();
         let refresh_expires_at = now + chrono::Duration::seconds(config.refresh_ttl);
         let access_expires_at = now + chrono::Duration::seconds(config.access_ttl);
@@ -144,6 +172,7 @@ impl MobileAuthService {
             id: Set(mobile_session_id.clone()),
             user_id: Set(user_model.id.clone()),
             refresh_token_hash: Set(refresh_token_hash),
+            revocation_token_hash: Set(Some(AuthService::hash_session_token(&revocation_token))),
             installation_id: Set(installation_id.to_string()),
             device_name: Set(device_name.to_string()),
             created_at: Set(now),
@@ -164,16 +193,18 @@ impl MobileAuthService {
             expires_at: Set(access_expires_at),
             created_at: Set(now),
             source: Set("mobile".to_string()),
-            mobile_session_id: Set(Some(mobile_session_id)),
+            mobile_session_id: Set(Some(mobile_session_id.clone())),
         };
         new_session.insert(db).await?;
 
         Ok(MobileTokenResponse {
+            mobile_session_id,
             access_token,
             access_expires_in_secs: config.access_ttl,
             refresh_token,
             refresh_expires_in_secs: config.refresh_ttl,
             token_type: "Bearer".to_string(),
+            revocation_token: Some(revocation_token),
             user: MobileUserResponse {
                 id: user_model.id.clone(),
                 username: user_model.username.clone(),
@@ -185,7 +216,8 @@ impl MobileAuthService {
     // ── Refresh ──────────────────────────────────────────────────────────
 
     /// Validate a refresh token, rotate to a new token pair.
-    /// The old mobile session and its sessions are deleted, and a fresh pair is created.
+    /// Preserve the installation session and its push registration while atomically
+    /// replacing both credentials. Revocation deletes this stable session identity.
     pub async fn refresh(
         db: &DatabaseConnection,
         config: &MobileConfig,
@@ -194,6 +226,26 @@ impl MobileAuthService {
         ip: &str,
         user_agent: &str,
     ) -> Result<MobileTokenResponse, AppError> {
+        Self::refresh_with_revocation_proof(
+            db, config, refresh_token, installation_id, ip, user_agent, None,
+        )
+        .await
+    }
+
+    /// Atomically accept a client-persisted deletion proof only when this exact
+    /// refresh secret successfully rotates its original session.
+    pub async fn refresh_with_revocation_proof(
+        db: &DatabaseConnection,
+        config: &MobileConfig,
+        refresh_token: &str,
+        installation_id: &str,
+        ip: &str,
+        user_agent: &str,
+        revocation_proof: Option<&str>,
+    ) -> Result<MobileTokenResponse, AppError> {
+        if let Some(proof) = revocation_proof {
+            Self::validate_revocation_proof(proof)?;
+        }
         // Find all non-expired mobile sessions with the given installation_id
         let candidates = mobile_session::Entity::find()
             .filter(mobile_session::Column::InstallationId.eq(installation_id))
@@ -211,52 +263,153 @@ impl MobileAuthService {
         }
 
         let old_session = matched_session.ok_or(AppError::Unauthorized)?;
-        let user_id = old_session.user_id.clone();
-        let device_name = old_session.device_name.clone();
-        let old_session_id = old_session.id.clone();
+        let access_token = AuthService::generate_session_token();
+        let new_refresh_token = Self::generate_refresh_token();
+        let new_refresh_hash = Self::hash_refresh_token(&new_refresh_token)?;
+        let now = Utc::now();
+        let txn = db.begin().await?;
 
-        // Fetch user
-        let user_model = user::Entity::find_by_id(&user_id)
-            .one(db)
+        // Consume the verified refresh secret with one conditional write. This
+        // is the first statement in the transaction so SQLite serializes it
+        // with refresh, logout and credential revocation before we read policy.
+        // A stale verifier cannot recreate a deleted or already-rotated row.
+        let rotated = mobile_session::Entity::update_many()
+            .col_expr(
+                mobile_session::Column::RefreshTokenHash,
+                Expr::value(new_refresh_hash),
+            )
+            .col_expr(
+                mobile_session::Column::ExpiresAt,
+                Expr::value(now + chrono::Duration::seconds(config.refresh_ttl)),
+            )
+            .col_expr(mobile_session::Column::LastUsedAt, Expr::value(now))
+            .filter(mobile_session::Column::Id.eq(&old_session.id))
+            .filter(mobile_session::Column::UserId.eq(&old_session.user_id))
+            .filter(mobile_session::Column::InstallationId.eq(installation_id))
+            .filter(mobile_session::Column::RefreshTokenHash.eq(&old_session.refresh_token_hash))
+            .filter(mobile_session::Column::ExpiresAt.gt(now))
+            .exec(&txn)
+            .await?;
+        if rotated.rows_affected != 1 {
+            return Err(AppError::Unauthorized);
+        }
+
+        let mut current_session = mobile_session::Entity::find_by_id(&old_session.id)
+            .one(&txn)
             .await?
             .ok_or(AppError::Unauthorized)?;
-
+        // Upgrade an existing login atomically on its first rotation. The
+        // client retains the pre-rotation refresh secret only for revocation;
+        // it still cannot refresh or authenticate after consumption.
+        if current_session.revocation_token_hash.is_none() {
+            let mut active: mobile_session::ActiveModel = current_session.into();
+            active.revocation_token_hash =
+                Set(Some(AuthService::hash_session_token(refresh_token)));
+            current_session = active.update(&txn).await?;
+        }
+        let user_model = user::Entity::find_by_id(&current_session.user_id)
+            .one(&txn)
+            .await?
+            .ok_or(AppError::Unauthorized)?;
         if user_model.must_change_password {
             return Err(AppError::Forbidden(
                 "MUST_CHANGE_PASSWORD: complete onboarding via the web UI before using mobile"
                     .to_string(),
             ));
         }
-
-        // Token versioning: reject a refresh whose mobile_session was issued
-        // before the user's last password change, even if the row still exists
-        // (e.g. it survived a revocation race). This is the authoritative
-        // kill-switch ensuring a password change / admin reset invalidates a
-        // stolen refresh token, independent of the best-effort row deletion in
-        // change_password / update_user.
         if let Some(changed_at) = user_model.password_changed_at
-            && old_session.created_at < changed_at
+            && current_session.created_at < changed_at
         {
             return Err(AppError::Unauthorized);
         }
 
-        // Delete the old mobile_session along with its linked sessions and
-        // device tokens. device_tokens.mobile_session_id has no ON DELETE
-        // cascade, so deleting the mobile_session without first removing a
-        // device_token created by push_register would fail the foreign key.
-        Self::delete_mobile_session_cascade(db, &old_session_id).await?;
+        if let Some(proof) = revocation_proof {
+            let hash = AuthService::hash_session_token(proof);
+            // This transaction already owns the SQLite writer lock. A proposal
+            // can never transfer a stable or consumed proof from
+            // another original session, including an expired session.
+            let stable_owner = mobile_session::Entity::find()
+                .filter(mobile_session::Column::RevocationTokenHash.eq(&hash))
+                .filter(mobile_session::Column::Id.ne(&current_session.id))
+                .one(&txn)
+                .await?;
+            let history_owner = mobile_session_revocation_proof::Entity::find()
+                .filter(mobile_session_revocation_proof::Column::TokenHash.eq(&hash))
+                .filter(
+                    mobile_session_revocation_proof::Column::MobileSessionId.ne(&current_session.id),
+                )
+                .one(&txn)
+                .await?;
+            if stable_owner.is_some() || history_owner.is_some() {
+                return Err(AppError::Unauthorized);
+            }
+            let already_bound = mobile_session_revocation_proof::Entity::find()
+                .filter(
+                    mobile_session_revocation_proof::Column::MobileSessionId.eq(&current_session.id),
+                )
+                .filter(mobile_session_revocation_proof::Column::TokenHash.eq(&hash))
+                .one(&txn)
+                .await?
+                .is_some();
+            if !already_bound {
+                mobile_session_revocation_proof::ActiveModel {
+                    id: Set(Uuid::new_v4().to_string()),
+                    mobile_session_id: Set(current_session.id.clone()),
+                    token_hash: Set(hash),
+                }
+                .insert(&txn)
+                .await?;
+            }
+        }
 
-        // Issue a fresh token pair
-        Self::login_for_user(
-            db,
-            config,
-            &user_model,
-            installation_id,
-            &device_name,
-            ip,
-            user_agent,
-        )
-        .await
+        // An older client may discard the login proof or an earlier refresh
+        // secret before upgrading. Retain each consumed secret's hash as a
+        // deletion-only proof for this session, atomically with its rotation.
+        // Neither ordinary authentication nor refresh consults this table.
+        // The FK removes these proofs when the original session is deleted.
+        mobile_session_revocation_proof::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            mobile_session_id: Set(current_session.id.clone()),
+            token_hash: Set(AuthService::hash_session_token(refresh_token)),
+        }
+        .insert(&txn)
+        .await?;
+
+        // Keep the mobile session identity (and hence the registration FK),
+        // but remove every old access credential before inserting its successor.
+        session::Entity::delete_many()
+            .filter(session::Column::MobileSessionId.eq(&current_session.id))
+            .exec(&txn)
+            .await?;
+        session::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            user_id: Set(user_model.id.clone()),
+            token: Set(AuthService::hash_session_token(&access_token)),
+            ip: Set(ip.to_string()),
+            user_agent: Set(user_agent.to_string()),
+            expires_at: Set(now + chrono::Duration::seconds(config.access_ttl)),
+            created_at: Set(now),
+            source: Set("mobile".to_string()),
+            mobile_session_id: Set(Some(current_session.id.clone())),
+        }
+        .insert(&txn)
+        .await?;
+        txn.commit().await?;
+
+        Ok(MobileTokenResponse {
+            mobile_session_id: current_session.id,
+            access_token,
+            access_expires_in_secs: config.access_ttl,
+            refresh_token: new_refresh_token,
+            refresh_expires_in_secs: config.refresh_ttl,
+            token_type: "Bearer".to_string(),
+            revocation_token: revocation_proof.map(str::to_owned),
+            user: MobileUserResponse {
+                id: user_model.id,
+                username: user_model.username,
+                role: user_model.role,
+            },
+        })
     }
 
     // ── Logout ───────────────────────────────────────────────────────────
@@ -265,6 +418,177 @@ impl MobileAuthService {
     /// This is called when the mobile client explicitly logs out.
     pub async fn logout(db: &DatabaseConnection, mobile_session_id: &str) -> Result<(), AppError> {
         Self::delete_mobile_session_cascade(db, mobile_session_id).await
+    }
+
+    /// Revoke exactly the original installation session, even when a committed
+    /// rotation's response was lost. This secret grants deletion only; HTTP
+    /// authentication and refresh never consult this hash.
+    pub async fn revoke_with_credential(
+        db: &DatabaseConnection,
+        installation_id: &str,
+        revocation_token: &str,
+    ) -> Result<(), AppError> {
+        Self::revoke_with_credential_for_session(db, installation_id, revocation_token, None)
+            .await
+            .map(|_| ())
+    }
+
+    /// Durable callers fence deletion and acknowledgement to the persisted
+    /// original session ID. A mismatch must never fall back to another login.
+    /// Returns `already_absent` only for a validated identity with no remaining
+    /// authority/registration; that outcome never authenticates the caller.
+    pub async fn revoke_with_credential_for_session(
+        db: &DatabaseConnection,
+        installation_id: &str,
+        revocation_token: &str,
+        expected_session_id: Option<&str>,
+    ) -> Result<&'static str, AppError> {
+        let expected_session_id = expected_session_id
+            .map(|id| {
+                Uuid::parse_str(id)
+                    .map(|id| id.to_string())
+                    .map_err(|_| AppError::Validation("Invalid expected_session_id".to_string()))
+            })
+            .transpose()?;
+        let hash = AuthService::hash_session_token(revocation_token);
+        let credential_matches = || {
+            Condition::any()
+                .add(mobile_session::Column::RevocationTokenHash.eq(&hash))
+                .add(
+                    mobile_session::Column::Id.in_subquery(
+                        mobile_session_revocation_proof::Entity::find()
+                            .select_only()
+                            .column(mobile_session_revocation_proof::Column::MobileSessionId)
+                            .filter(mobile_session_revocation_proof::Column::TokenHash.eq(&hash))
+                            .into_query(),
+                    ),
+                )
+        };
+        let mut verified_current = None;
+        let mut checked_legacy = false;
+        loop {
+            let txn = db.begin().await?;
+            // A no-row write acquires SQLite's writer lock without touching a
+            // replacement login. Every target/absence decision is made below
+            // under this same lock, including after legacy Argon2 verification.
+            txn.execute_unprepared("UPDATE mobile_sessions SET id = id WHERE 0")
+                .await?;
+            if let Some(expected) = expected_session_id.as_deref() {
+                // Look up the identity alone. Wrong installation/proof cannot
+                // disguise an existing target as absent or choose another row.
+                let original = mobile_session::Entity::find_by_id(expected)
+                    .one(&txn)
+                    .await?;
+                if let Some(original) = original {
+                    if original.installation_id != installation_id {
+                        return Err(AppError::Unauthorized);
+                    }
+                } else {
+                    // Absence is an acknowledgement of no remaining authority,
+                    // not proof of authentication. Never clean up orphan state
+                    // without an existing, authenticated original session.
+                    if Self::has_operational_mobile_state(&txn, expected).await? {
+                        return Err(AppError::Unauthorized);
+                    }
+                    txn.commit().await?;
+                    return Ok("already_absent");
+                }
+            }
+            let mut target_query = mobile_session::Entity::find()
+                .filter(mobile_session::Column::InstallationId.eq(installation_id))
+                .filter(credential_matches());
+            if let Some(expected) = expected_session_id.as_deref() {
+                target_query = target_query.filter(mobile_session::Column::Id.eq(expected));
+            }
+            let mut target = target_query.one(&txn).await?;
+            if target.is_none() && !revocation_token.starts_with("sb-revoke-v1.") {
+                if !checked_legacy {
+                    // Release the lock for legacy Argon2 work. Re-enter through
+                    // the scoped absence and exact-row/hash checks before authorization;
+                    // concurrent refresh/revoke cannot change the target identity.
+                    txn.commit().await?;
+                    let mut candidates_query = mobile_session::Entity::find()
+                        .filter(mobile_session::Column::InstallationId.eq(installation_id));
+                    if let Some(expected) = expected_session_id.as_deref() {
+                        candidates_query =
+                            candidates_query.filter(mobile_session::Column::Id.eq(expected));
+                    }
+                    let candidates = candidates_query.all(db).await?;
+                    for candidate in candidates {
+                        if Self::verify_refresh_token(
+                            revocation_token,
+                            &candidate.refresh_token_hash,
+                        )? {
+                            verified_current = Some(candidate);
+                            break;
+                        }
+                    }
+                    checked_legacy = true;
+                    continue;
+                }
+                if let Some(verified) = verified_current.take() {
+                    target = mobile_session::Entity::find_by_id(&verified.id)
+                        .filter(mobile_session::Column::InstallationId.eq(installation_id))
+                        .filter(
+                            mobile_session::Column::RefreshTokenHash.eq(verified.refresh_token_hash),
+                        )
+                        .one(&txn)
+                        .await?;
+                }
+            }
+            let target = target.ok_or(AppError::Unauthorized)?;
+            if expected_session_id
+                .as_deref()
+                .is_some_and(|expected| expected != target.id)
+            {
+                return Err(AppError::Unauthorized);
+            }
+            device_token::Entity::delete_many()
+                .filter(device_token::Column::MobileSessionId.eq(&target.id))
+                .exec(&txn)
+                .await?;
+            session::Entity::delete_many()
+                .filter(session::Column::MobileSessionId.eq(&target.id))
+                .exec(&txn)
+                .await?;
+            let revoked = mobile_session::Entity::delete_by_id(&target.id)
+                .exec(&txn)
+                .await?;
+            if revoked.rows_affected != 1 {
+                return Err(AppError::Unauthorized);
+            }
+            txn.commit().await?;
+            return Ok("ok");
+        }
+    }
+
+    /// Authentication/registration artifacts are fail-closed if damaged storage
+    /// bypassed their FKs. Outbox/history is not authority: delivery eligibility
+    /// independently requires the original live session and registration.
+    pub(crate) async fn has_operational_mobile_state(
+        txn: &DatabaseTransaction,
+        mobile_session_id: &str,
+    ) -> Result<bool, AppError> {
+        Ok(session::Entity::find()
+            .filter(session::Column::MobileSessionId.eq(mobile_session_id))
+            .one(txn)
+            .await?
+            .is_some()
+            || device_token::Entity::find()
+                .filter(device_token::Column::MobileSessionId.eq(mobile_session_id))
+                .one(txn)
+                .await?
+                .is_some()
+            || mobile_push_registration::Entity::find()
+                .filter(mobile_push_registration::Column::MobileSessionId.eq(mobile_session_id))
+                .one(txn)
+                .await?
+                .is_some()
+            || mobile_session_revocation_proof::Entity::find()
+                .filter(mobile_session_revocation_proof::Column::MobileSessionId.eq(mobile_session_id))
+                .one(txn)
+                .await?
+                .is_some())
     }
 
     // ── Device listing / revocation ──────────────────────────────────────
@@ -319,7 +643,7 @@ impl MobileAuthService {
     // ── Helpers ──────────────────────────────────────────────────────────
 
     /// Validate user credentials (username + password + optional TOTP).
-    async fn validate_credentials(
+    pub(crate) async fn validate_credentials(
         db: &DatabaseConnection,
         username: &str,
         password: &str,
@@ -358,22 +682,25 @@ impl MobileAuthService {
         db: &DatabaseConnection,
         mobile_session_id: &str,
     ) -> Result<(), AppError> {
+        let txn = db.begin().await?;
         // Delete associated sessions
         session::Entity::delete_many()
             .filter(session::Column::MobileSessionId.eq(mobile_session_id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         // Delete associated device tokens
         device_token::Entity::delete_many()
             .filter(device_token::Column::MobileSessionId.eq(mobile_session_id))
-            .exec(db)
+            .exec(&txn)
             .await?;
 
         // Delete the mobile session itself
         mobile_session::Entity::delete_by_id(mobile_session_id)
-            .exec(db)
+            .exec(&txn)
             .await?;
+
+        txn.commit().await?;
 
         Ok(())
     }
@@ -612,15 +939,15 @@ mod tests {
         .expect("refresh should succeed even after push_register");
         assert_ne!(refreshed.access_token, first.access_token);
 
-        // The old mobile_session and its device_token were cascade-deleted.
+        // Refresh preserves the registration on the same installation session.
         let old_dt = device_token::Entity::find()
             .filter(device_token::Column::MobileSessionId.eq(&ms.id))
             .one(&db)
             .await
             .unwrap();
         assert!(
-            old_dt.is_none(),
-            "device_token for the rotated mobile_session must be removed"
+            old_dt.is_some(),
+            "device_token for the rotated credentials must be preserved"
         );
     }
 

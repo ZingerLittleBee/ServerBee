@@ -1143,6 +1143,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mobile/auth/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mobile_recover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/auth/refresh": {
         parameters: {
             query?: never;
@@ -1153,6 +1169,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["mobile_refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mobile/auth/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["mobile_revoke"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1175,6 +1207,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mobile/push/encrypted-register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["encrypted_register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mobile/push/register": {
         parameters: {
             query?: never;
@@ -1185,6 +1233,54 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["push_register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mobile/push/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["settings"];
+        put: operations["save_preferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mobile/push/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_mobile_push"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/mobile/push/test/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["test_status"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2278,6 +2374,7 @@ export interface components {
             trigger_count: number;
         };
         AlertEventResponse: {
+            alert_key: string;
             /** Format: int32 */
             count: number;
             /** @description first_triggered_at for firing, resolved_at for resolved */
@@ -2965,18 +3062,64 @@ export interface components {
             device_name: string;
             installation_id: string;
         };
+        MobileRecoveryCandidate: {
+            created_at: string;
+            device_name: string;
+            last_used_at: string;
+            mobile_session_id: string;
+        };
+        /** @enum {string} */
+        MobileRecoveryOutcome: "ok" | "already_absent" | "selection_required";
+        /** @description Reauthentication and captured identity for deletion-only login recovery. */
+        MobileRecoveryRequest: {
+            access_token: string;
+            expected_session_id?: string | null;
+            expected_user_id: string;
+            installation_id: string;
+            /** @description One-use QR pairing code, mutually exclusive with password or grant. */
+            pairing_code?: string | null;
+            password?: string | null;
+            /** @description Five-minute cleanup-only grant, never an ordinary login token. */
+            recovery_token?: string | null;
+            refresh_token: string;
+            revocation_token?: string | null;
+            totp_code?: string | null;
+            username?: string | null;
+        };
+        MobileRecoveryResponse: {
+            candidates: components["schemas"]["MobileRecoveryCandidate"][];
+            installation_id: string;
+            mobile_session_id?: string | null;
+            outcome: components["schemas"]["MobileRecoveryOutcome"];
+            /** @description Five-minute cleanup-only grant for QR recovery. Never a login token. */
+            recovery_token?: string | null;
+            user_id: string;
+        };
         MobileRefreshRequest: {
             installation_id: string;
             refresh_token: string;
+            /** @description Persisted by the client before dispatch; accepted only with rotation. */
+            revocation_proof?: string | null;
+        };
+        /** @description A deletion-only proof for one installation's original mobile session. */
+        MobileRevokeRequest: {
+            /** @description Required by durable callers to fence recovery to the original login. */
+            expected_session_id?: string | null;
+            installation_id: string;
+            revocation_token: string;
         };
         /** @description Token pair returned after successful login or refresh. */
         MobileTokenResponse: {
             /** Format: int64 */
             access_expires_in_secs: number;
             access_token: string;
+            /** @description Stable identity shared by every token rotation of this login. */
+            mobile_session_id: string;
             /** Format: int64 */
             refresh_expires_in_secs: number;
             refresh_token: string;
+            /** @description Deletion-only credential issued at login, or accepted from a refresh proposal. */
+            revocation_token?: string | null;
             token_type: string;
             user: components["schemas"]["MobileUserResponse"];
         };
@@ -3296,9 +3439,45 @@ export interface components {
             service_id: string;
             status: string;
         };
+        PushPreferences: {
+            alerts: boolean;
+            enabled: boolean;
+            security: boolean;
+            task_failure: boolean;
+            task_success: boolean;
+        };
+        PushPreferencesRequest: {
+            /** Format: int64 */
+            expected_revision: number;
+            preferences: components["schemas"]["PushPreferences"];
+        };
         PushRegisterRequest: {
             /** @description The APNs device token obtained from the iOS device. */
             device_token: string;
+        };
+        PushRegistrationRequest: {
+            content_key: string;
+            content_key_id: string;
+            deployment_id: string;
+            device_token: string;
+            environment: string;
+            /** Format: int64 */
+            expected_revision: number;
+        };
+        PushSetupResponse: {
+            /** @description Whether at least one event category is available for the current role. */
+            delivery_available: boolean;
+            preferences: components["schemas"]["PushPreferences"];
+            registered: boolean;
+            /** Format: int64 */
+            revision: number;
+            /** @description Whether the current account role permits security subscriptions. */
+            security_allowed: boolean;
+            task_failure_available: boolean;
+            /** @description Task routes require the current administrator role. */
+            tasks_allowed: boolean;
+            /** @description A test is scoped to the authenticated installation. */
+            test_available: boolean;
         };
         RateLimitEntryDto: {
             /** @description True if `count >= max` and the window is still open. */
@@ -3862,6 +4041,21 @@ export interface components {
             expires_at: number;
             /** Format: int64 */
             granted_at: number;
+        };
+        /** @enum {string} */
+        TestPushOutcome: "pending" | "accepted" | "retryable" | "permanent" | "expired";
+        TestPushRequest: {
+            /** @description Client-generated UUID retained when retrying the same logical test. */
+            event_id: string;
+            /** Format: int64 */
+            expected_revision: number;
+        };
+        TestPushResponse: {
+            event_id: string;
+            outcome: components["schemas"]["TestPushOutcome"];
+            /** @description APNs acceptance cannot establish native presentation. */
+            presentation: string;
+            reason: string;
         };
         TotpDisableRequest: {
             password: string;
@@ -4460,7 +4654,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Alert key in the format `rule_id:server_id` */
+                /** @description Versioned complete alert key from the event list; legacy rule_id:server_id selects only the general dimension */
                 alert_key: string;
             };
             cookie?: never;
@@ -6005,7 +6199,7 @@ export interface operations {
     list_blocks: {
         parameters: {
             query?: {
-                /** @description RFC3339 timestamp from a previous `next_cursor` response. */
+                /** @description Opaque cursor from a previous `next_cursor` response. */
                 cursor?: string | null;
                 origin?: string | null;
                 target_q?: string | null;
@@ -6920,6 +7114,65 @@ export interface operations {
             };
         };
     };
+    mobile_recover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileRecoveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Original session deleted, confirmed absent, or explicit session selection required */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MobileRecoveryResponse"];
+                };
+            };
+            /** @description Invalid credentials or identity mismatch */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password onboarding required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Original session identity is ambiguous or unknown state remains */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation error or 2fa_required */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Too many login attempts */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     mobile_refresh: {
         parameters: {
             query?: never;
@@ -6951,6 +7204,42 @@ export interface operations {
             };
         };
     };
+    mobile_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MobileRevokeRequest"];
+            };
+        };
+        responses: {
+            /** @description Original mobile session revoked (ok) or confirmed absent (already_absent) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid installation revocation credential */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing credential or invalid expected session UUID */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     generate_pair_code: {
         parameters: {
             query?: never;
@@ -6971,6 +7260,43 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    encrypted_register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushRegistrationRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSetupResponse"];
+                };
+            };
+            /** @description Installation forbidden or notifications disabled */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stale revision */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -7007,6 +7333,128 @@ export interface operations {
             };
             /** @description Validation error */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSetupResponse"];
+                };
+            };
+        };
+    };
+    save_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushPreferencesRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSetupResponse"];
+                };
+            };
+            /** @description Category or installation forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stale revision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_mobile_push: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestPushRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestPushResponse"];
+                };
+            };
+            /** @description Setup unavailable */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Stale revision */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    test_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Logical test UUID */
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestPushResponse"];
+                };
+            };
+            /** @description Test unavailable for this login */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9518,7 +9966,10 @@ export interface operations {
     };
     get_task_results: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Restrict results to one exact scheduled run. */
+                run_id?: string | null;
+            };
             header?: never;
             path: {
                 /** @description Task ID */
@@ -9648,7 +10099,10 @@ export interface operations {
     get_traffic_server_daily: {
         parameters: {
             query?: {
-                /** @description Inclusive start date as `YYYY-MM-DD` (default: 30 days before `to`). */
+                /**
+                 * @description Inclusive start date as `YYYY-MM-DD` (default: start of a 30-day
+                 *     inclusive window ending at `to`, i.e. `to` minus 29 days).
+                 */
                 from?: string | null;
                 /** @description Inclusive end date as `YYYY-MM-DD` (default: today). */
                 to?: string | null;

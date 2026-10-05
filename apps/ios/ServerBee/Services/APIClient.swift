@@ -1,10 +1,8 @@
 import Foundation
 
 /// HTTP client for the ServerBee REST API.
-///
-/// Automatically attaches the Bearer access token to every request and
-/// handles 401 responses by attempting a single token refresh before
-/// retrying. On a second failure the user is logged out.
+/// Every request and retry belongs to one captured login. Permanent rejection
+/// revokes that original session before its local credentials are discarded.
 actor APIClient {
     private let authManager: AuthManager
 
@@ -14,174 +12,274 @@ actor APIClient {
 
     // MARK: - Public API
 
-    /// Perform a GET request and decode the response.
     func get<T: Decodable & Sendable>(_ path: String) async throws -> T {
         try await request(path, method: "GET")
     }
 
-    /// Perform a POST request with an optional JSON body and decode the response.
     func post<T: Decodable & Sendable>(_ path: String, body: (any Encodable & Sendable)? = nil) async throws -> T {
         try await request(path, method: "POST", body: body)
     }
 
-    /// Perform a POST request for endpoints that return null/empty data.
-    func postVoid(_ path: String, body: (any Encodable & Sendable)? = nil) async throws {
-        let (_, httpResponse) = try await performRequest(path, method: "POST", body: body)
-
-        if httpResponse.statusCode == 401 {
-            try await refreshOrThrow()
-            let (_, retryResponse) = try await performRequest(path, method: "POST", body: body)
-            if retryResponse.statusCode == 401 {
-                await authManager.clearAuth()
-                throw APIError.unauthorized
-            }
-            guard (200...299).contains(retryResponse.statusCode) else {
-                throw APIError.httpError(statusCode: retryResponse.statusCode, data: Data())
-            }
-            return
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode, data: Data())
-        }
-    }
-
-    /// Perform a PUT request with an optional JSON body and decode the response.
     func put<T: Decodable & Sendable>(_ path: String, body: (any Encodable & Sendable)? = nil) async throws -> T {
         try await request(path, method: "PUT", body: body)
     }
 
-    /// Perform a DELETE request and decode the response.
     func delete<T: Decodable & Sendable>(_ path: String) async throws -> T {
         try await request(path, method: "DELETE")
     }
 
-    /// Perform a DELETE request for endpoints that return `{ "data": null }`
-    /// (which `delete<T>` can't decode). Preserves the response body in the
-    /// thrown error so callers can surface the server's message.
+    /// Perform a POST for endpoints with null/empty data.
+    func postVoid(_ path: String, body: (any Encodable & Sendable)? = nil) async throws {
+        let context = try await currentContext()
+        _ = try await authenticatedResponse(path, method: "POST", body: body, context: context)
+    }
+
+    /// Preserve error data for DELETE endpoints with null/empty data.
     func deleteVoid(_ path: String) async throws {
-        var (data, httpResponse) = try await performRequest(path, method: "DELETE")
-        if httpResponse.statusCode == 401 {
-            try await refreshOrThrow()
-            (data, httpResponse) = try await performRequest(path, method: "DELETE")
-            if httpResponse.statusCode == 401 {
-                await authManager.clearAuth()
-                throw APIError.unauthorized
-            }
+        let context = try await currentContext()
+        _ = try await authenticatedResponse(path, method: "DELETE", context: context)
+    }
+
+    @MainActor
+    func captureContext() -> MobileAuthenticationContext? {
+        authManager.captureContext()
+    }
+
+    @MainActor
+    func isCurrent(_ context: MobileAuthenticationContext) -> Bool {
+        authManager.isCurrent(context)
+    }
+
+    func postVoid(
+        _ path: String,
+        body: (any Encodable & Sendable)? = nil,
+        context: MobileAuthenticationContext
+    ) async throws {
+        _ = try await authenticatedResponse(path, method: "POST", body: body, context: context)
+    }
+
+    func get<T: Decodable & Sendable>(_ path: String, context: MobileAuthenticationContext) async throws -> T {
+        try await response(path, method: "GET", context: context)
+    }
+
+    func send<T: Decodable & Sendable>(
+        _ path: String, method: String, body: any Encodable & Sendable, context: MobileAuthenticationContext
+    ) async throws -> T {
+        try await response(path, method: method, body: body, context: context)
+    }
+
+    private func response<T: Decodable & Sendable>(
+        _ path: String, method: String, body: (any Encodable & Sendable)? = nil, context: MobileAuthenticationContext
+    ) async throws -> T {
+        let (data, _) = try await authenticatedResponse(path, method: method, body: body, context: context)
+        return try JSONDecoder.snakeCase.decode(ApiResponse<T>.self, from: data).data
+    }
+
+    /// Cleanup may finish after a login change, but always targets the captured
+    /// deployment and credential. Only the original active login may refresh.
+    func postCleanup(_ path: String, context: MobileAuthenticationContext) async throws {
+        let token = await authManager.accessToken(ifCurrent: context) ?? context.accessToken
+        var (_, response) = try await sendRequest(path, context: context, token: token)
+        if response.statusCode == 401, await authManager.isCurrent(context) {
+            // Unregister is part of explicit logout. Its owner revokes the
+            // session next, so retain the proof even if this cleanup is denied.
+            let rotated = try await authManager.refreshAccessToken(context: context)
+            guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
+            (_, response) = try await sendRequest(path, context: context, token: rotated)
         }
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode, data: data)
+        guard (200...299).contains(response.statusCode) else {
+            throw APIError.httpError(statusCode: response.statusCode, data: Data())
         }
     }
 
-    // MARK: - Internal
+    /// Try only proofs captured from the original login. A saved stable proof
+    /// may be stale after iOS-first upgrades against a Server that replaced
+    /// sessions on refresh. Its captured refresh secret can delete that session
+    /// before consumption or through retained history after a lost response.
+    func revokeSession(context capturedContext: MobileAuthenticationContext,
+                       expectedSessionId: String? = nil, session: URLSession? = nil) async throws {
+        let cleanupTransport = session ?? Self.makeCleanupSession()
+        let context = await cleanupContext(capturedContext)
+        var credentials = [String]()
+        for candidate in [context.revocationToken, context.refreshToken] {
+            if let candidate, !credentials.contains(candidate) { credentials.append(candidate) }
+        }
+        for credential in credentials {
+            let (data, response) = try await sendRequest(
+                "/api/mobile/auth/revoke",
+                body: MobileRevokeRequest(installationId: context.installationId, revocationToken: credential,
+                                         expectedSessionId: expectedSessionId),
+                context: context, token: nil, session: cleanupTransport
+            )
+            if response.statusCode == 200 {
+                try Self.requireCleanupAcknowledgement(data)
+                return
+            }
+            // A missing endpoint belongs to an older Server; additional proofs
+            // cannot help. A rejected proof may be stale, so try the original
+            // captured secret next, without refreshing or adopting a new login.
+            if response.statusCode == 404 { break }
+            guard response.statusCode == 401 else {
+                throw APIError.httpError(statusCode: response.statusCode, data: Data())
+            }
+        }
+        // Logout cannot fence its bearer credential to an expected session ID.
+        // A known original identity must keep its exact-target recovery boundary.
+        guard expectedSessionId == nil else { throw AuthError.secureLogoutNeedsConnection }
+        let token = await authManager.accessToken(ifCurrent: context) ?? context.accessToken
+        let (data, response) = try await sendRequest("/api/mobile/auth/logout", context: context,
+                                                 token: token, session: cleanupTransport)
+        guard response.statusCode == 200 else {
+            throw APIError.httpError(statusCode: response.statusCode, data: Data())
+        }
+        try Self.requireCleanupAcknowledgement(data)
+    }
+
+    private static func requireCleanupAcknowledgement(_ data: Data) throws {
+        let acknowledgement = try JSONDecoder.snakeCase.decode(ApiResponse<String>.self, from: data).data
+        guard acknowledgement == "ok" || acknowledgement == "already_absent" else {
+            throw APIError.httpError(statusCode: 200, data: data)
+        }
+    }
+
+    private static let cleanupSession = makeCleanupSession()
+
+    /// Inject only the HTTP transport in tests; production and fixtures share
+    /// the same cookie-, credential-, and cache-free replay configuration.
+    static func makeCleanupSession(protocolClasses: [AnyClass]? = nil) -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        if let protocolClasses { configuration.protocolClasses = protocolClasses }
+        return URLSession(configuration: configuration)
+    }
+
+    /// Replay has no AuthManager dependency and cannot refresh or adopt a login.
+    static func revokeSavedSession(_ record: PendingSessionRevocation, session: URLSession? = nil) async throws {
+        guard let url = URL(string: "\(record.serverUrl)/api/mobile/auth/revoke") else { throw APIError.noServerUrl }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 12
+        request.httpShouldHandleCookies = false
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder.snakeCase.encode(MobileRevokeRequest(
+            installationId: record.installationId, revocationToken: record.proof, expectedSessionId: record.mobileSessionId))
+        let (data, response) = try await ServerHTTPTransport.data(for: request, session: session ?? cleanupSession)
+        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? -1, data: data)
+        }
+        // A malformed 200 is not evidence that the intended endpoint committed.
+        try requireCleanupAcknowledgement(data)
+    }
+
+    func requireDeletionRecovery(context: MobileAuthenticationContext) async throws {
+        try await authManager.requireDeletionRecovery(context: context)
+    }
+
+    // MARK: - Captured requests
+
+    @MainActor
+    private func currentContext() throws -> MobileAuthenticationContext {
+        guard authManager.serverUrl != nil else { throw APIError.noServerUrl }
+        guard let context = authManager.captureContext() else { throw APIError.unauthorized }
+        return context
+    }
+
+    /// Refresh credentials only at request entry, atomically with the complete
+    /// captured identity check. Long-lived push contexts can predate baseline
+    /// session replacements; a replacement login is never a credential source.
+    @MainActor
+    private func currentContext(matching captured: MobileAuthenticationContext) throws -> MobileAuthenticationContext {
+        guard authManager.isCurrent(captured), let current = authManager.captureContext() else { throw AuthError.staleIdentity }
+        return current
+    }
+
+    @MainActor
+    private func cleanupContext(_ captured: MobileAuthenticationContext) -> MobileAuthenticationContext {
+        guard authManager.isCurrent(captured), let current = authManager.captureContext() else { return captured }
+        return current
+    }
 
     private func request<T: Decodable & Sendable>(
         _ path: String,
         method: String,
         body: (any Encodable & Sendable)? = nil
     ) async throws -> T {
-        let (data, httpResponse) = try await performRequest(path, method: method, body: body)
-
-        if httpResponse.statusCode == 401 {
-            return try await handleUnauthorized(path: path, method: method, body: body)
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode, data: data)
-        }
-
+        let context = try await currentContext()
+        let (data, _) = try await authenticatedResponse(path, method: method, body: body, context: context)
         do {
-            let wrapper = try JSONDecoder.snakeCase.decode(ApiResponse<T>.self, from: data)
-            return wrapper.data
+            return try JSONDecoder.snakeCase.decode(ApiResponse<T>.self, from: data).data
         } catch {
             throw APIError.decodingError(error)
         }
     }
 
-    /// Build and fire a single URLRequest. Returns the raw data + HTTP response.
-    private func performRequest(
+    /// All ordinary API entry points share identity checks and expiry cleanup.
+    private func authenticatedResponse(
         _ path: String,
         method: String,
-        body: (any Encodable & Sendable)? = nil
+        body: (any Encodable & Sendable)? = nil,
+        context capturedContext: MobileAuthenticationContext
     ) async throws -> (Data, HTTPURLResponse) {
-        // AuthManager is @MainActor-isolated; hop to read state.
-        let serverUrl = await authManager.serverUrl
-        let token = await authManager.getAccessToken()
-
-        guard let serverUrl else {
-            throw APIError.noServerUrl
+        if (path == "/api/mobile/push/settings" && method == "PUT") || path == "/api/mobile/push/encrypted-register" {
+            try await authManager.requireDeletionRecovery(context: capturedContext)
         }
-        guard let url = URL(string: "\(serverUrl)\(path)") else {
-            throw APIError.noServerUrl
+        let context = try await currentContext(matching: capturedContext)
+        var token = context.accessToken
+        var result = try await sendRequest(path, method: method, body: body, context: context, token: token)
+        guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
+        if result.1.statusCode == 401 {
+            do {
+                token = try await authManager.refreshAccessToken(context: context)
+            } catch AuthError.refreshUnauthorized {
+                await authManager.endSession(context: context, authenticationRejected: true)
+                throw APIError.unauthorized
+            } catch AuthError.staleIdentity {
+                throw AuthError.staleIdentity
+            } catch {
+                // A transport failure preserves the original credentials/proof.
+                throw APIError.network(error)
+            }
+            guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
+            result = try await sendRequest(path, method: method, body: body, context: context, token: token)
+            guard await authManager.isCurrent(context) else { throw AuthError.staleIdentity }
+            if result.1.statusCode == 401 {
+                await authManager.endSession(context: context, authenticationRejected: true)
+                throw APIError.unauthorized
+            }
         }
+        guard (200...299).contains(result.1.statusCode) else {
+            throw APIError.httpError(statusCode: result.1.statusCode, data: result.0)
+        }
+        return result
+    }
 
+    private func sendRequest(
+        _ path: String,
+        method: String = "POST",
+        body: (any Encodable & Sendable)? = nil,
+        context: MobileAuthenticationContext,
+        token: String?,
+        session: URLSession = .shared
+    ) async throws -> (Data, HTTPURLResponse) {
+        guard let url = URL(string: "\(context.serverUrl)\(path)") else { throw APIError.noServerUrl }
+        // Enforce this at the transport entry, so every registration caller and
+        // its post-refresh retry has the same secure content-key boundary.
+        if path == "/api/mobile/push/encrypted-register", url.scheme != "https" {
+            throw PushSetupError.insecureServer
+        }
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        // Attach bearer token if available
-        if let token {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        if let body {
-            request.httpBody = try JSONEncoder.snakeCase.encode(body)
-        }
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let body { request.httpBody = try JSONEncoder.snakeCase.encode(body) }
+        let (data, response) = try await ServerHTTPTransport.data(for: request, session: session)
+        guard let response = response as? HTTPURLResponse else {
             throw APIError.httpError(statusCode: -1, data: data)
         }
-
-        return (data, httpResponse)
-    }
-
-    // MARK: - 401 Handling
-
-    private func handleUnauthorized<T: Decodable & Sendable>(
-        path: String,
-        method: String,
-        body: (any Encodable & Sendable)?
-    ) async throws -> T {
-        try await refreshOrThrow()
-
-        let (data, httpResponse) = try await performRequest(path, method: method, body: body)
-
-        if httpResponse.statusCode == 401 {
-            // Refresh succeeded but server still rejects — credentials definitely revoked.
-            await authManager.clearAuth()
-            throw APIError.unauthorized
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode, data: data)
-        }
-
-        do {
-            let wrapper = try JSONDecoder.snakeCase.decode(ApiResponse<T>.self, from: data)
-            return wrapper.data
-        } catch {
-            throw APIError.decodingError(error)
-        }
-    }
-
-    /// Run a refresh; classify the failure mode.
-    ///
-    /// - On `.refreshUnauthorized`: clear local auth and surface `.unauthorized`.
-    /// - On `.refreshNetworkFailure`: leave local auth intact and surface
-    ///   `.network` so the caller can show a transient error instead of
-    ///   kicking the user back to the login screen.
-    private func refreshOrThrow() async throws {
-        do {
-            _ = try await authManager.refreshAccessToken()
-        } catch AuthError.refreshUnauthorized {
-            await authManager.clearAuth()
-            throw APIError.unauthorized
-        } catch {
-            // .refreshNetworkFailure, .noServerUrl, or anything else transient.
-            throw APIError.network(error)
-        }
+        return (data, response)
     }
 }
 

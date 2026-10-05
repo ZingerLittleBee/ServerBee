@@ -18,6 +18,7 @@ pub mod ip_quality_snapshot;
 pub mod ip_risk_cache;
 pub mod maintenance;
 pub mod mobile_session;
+pub mod mobile_session_revocation_proof;
 pub mod network_probe_config;
 pub mod network_probe_record;
 pub mod network_probe_record_hourly;
@@ -50,3 +51,13 @@ pub mod unlock_service;
 pub mod uptime_daily;
 pub mod user;
 pub mod widget_module;
+
+pub mod mobile_push_registration;
+
+pub mod mobile_push_outbox;
+
+pub mod task_run;
+
+pub mod alert_event_intent;
+
+pub mod capability_event_receipt;

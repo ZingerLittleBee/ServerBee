@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 IOS_DIR="$ROOT_DIR/apps/ios"
 DERIVED_DATA="$IOS_DIR/build/DerivedData-device"
-BUNDLE_ID="com.serverbee.mobile"
+BUNDLE_ID="app.serverbee"
 
 # Auto-load .env from project root (won't override existing env vars)
 if [ -f "$ROOT_DIR/.env" ]; then

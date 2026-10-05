@@ -137,6 +137,13 @@ private extension SettingsView {
             securitySection
             accessSection
             if isAdmin { adminSection }
+            Section {
+                NavigationLink {
+                    NotificationSetupView()
+                } label: {
+                    IconRowLabel(title: String(localized: "Notifications"), systemImage: "bell.badge", color: .orange)
+                }
+            }
             appSection
             logoutSection
         }
@@ -285,8 +292,7 @@ private extension SettingsView {
                     Task {
                         await viewModel.logout(
                             authManager: authManager,
-                            apiClient: apiClient,
-                            pushManager: pushManager,
+                            unregisterPush: pushManager.unregister(context:),
                             closeWebSocket: { await wsClient.close() }
                         )
                     }

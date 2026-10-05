@@ -44,6 +44,17 @@ mod m20260621_000072_add_geo_manual;
 mod m20260702_000073_retention_time_indexes;
 mod m20260702_000074_hash_existing_session_tokens;
 mod m20260713_000075_agent_authority_lifecycle;
+mod m20261003_000076_mobile_session_revocation;
+mod m20261003_000077_mobile_session_revocation_proofs;
+
+mod m20261003_000078_mobile_push_registration;
+mod m20261003_000079_mobile_push_content;
+mod m20261003_000080_mobile_push_outbox;
+mod m20261003_000081_mobile_alert_category;
+mod m20261003_000082_mobile_push_category;
+mod m20261003_000083_task_runs;
+mod m20261003_000084_alert_event_intents;
+mod m20261003_000085_security_event_admission;
 
 pub struct Migrator;
 
@@ -94,6 +105,16 @@ impl MigratorTrait for Migrator {
             Box::new(m20260702_000073_retention_time_indexes::Migration),
             Box::new(m20260702_000074_hash_existing_session_tokens::Migration),
             Box::new(m20260713_000075_agent_authority_lifecycle::Migration),
+            Box::new(m20261003_000076_mobile_session_revocation::Migration),
+            Box::new(m20261003_000077_mobile_session_revocation_proofs::Migration),
+            Box::new(m20261003_000078_mobile_push_registration::Migration),
+            Box::new(m20261003_000079_mobile_push_content::Migration),
+            Box::new(m20261003_000080_mobile_push_outbox::Migration),
+            Box::new(m20261003_000081_mobile_alert_category::Migration),
+            Box::new(m20261003_000082_mobile_push_category::Migration),
+            Box::new(m20261003_000083_task_runs::Migration),
+            Box::new(m20261003_000084_alert_event_intents::Migration),
+            Box::new(m20261003_000085_security_event_admission::Migration),
         ]
     }
 }
@@ -233,8 +254,11 @@ mod tests {
         let db = Database::connect("sqlite::memory:")
             .await
             .expect("connect in-memory sqlite");
-        let migrations_before_authority = Migrator::migrations().len() as u32 - 1;
-        Migrator::up(&db, Some(migrations_before_authority))
+        let migrations_before_authority = Migrator::migrations()
+            .iter()
+            .position(|migration| migration.name() == "m20260713_000075_agent_authority_lifecycle")
+            .expect("authority migration must remain in the migration list");
+        Migrator::up(&db, Some(migrations_before_authority as u32))
             .await
             .expect("run legacy migrations");
         seed_user_and_server(&db, "legacy-server").await;

@@ -101,6 +101,7 @@ These variables are for local repo tooling and development workflows. They are n
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
+| `SERVERBEE_PUSH_RELAY__URL` | `push_relay.url` | String | `""` | Verified Push Relay HTTPS URL; empty disables verified registration |
 | `SERVERBEE_MOBILE__ACCESS_TTL` | `mobile.access_ttl` | i64 | `900` | Mobile access token lifetime in seconds (15 min) |
 | `SERVERBEE_MOBILE__REFRESH_TTL` | `mobile.refresh_ttl` | i64 | `2592000` | Mobile refresh token lifetime in seconds (30 days) |
 
@@ -212,3 +213,39 @@ Tunes the agent-side security event detectors (SSH login / brute force, port sca
 | `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `security.port_scan.window_seconds` | u32 | `30` | Sliding window length (seconds) for port-scan detection |
 | `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `security.port_scan.distinct_port_threshold` | u32 | `20` | Distinct destination ports hit by a single source IP within the window that triggers a `port_scan` event |
 | `SERVERBEE_SECURITY__DATA_DIR` | `security.data_dir` | string | `/var/lib/serverbee/security` | Directory for the persistent `first_seen` store used to mark `ssh_login` events as new (user, IP) combinations |
+
+## Push Relay
+
+The public, stateless `apps/push-relay` Cloudflare Worker holds the publisher's
+APNs credentials. Server uses `SERVERBEE_PUSH_RELAY__URL` to select its final
+HTTPS endpoint. The iOS app registers its token and content key only with its
+authenticated HTTPS Server; it does not contact Relay or receive Apple keys.
+
+| Worker binding | Storage | Description |
+|----------------|---------|-------------|
+| `APNS_TEAM_ID` | Worker variable | Publisher Apple team identifier |
+| `APNS_KEY_ID` | Worker variable | Publisher APNs signing key identifier |
+| `APNS_PRIVATE_KEY` | Worker secret | PKCS#8 P-256 PEM contents, never a file path or repository value |
+| `APNS_TOPIC` | Worker variable | `app.serverbee`, the fixed official app bundle identifier, not `app.serverbee.notifications` |
+| `APNS_ENVIRONMENTS` | Optional Worker variable | Allowed `sandbox`, `production`, or `sandbox,production`; defaults to both |
+
+Configure these in the isolated Worker's Wrangler configuration and secrets,
+never in Server TOML or the iOS app. No Relay database, App Attest roots,
+version/distribution allowlist, grant service, reverse-proxy trust list or
+self-managed HTTP/2 pool is required. Cloudflare owns inbound HTTPS and outbound
+connections; WebCrypto signs APNs provider JWTs.
+
+Anyone can call `POST /v1/send`. Knowing a valid device token permits junk
+ciphertext or replay attempts and may trigger a generic notification. Attackers
+can consume requests/quota without knowing another person's token. Encryption
+protects content, not Relay admission. Bounded streaming reads, strict schemas,
+fixed APNs endpoints/topic/fallback, deadlines, concurrent-request caps and
+bounded per-source/per-target maps reduce resource exposure. Isolate-local
+limits reset and are not a global quota or complete denial-of-service defense.
+
+The Server retains its encrypted durable outbox, original 30-minute expiry,
+recipient/session/revision checks and categorized subscriptions. APNs acceptance
+is not proof of phone presentation. See [Relay setup](apps/push-relay/README.md)
+and the bilingual [operations runbook](apps/docs/content/docs/en/push-relay.mdx).
+Deployment, credential provisioning and signed-device acceptance remain separate
+operator actions; local tests do not establish live APNs delivery.

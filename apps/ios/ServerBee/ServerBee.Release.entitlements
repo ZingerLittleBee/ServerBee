@@ -4,5 +4,10 @@
 <dict>
     <key>aps-environment</key>
     <string>production</string>
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)app.serverbee</string>
+        <string>$(AppIdentifierPrefix)app.serverbee.push</string>
+    </array>
 </dict>
 </plist>

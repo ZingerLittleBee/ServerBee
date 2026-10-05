@@ -23,12 +23,14 @@ pub mod ip_quality;
 pub mod ip_risk;
 pub mod maintenance;
 pub mod mobile_auth;
+pub mod mobile_auth_recovery;
 pub mod monitor_check;
 pub mod network_probe;
 pub mod notification;
 pub mod oauth;
 pub mod ping;
 pub mod public_status;
+pub mod push_envelope;
 pub mod record;
 pub mod rollup;
 pub mod security;
@@ -46,3 +48,11 @@ pub mod upgrade_tracker;
 pub mod uptime;
 pub mod user;
 pub mod widget_module;
+
+pub mod mobile_alert_push;
+pub mod mobile_push_outbox;
+pub mod mobile_recovery_grant;
+
+pub(crate) mod task_notification;
+
+pub(crate) mod alert_event_intents;

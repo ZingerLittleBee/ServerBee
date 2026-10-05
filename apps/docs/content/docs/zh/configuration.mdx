@@ -375,6 +375,20 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `access_ttl` | i64 | `900` | 移动端 Access Token 有效期（秒），默认 15 分钟 |
 | `refresh_ttl` | i64 | `2592000` | 移动端 Refresh Token 有效期（秒），默认 30 天 |
 
+### `[push_relay]` —— 已验证移动通知设置
+
+| Key | 类型 | 默认值 | 说明 |
+|-----|------|--------|------|
+| `url` | string | `""` | 公开 Push Relay 的 HTTPS 地址。留空关闭通知注册。Apple 签名密钥只存放在 Worker 中。 |
+
+通过 `SERVERBEE_PUSH_RELAY__URL` 指定最终 HTTPS Worker 地址。这里的“已验证”指 Server 已认证的账户、安装与会话归属，不再使用 App Attest 或 Relay grant。应用仅通过 HTTPS 向已登录 Server 注册设备令牌、APNs 环境和每安装独立的内容密钥。Server 加密内容后向 Worker 的公开 `POST /v1/send` 发送令牌、环境、事件标识、期限与密文。隔离 Server 测试可使用 `http://127.0.0.1:<port>`；应用要求 HTTPS 并拒绝重定向。
+
+仅 Worker 使用 `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_TOPIC`、`APNS_ENVIRONMENTS` 和保存 PKCS#8 PEM 文本的 `APNS_PRIVATE_KEY` secret。这些配置不得进入 Server 或应用。`APNS_TOPIC=app.serverbee` 与官方主应用一致，不能使用扩展标识 `app.serverbee.notifications`。`APNS_ENVIRONMENTS=sandbox,production` 支持两种设备环境；topic 和 APNs 主机由 Worker 固定。不再需要数据库、challenge/grant 生命周期、版本或分发策略、Bun/OpenSSL 运行时。参见 [Cloudflare 设置](/zh/docs/push-relay#cloudflare-快速设置)。
+
+公开端点接受滥用风险：已知有效令牌可被用于垃圾密文或通用通知骚扰；不知道他人令牌也能通过任意请求或自己的令牌消耗配额。严格载荷大小、流式读取硬上限、超时、并发限制以及有界的 isolate 内来源与目标限流只能尽力减轻风险，不是全局准入或费用保证。内容密钥与业务明文不经过 Relay。
+
+Server 保留已认证订阅、接收方检查、持久化加密 outbox/重试和从原始事件起算的 30 分钟期限。告警触发/恢复、管理员安全规则匹配、仅发给所有者的计划任务最终结果继续生效；成功通知须主动启用。角色、会话、订阅或注册版本改变会阻止后续符合条件的投递。终态密文会清除，已发送或接受的通知无法撤回。APNs 接受只代表服务商回执，不证明手机展示。应用/NSE 共享 Keychain 签名与真机验收仍须单独验证。参见[移动端](/zh/docs/mobile)与 [Push Relay 运维](/zh/docs/push-relay)。
+
 ### `[firewall]` —— 防火墙黑名单护栏
 
 | 键 | 类型 | 默认值 | 说明 |

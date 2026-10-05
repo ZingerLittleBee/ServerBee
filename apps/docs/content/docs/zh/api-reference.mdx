@@ -86,6 +86,8 @@ curl https://your-server/api/auth/me \
 | GET | `/api/auth/oauth/{provider}/callback` | OAuth 回调 |
 | POST | `/api/mobile/auth/login` | 移动端登录 |
 | POST | `/api/mobile/auth/refresh` | 刷新移动端会话 |
+| POST | `/api/mobile/auth/revoke` | 使用安装范围内的仅撤销凭据删除原移动端会话 |
+| POST | `/api/mobile/auth/recover` | 重新验证原账号以删除准确的旧会话或确认其不存在，不签发登录令牌 |
 | POST | `/api/mobile/auth/pair` | 兑换移动端配对码 |
 | POST | `/api/agent/register` | 使用 Agent 提议的 run token claim 已绑定的 enrollment offer |
 | GET | `/api/status/config` | 公开状态页配置 |
@@ -99,6 +101,14 @@ curl https://your-server/api/auth/me \
 | GET | `/api/settings/brand` | 公开品牌设置 |
 | GET | `/api/brand/logo` | 返回上传的 Logo |
 | GET | `/api/brand/favicon` | 返回上传的 Favicon |
+
+普通移动端刷新会保留安装注册，并使之前的 access 和 refresh 凭据失效。登录返回稳定的 `revocation_token`，客户端跨刷新保留它，登出或清除被永久拒绝的认证凭据前，将它与 `installation_id` 发往 `/api/mobile/auth/revoke`。即使等待清理请求时发生新的登录，清理仍只使用原登录上下文。该凭据只能删除其原会话、认证凭据和注册，不能认证其他 API 或刷新会话。清理上下文会在轮换前同时捕获已保存的证明和原登录的当前 refresh secret。旧 Server 在 iOS 先升级期间替换会话，可能导致本地证明为空或已经失效。若已保存的证明被拒绝，客户端只会在删除接口尝试捕获的 refresh secret，不会改用替代登录的凭据。证明为空时，应用会在联网前保存它。撤销接口可在该秘密被消费前验证它；每次成功轮换也会在同一事务中保留被消费秘密的哈希。验证和删除与轮换串行，因此无论清理请求先于消费到达，还是在已提交的响应丢失后到达，都能撤销原会话。这些哈希仅允许删除原会话，并随其删除，不能授予普通 API 权限或重用已消费的刷新令牌。其他安装、用户和替代登录保持独立。
+
+`/api/mobile/auth/recover` 共用登录限流，且必须只使用一种验证方式：`username` 加 `password`（启用时携带 `totp_code`）、已登录网页生成的二维码 `pairing_code`，或先前返回的 `recovery_token`。二维码及授权模式无需密码字段；混用验证方式或在二维码及授权模式携带 TOTP 会被拒绝。二维码由恢复接口一次性消费，不能再用于普通登录。二维码生成后或授权签发后账号安全状态发生变化会使其失效，首次改密要求仍然生效。每次请求包含 `expected_user_id`、`installation_id`、可选的 `expected_session_id`，以及捕获的原 access、refresh 和撤销材料。恢复不会签发登录令牌，过期材料仅用于定位旧会话，不授予普通请求权限。
+
+响应包含 `outcome`、`user_id`、`installation_id`、可为空的 `mobile_session_id` 和 `candidates`。`ok` 或 `already_absent` 确认清理，候选列表为空。若既无已知 ID，也无可匹配材料，但仍有同账号、同安装的会话，则返回 `selection_required`，列出包括过期会话在内的设备名、会话 ID、创建及最后使用时间，不会自动选择或删除会话。用户选择原会话后，再次验证账号并携带准确的 `expected_session_id` 清理。无 ID 时仅在原账号及安装没有遗留授权状态时确认不存在。无法归属的遗留状态或超过 64 个候选返回 409，保留所有记录。恢复不会选择最新会话，也不会批量删除同一安装的所有会话。
+
+二维码及授权响应另含仅用于清理的 `recovery_token`，密码响应省略此字段。随机授权签发后五分钟过期，仅保留在客户端内存中，Server 重启后失效。Server 最多保留 128 个授权，清理过期记录，达到上限返回 429。授权绑定原账号、安装标识和完全一致的原 access、refresh 及撤销材料，不能用于普通登录、配对、刷新或其他 API 请求。选择会话和重试时复用此授权，原凭据材料须保持一致。只能选择最初列出的候选，目标会在删除前固定，重试不能更换目标或扩大列表。终态授权在有效期内保留已定位的准确目标，丢失响应后重试仅确认该目标不存在。无 ID 的不存在授权不会确认或删除后来出现的新会话状态。重启、过期或无 ID 确认不存在后出现新状态时，须扫描新的网页二维码。
 
 ## 已认证读取端点
 

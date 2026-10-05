@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var selectedTab: Int = ContentView.serversTabTag
     @State private var serversPath: [ServerNavigationTarget] = []
     @State private var alertsPath: [ServerDeepLink] = []
+    @State private var taskRunTarget: TaskRunTarget?
 
     private let authManager: AuthManager
 
@@ -46,6 +47,8 @@ struct ContentView: View {
                             switch target {
                             case .detailById(let serverId):
                                 ServerDetailLoaderView(serverId: serverId)
+                            case .security(let serverId, let eventId):
+                                SecurityNotificationDetailView(serverId: serverId, eventId: eventId)
                             }
                         }
                 }
@@ -58,9 +61,11 @@ struct ContentView: View {
                     AlertsListView()
                         .navigationDestination(for: ServerDeepLink.self) { link in
                             switch link {
+                            case .account, .taskRun:
+                                EmptyView()
                             case .alertDetail(let key):
                                 AlertDetailView(alertKey: key)
-                            case .serverDetail:
+                            case .serverDetail, .securityDetail:
                                 EmptyView()
                             }
                         }
@@ -94,13 +99,25 @@ struct ContentView: View {
             OfflineBannerView(isConnected: networkMonitor.isConnected)
                 .animation(.easeInOut(duration: 0.2), value: networkMonitor.isConnected)
         }
+        .sheet(item: $taskRunTarget) { target in
+            NavigationStack {
+                TaskRunResultsView(target: target, authManager: authManager)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { taskRunTarget = nil } } }
+            }
+            .environment(\.apiClient, apiClient)
+        }
+        .onChange(of: authManager.captureContext()?.pushScope) { _, _ in taskRunTarget = nil }
+        .onChange(of: pushRouter.pendingEnvelope?.ciphertext) { _, _ in consumePushTarget() }
+        .onChange(of: pushManager.confirmed?.revision) { _, _ in consumePushTarget() }
         .onChange(of: pushRouter.pendingDeepLink) { _, newValue in
             guard let link = newValue else { return }
             handleDeepLink(link)
             pushRouter.pendingDeepLink = nil
         }
-        .task {
+        .task { [weak authManager, weak serversViewModel, weak alertsViewModel, weak securityFeed, weak upgradeJobs] in
+            guard let auth = authManager, let alerts = alertsViewModel else { return }
             pushManager.configure(apiClient: apiClient)
+            await pushManager.reconcile()
 
             await wsClient.setTokenRefresher { [weak authManager] in
                 await authManager?.accessTokenForReconnect()
@@ -121,10 +138,12 @@ struct ContentView: View {
                     router.dispatch(message)
                 }
             }
-            if let serverUrl = authManager.serverUrl,
-               let token = authManager.getAccessToken() {
-                await wsClient.connect(serverUrl: serverUrl, accessToken: token)
+            if let context = auth.captureContext() {
+                await wsClient.connect(serverUrl: context.serverUrl, accessToken: context.accessToken)
+                if !auth.isCurrent(context) { await wsClient.close() }
             }
+
+            consumePushTarget()
 
             // If a push tap arrived during cold launch BEFORE this view existed,
             // consume it now.
@@ -140,10 +159,10 @@ struct ContentView: View {
 
             // Prime the Alerts tab badge on cold start; afterwards alert_event
             // frames keep it current without visiting the tab.
-            await alertsViewModel.fetchEvents(apiClient: apiClient)
+            await alerts.fetchEvents(apiClient: apiClient)
         }
-        .onChange(of: scenePhase) { old, new in
-            if old == .background && new == .active {
+        .onChange(of: scenePhase) { _, new in
+            if new == .active {
                 Task { await resyncLive() }
             }
         }
@@ -152,12 +171,20 @@ struct ContentView: View {
                 Task { await resyncLive() }
             }
         }
+        .onDisappear {
+            Task { await wsClient.close() }
+        }
     }
 
     /// Rebuild the live socket for a fresh `full_sync` (online state and
     /// metrics only arrive over the WebSocket, never from REST).
     private func resyncLive() async {
+        guard let context = authManager.captureContext() else { return }
+        await pushManager.reconcile()
+        guard authManager.isCurrent(context) else { return }
+        consumePushTarget()
         await wsClient.reconnect(accessToken: authManager.getAccessToken())
+        if !authManager.isCurrent(context) { await wsClient.close() }
     }
 
     /// Route the three upgrade-related frames into the live job store. Full sync
@@ -187,7 +214,16 @@ struct ContentView: View {
         }
     }
 
+    private func consumePushTarget() {
+        guard let context = apiClient.captureContext(),
+              let link = pushRouter.consumeTarget(context: context, key: pushManager.contentKey()) else { return }
+        handleDeepLink(link)
+    }
+
     private func handleDeepLink(_ link: ServerDeepLink) {
+        if case let .taskRun(taskId, runId) = link {
+            taskRunTarget = TaskRunTarget(taskId: taskId, runId: runId)
+        } else { taskRunTarget = nil }
         ContentView.applyDeepLink(
             link,
             selectedTab: &selectedTab,
@@ -206,9 +242,17 @@ struct ContentView: View {
         alertsPath: inout [ServerDeepLink]
     ) {
         switch link {
+        case .account, .taskRun:
+            selectedTab = ContentView.settingsTabTag
+            serversPath = []
+            alertsPath = []
         case .serverDetail(let serverId):
             selectedTab = ContentView.serversTabTag
             serversPath = [.detailById(serverId)]
+        case .securityDetail(let serverId, let eventId):
+            selectedTab = ContentView.serversTabTag
+            serversPath = [.security(serverId: serverId, eventId: eventId)]
+            alertsPath = []
         case .alertDetail(let alertKey):
             selectedTab = ContentView.alertsTabTag
             alertsPath = [.alertDetail(alertKey: alertKey)]
@@ -220,6 +264,7 @@ struct ContentView: View {
 /// link without needing the full `ServerStatus` model up front.
 enum ServerNavigationTarget: Hashable {
     case detailById(String)
+    case security(serverId: String, eventId: String)
 }
 
 /// Displays `ServerDetailView` for a server id. The detail view reads live

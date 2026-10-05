@@ -278,11 +278,17 @@ pub async fn run_task(
     ok(updated?.into())
 }
 
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
+pub struct TaskResultsQuery {
+    /// Restrict results to one exact scheduled run.
+    pub run_id: Option<String>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/tasks/{id}/results",
     tag = "tasks",
-    params(("id" = String, Path, description = "Task ID")),
+    params(("id" = String, Path, description = "Task ID"), TaskResultsQuery),
     responses(
         (status = 200, description = "Task results", body = Vec<task_result::Model>),
     ),
@@ -291,14 +297,34 @@ pub async fn run_task(
 pub async fn get_task_results(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
+    Query(query): Query<TaskResultsQuery>,
 ) -> Result<Json<ApiResponse<Vec<task_result::Model>>>, AppError> {
-    let results = task_result::Entity::find()
-        .filter(task_result::Column::TaskId.eq(&id))
+    task::Entity::find_by_id(&id)
+        .one(&state.db)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Task not found".into()))?;
+    let mut results = task_result::Entity::find().filter(task_result::Column::TaskId.eq(&id));
+    if let Some(run_id) = query.run_id {
+        if uuid::Uuid::parse_str(&run_id).is_err() {
+            return Err(AppError::BadRequest("Invalid run ID".into()));
+        }
+        if crate::entity::task_run::Entity::find_by_id(&run_id)
+            .filter(crate::entity::task_run::Column::TaskId.eq(&id))
+            .one(&state.db)
+            .await?
+            .is_none()
+        {
+            return Err(AppError::NotFound("Task run not found".into()));
+        }
+        results = results.filter(task_result::Column::RunId.eq(run_id));
+        // An exact run must include all targets/attempts, not the history cap.
+    } else {
+        results = results.limit(500);
+    }
+    ok(results
         .order_by_desc(task_result::Column::FinishedAt)
-        .limit(500)
         .all(&state.db)
-        .await?;
-    ok(results)
+        .await?)
 }
 
 #[cfg(test)]

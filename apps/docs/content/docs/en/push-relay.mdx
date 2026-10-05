@@ -1,0 +1,83 @@
+---
+title: Push Relay Operations
+description: Stateless Cloudflare Worker setup, accepted abuse risks, signing and genuine-device acceptance.
+icon: Smartphone
+---
+
+The path is **Server → dedicated ServerBee Cloudflare Worker → APNs → iOS Notification Service Extension**. The Server owns subscriptions, user/session authorization, encrypted pending work and final task aggregation. Relay holds the publisher's APNs credentials and forwards ciphertext. [Mobile](/en/docs/mobile) covers user setup; [Configuration](/en/docs/configuration#push_relay----verified-mobile-setup) covers the Server URL.
+
+The revised, unreleased architecture uses one public `POST /v1/send`. It has no App Attest, build/distribution policy, challenges, delivery grants, durable Relay database or replacement authorization service. The Server's durable business outbox remains in its own database. Local tests and Simulator results do not establish live APNs delivery or signed-device presentation. This runbook describes separately authorized operator actions; it does not deploy infrastructure, provision secrets or change Apple accounts.
+
+## Accepted Public-Relay Risks
+
+Anyone can submit requests. Knowing a valid device token permits junk ciphertext or replay attempts, which can cause generic notifications. Consuming Relay resources does not require someone else's token: invalid requests or an attacker's own token can consume request quota. Token confidentiality is helpful but is not authorization.
+
+AES-256-GCM protects business content and its authenticated identity when the per-installation key remains secret. It does not authenticate public Relay callers. The original APNs alert is fixed generic text because a Notification Service Extension can fail or time out; invalid ciphertext does not guarantee silent dismissal. The app refuses invalid or old-account navigation.
+
+Safeguards are strict schema and size limits, a hard streaming-read limit before parsing, read/send deadlines, fixed APNs hosts/topic/environment allowlist, a bounded concurrent-request cap, and hard-capacity source/target limiter maps with an isolate-wide request cap. Rate state is best effort and local to each Worker isolate: isolates restart and scale independently. It is not a global budget, exact global rate limit, replay database or denial-of-service guarantee. Confirm available platform limits and account billing controls independently before deployment; no paid plan or WAF feature is assumed.
+
+## Cloudflare Quick Setup
+
+Use a dedicated ServerBee Worker and synthetic test data, separate from Heeler and production services. Record exact revisions, signing build, APNs environment and UTC timestamps.
+
+1. Install locked development dependencies with the repository's Bun version and Node 24. Worker production code uses Web APIs, WebCrypto and fetch; Bun is tooling, not the deployed runtime.
+2. Review `apps/push-relay/wrangler.jsonc`. Choose the dedicated Worker name and fixed `APNS_TOPIC`, `APNS_TEAM_ID`, `APNS_KEY_ID`, and `APNS_ENVIRONMENTS`. The official topic is `app.serverbee`, matching the main app bundle identifier; never use the extension identifier `app.serverbee.notifications`. The optional environment allowlist accepts `sandbox`, `production`, or both as a comma-separated list; omission allows both.
+3. Provision `APNS_PRIVATE_KEY` as a Worker secret containing the publisher's PKCS#8 P-256 PEM contents. Use the authorized secret-entry flow; never put it in Git, public variables, the app or the Server. No PEM file path is used by the deployed Worker.
+4. Run the Relay type check, Workers-runtime tests and deployment dry run described in `apps/push-relay/README.md`. A dry run bundles code locally; it does not validate Apple credentials or make a deployment.
+5. Deploy only with separate authorization, then set the Server's `SERVERBEE_PUSH_RELAY__URL` to the final HTTPS Worker URL. The app must also use the final HTTPS Server URL; secret-bearing Server requests reject redirects.
+6. Use a signed app and the live acceptance matrix below. Never report registration or an APNs receipt as proof that a phone displayed a notification.
+
+### Configuration Ownership
+
+| Owner | Configuration |
+| --- | --- |
+| Self-hosted Server | `SERVERBEE_PUSH_RELAY__URL` or `[push_relay].url`; encrypted durable outbox and current recipient/session/revision checks |
+| Worker variables | `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_TOPIC`, `APNS_ENVIRONMENTS` |
+| Worker secret | `APNS_PRIVATE_KEY`, PKCS#8 PEM contents; publisher-controlled only |
+| Signed iOS app and NSE | Matching APNs environment, embedded extension and app/extension shared Keychain group; login credentials remain app-private |
+
+Cloudflare manages inbound HTTPS and outbound connections. There is no Bun listener, trusted reverse-proxy header configuration, OpenSSL subprocess, self-managed HTTP/2 pool, container or Relay SQLite volume. Source rate limiting uses the platform-provided client IP, not arbitrary forwarded headers. Keep request-body/token/content-key logging disabled.
+
+## Registration, Delivery and Privacy
+
+The app calls authenticated `POST /api/mobile/push/encrypted-register` with its token, environment, revision, deployment binding and per-installation content key. It never calls Relay. Account/installation/mobile-session ownership and revision checks remain on the Server. The legacy direct-APNs registration route remains separate for existing clients.
+
+The Server submits `device_token`, `environment`, `event_id`, `expires_at` and the versioned encrypted `envelope` to `POST /v1/send`. Relay sees token, source IP, timing, size, environment, event/delivery metadata and ciphertext. It never receives content keys or business plaintext. Do not log request bodies, device tokens, keys or provider authorization headers.
+
+The original 30-minute delivery deadline survives retries and Server restart. Before dispatch the Server rechecks ownership, session, role, subscription and registration revision. Retryable responses retain ciphertext; terminal responses erase it while retaining secret-free receipts. Logout/revocation cannot retract already in-flight or accepted requests. Exact-target, deletion-only offline mobile-session cleanup remains independent of Relay.
+
+APNs status/reason classification distinguishes acceptance, retryable service/rate/network errors, permanent payload/configuration errors and expiry. Only a confirmed APNs `410 Unregistered` invalidates the exact still-current registration. `BadDeviceToken` or other HTTP 400 responses do not indiscriminately erase tokens. The app/NSE checks authenticated content identity and rejects invalid navigation.
+
+## Signing and Troubleshooting
+
+The source identities are main app `app.serverbee`, Notification Service Extension `app.serverbee.notifications`, and test bundle `app.serverbee.tests`. The main app lists `$(AppIdentifierPrefix)app.serverbee` first as its private Keychain group, followed by `$(AppIdentifierPrefix)app.serverbee.push`. The extension has only the shared `.push` group. Preserve the actual provisioning App ID prefix; do not substitute a guessed Team ID.
+
+The Keychain **service labels** `com.serverbee.mobile` and `com.serverbee.mobile.push` intentionally remain stable. They are item lookup namespaces, not Bundle IDs or APNs topics. Keeping the private service label and original default access group allows existing `app.serverbee` credentials, installation identity and pending logout recovery to remain readable. It does not establish migration from a separately installed `com.serverbee.mobile` app or from a build with different effective groups/prefix. Before an upgrade, inspect a prior signed build and test session continuity; if a push-enabled test build used the old shared group, repeat notification setup to create/register a key in the corrected group. Never widen the extension's access to private credentials as a migration shortcut.
+
+Inspect effective signed entitlements on both app and extension. Keep APNs and shared Keychain access; the extension must not have the app-private credential group. Debug uses sandbox APNs and distribution uses production. Existing Apple account App Attest capability or extension registration is not changed by this source refactor and is not required by the protocol.
+
+| Symptom | Check |
+| --- | --- |
+| Registration unavailable | Final HTTPS Server URL, configured Relay URL, mobile session ownership, revision conflict and permitted subscription categories |
+| Generic notification | Shared Keychain entitlement/access, content-key and account binding, valid envelope, original expiry, NSE packaging and execution |
+| Retryable delivery | Worker timeout/rate/concurrency limits and APNs service/network status; retries stop at original expiry |
+| Permanent provider failure | Fixed topic/environment and signing configuration, payload bounds, exact APNs reason; do not assume every 400 means revoked device |
+| No banner after acceptance | Device notification permission, Focus/network/app state and NSE behavior; acceptance alone proves no presentation |
+| Old notification cannot navigate | Account/deployment/installation mismatch or missing current Server authorization; rejection is expected |
+
+## Genuine-Device Acceptance Record
+
+Keep each row **NOT RUN** until separately observed with the candidate SHA, app/extension build and effective entitlements, physical device/iOS version, APNs environment, UTC time and language. Synthetic fixtures, Simulator success and dry-run bundling are separate evidence.
+
+| Scenario | Provider receipt | Native presentation | Authenticated navigation |
+| --- | --- | --- | --- |
+| Current-installation test, foreground/background/terminated | NOT RUN | NOT RUN | NOT RUN |
+| Alert trigger/recovery and old-cycle fallback | NOT RUN | NOT RUN | NOT RUN |
+| Administrator security rule match and unavailable target | NOT RUN | NOT RUN | NOT RUN |
+| Final task failure and opted-in success, owner isolation | NOT RUN | NOT RUN | NOT RUN |
+| English and Simplified Chinese rendering | NOT RUN | NOT RUN | NOT RUN |
+| Sandbox and production signing/environment | NOT RUN | NOT RUN | NOT RUN |
+| Refresh/token rotation, logout/account replacement and revoke | NOT RUN | NOT RUN | NOT RUN |
+| Retry after outage, expiry and already-presented late tap | NOT RUN | NOT RUN | NOT RUN |
+
+Use [combined verification](https://github.com/ZingerLittleBee/ServerBee/blob/main/tests/manual/mobile-push-integration.md) for retained HTTP, storage, shared Rust/Swift crypto and native lifecycle checks. No deployment, credential provisioning or live acceptance is implied by green CI.

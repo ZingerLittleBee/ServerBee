@@ -44,42 +44,45 @@ final class WebSocketClientTests: XCTestCase {
     }
 
     func test_reconnectDelay_doublesAcrossFailedAttempts() async throws {
-        let transports = OSAllocatedUnfairLock(initialState: [FakeWebSocketTransport]())
+        let transports = (0..<3).map { _ in FakeWebSocketTransport() }
+        // Queue the failures before receive() starts. The fake must preserve
+        // them even if the factory wins the scheduling race with receiveLoop.
+        for transport in transports {
+            await transport.failNextReceive(with: URLError(.networkConnectionLost))
+        }
+        let index = OSAllocatedUnfairLock(initialState: 0)
         let factory: WebSocketTransportFactory = { _, _ in
-            let t = FakeWebSocketTransport()
-            transports.withLock { $0.append(t) }
-            return t
+            let next = index.withLock { value in
+                defer { value += 1 }
+                return value
+            }
+            return next < transports.count ? transports[next] : FakeWebSocketTransport()
         }
         let client = WebSocketClient(transportFactory: factory)
         await client.setTokenRefresher { "stale" }
         let delays = DelayRecorder()
+        let attempts = expectation(description: "three failed connection attempts")
+        attempts.expectedFulfillmentCount = 3
         await client.setReconnectDelayHook { delay in
             await delays.record(delay)
+            attempts.fulfill()
         }
 
         await client.connect(serverUrl: "https://example.test", accessToken: "tok")
-        // Force three failed connection attempts in a row, none of which
-        // ever receive a frame.
-        for i in 0..<3 {
-            // Wait for transport to exist
-            while transports.withLock({ $0.isEmpty }) {
-                try await Task.sleep(nanoseconds: 10_000_000)
-            }
-            let t = transports.withLock { $0.removeFirst() }
-            await t.failNextReceive(with: URLError(.networkConnectionLost))
-            // Wait until the hook has been invoked i+1 times before driving
-            // the next failure (so the next establishConnection runs first).
-            while await delays.values.count < i + 1 {
-                try await Task.sleep(nanoseconds: 10_000_000)
-            }
-        }
-
-        let recorded = await delays.values
+        await fulfillment(of: [attempts], timeout: 5.0)
+        await client.setReconnectDelayHook(nil)
+        await client.setTokenRefresher(nil)
         await client.close()
+        let recorded = await delays.values
+        XCTAssertEqual(index.withLock { $0 }, 3)
+        XCTAssertTrue(transports[2].isCancelled, "cleanup cancels the last failed transport")
         XCTAssertEqual(recorded.count, 3)
+        guard recorded.count == 3 else { return }
         XCTAssertEqual(recorded[0], 1.0, accuracy: 0.5)
-        XCTAssertGreaterThanOrEqual(recorded[1], 1.6)  // ~2s with jitter
-        XCTAssertGreaterThanOrEqual(recorded[2], 3.2)  // ~4s with jitter
+        XCTAssertGreaterThanOrEqual(recorded[1], 1.6)
+        XCTAssertGreaterThanOrEqual(recorded[2], 3.2)
+        XCTAssertLessThanOrEqual(recorded[1], 2.4)
+        XCTAssertLessThanOrEqual(recorded[2], 4.8)
     }
 }
 
