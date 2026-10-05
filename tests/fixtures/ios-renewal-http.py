@@ -10,7 +10,10 @@ Opaque occurrence strings are fixture identities, never real Server credentials.
 import argparse
 import copy
 import json
+import socketserver
+import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -227,15 +230,30 @@ class Handler(BaseHTTPRequestHandler):
         return fixture.fail(f"unsupported fixture route: {method} {path}")
 
 
+class LoopbackHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer performs reverse DNS after bind. This numeric, IPv4-only
+        # local transport must not wait for the hosted runner's resolver.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-dir", type=Path, required=True)
     args = parser.parse_args()
     args.evidence_dir.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    def progress(stage):
+        print(f"[renewal-fixture {time.monotonic():.3f}] {stage}", file=sys.stderr, flush=True)
+
+    progress("binding numeric IPv4 loopback socket")
+    server = LoopbackHTTPServer(("127.0.0.1", 0), Handler)
+    progress("socket bound; initializing fixture evidence")
     server.fixture = Fixture(args.evidence_dir)
+    progress("fixture initialized; publishing local URL")
     args.evidence_dir.joinpath("fixture-url.txt").write_text(
         f"http://127.0.0.1:{server.server_port}\n")
+    progress("URL published; serving loopback HTTP")
     server.serve_forever()
 
 

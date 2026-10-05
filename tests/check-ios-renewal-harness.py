@@ -3,6 +3,7 @@
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,78 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("renewal_results", ROOT / "tests/check-ios-renewal-results.py")
 results = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(results)
+
+
+class FixtureStartupTests(unittest.TestCase):
+    def test_live_unready_process_reports_bounded_timeout(self):
+        with tempfile.TemporaryDirectory(prefix="renewal-startup-timeout-") as directory:
+            process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+            try:
+                check = subprocess.run(
+                    [sys.executable, str(ROOT / "tests/check-ios-renewal-startup.py"),
+                     "--evidence-dir", directory, "--pid", str(process.pid),
+                     "--timeout-seconds", "0.2"], capture_output=True, text=True, timeout=3)
+                self.assertNotEqual(check.returncode, 0)
+                report = json.loads((Path(directory) / "fixture-startup-check.json").read_text())
+                self.assertEqual(report["outcome"], "timeout")
+                self.assertFalse(report["urlPublished"])
+                self.assertTrue(report["processStatus"])
+                self.assertGreaterEqual(report["elapsedSeconds"], 0.2)
+                self.assertLess(report["elapsedSeconds"], 1)
+                self.assertIn("did not become ready", check.stderr)
+            finally:
+                process.terminate()
+                process.wait(timeout=3)
+
+    def test_exited_fixture_reports_process_failure_instead_of_waiting_for_timeout(self):
+        with tempfile.TemporaryDirectory(prefix="renewal-startup-exit-") as directory:
+            failed = subprocess.Popen([sys.executable, "-c", "raise SystemExit(7)"])
+            failed.wait(timeout=2)
+            started = time.monotonic()
+            check = subprocess.run(
+                [sys.executable, str(ROOT / "tests/check-ios-renewal-startup.py"),
+                 "--evidence-dir", directory, "--pid", str(failed.pid)],
+                capture_output=True, text=True, timeout=3)
+            self.assertNotEqual(check.returncode, 0)
+            report_file = Path(directory) / "fixture-startup-check.json"
+            self.assertTrue(report_file.exists(), "missing fixture startup process diagnostics")
+            report = json.loads(report_file.read_text())
+            self.assertEqual(report["outcome"], "process-exited")
+            self.assertFalse(report["urlPublished"])
+            self.assertLess(time.monotonic() - started, 2)
+            self.assertIn("process exited", check.stderr)
+
+    def test_loopback_fixture_becomes_ready_without_reverse_dns(self):
+        # Resolver availability is an external startup dependency. Exercise the
+        # actual CLI, socket bind and HTTP state endpoint while that boundary
+        # cannot return; no fixture protocol or application behavior is mocked.
+        wrapper = """import runpy, socket, sys, time
+def stalled_resolver(*args, **kwargs):
+    time.sleep(60)
+socket.getfqdn = stalled_resolver
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name='__main__')
+"""
+        with tempfile.TemporaryDirectory(prefix="renewal-startup-") as directory:
+            process = subprocess.Popen(
+                [sys.executable, "-c", wrapper,
+                 str(ROOT / "tests/fixtures/ios-renewal-http.py"),
+                 "--evidence-dir", directory], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            try:
+                url_file = Path(directory) / "fixture-url.txt"
+                deadline = time.monotonic() + 2
+                while not url_file.exists() and time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        self.fail("fixture exited before publishing readiness")
+                    time.sleep(0.02)
+                self.assertTrue(url_file.exists(),
+                                "Loopback renewal fixture did not become ready: reverse DNS stalled startup")
+                with urllib.request.urlopen(url_file.read_text().strip() + "/__test/state", timeout=1) as response:
+                    self.assertEqual(response.status, 200)
+                    self.assertEqual(json.load(response)["server"]["renewal"]["expiry_date"], "2026-01-31")
+            finally:
+                process.terminate()
+                process.communicate(timeout=5)
 
 
 class FixtureProtocolTests(unittest.TestCase):
@@ -39,6 +112,20 @@ class FixtureProtocolTests(unittest.TestCase):
         self.process.terminate()
         self.process.communicate(timeout=5)
         self.temp.cleanup()
+
+    def test_ready_probe_preserves_success_evidence_using_only_loopback_transport(self):
+        # Proxies are a runner boundary, not part of this loopback fixture.
+        environment = {**os.environ, "http_proxy": "http://127.0.0.1:1",
+                       "HTTP_PROXY": "http://127.0.0.1:1", "no_proxy": "", "NO_PROXY": ""}
+        check = subprocess.run(
+            [sys.executable, str(ROOT / "tests/check-ios-renewal-startup.py"),
+             "--evidence-dir", self.temp.name, "--pid", str(self.process.pid)],
+            env=environment, capture_output=True, text=True, timeout=3)
+        self.assertEqual(check.returncode, 0, check.stderr)
+        report = json.loads(self.directory.joinpath("fixture-startup-check.json").read_text())
+        self.assertEqual(report["outcome"], "ready")
+        self.assertTrue(report["urlPublished"])
+        self.assertGreaterEqual(report["attempts"], 1)
 
     def request(self, path, method="GET", body=None, marker=True, host=None):
         headers = {"Content-Type": "application/json"}
