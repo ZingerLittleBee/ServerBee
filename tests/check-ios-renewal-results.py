@@ -99,6 +99,8 @@ def validate_fixture(state):
                         "name-only save introduced renewal intent")
             else:
                 require(body.get("renewal") == renewal, "captured renewal intent differs")
+                if "enabled" in renewal:
+                    require(type(body["renewal"]["enabled"]) is bool, "enabled intent must be a JSON boolean")
     return {"scenarios": sorted(completed), "saveCount": 5, "errors": []}
 
 

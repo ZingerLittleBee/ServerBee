@@ -114,6 +114,8 @@ class Fixture:
                 return self.fail("name-only save must omit renewal")
         elif body.get("renewal") != expected:
             return self.fail("renewal intent differs from the scenario contract")
+        if expected and "enabled" in expected and type(body["renewal"]["enabled"]) is not bool:
+            return self.fail("enabled intent must be a JSON boolean")
         if body.get("billing_cycle") != "monthly":
             return self.fail("billing cycle must remain monthly")
         allowed = {"name", "weight", "hidden", "remark", "public_remark", "group_id",

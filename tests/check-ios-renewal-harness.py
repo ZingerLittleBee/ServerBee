@@ -111,6 +111,10 @@ class FixtureProtocolTests(unittest.TestCase):
             "expired_at": "2026-02-15T00:00:00Z"})
         self.assertEqual(status, 422)
 
+    def test_numeric_switch_value_cannot_stand_in_for_boolean_intent(self):
+        self.reset("switch")
+        self.assertEqual(self.save({"enabled": 1})[0], 422)
+
     def test_unknown_read_and_notification_write_fail_without_capturing_sensitive_body(self):
         self.assertEqual(self.request("/api/not-a-route")[0], 422)
         self.assertEqual(self.request("/api/mobile/push/encrypted-register", "POST", {"content_key": "must-not-capture"})[0], 422)
