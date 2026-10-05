@@ -1,5 +1,6 @@
 import { AlertTriangle, CreditCard } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { RenewalDeadlineInfo } from '@/components/server/renewal-deadline-info'
 import { TrafficProgress } from '@/components/server/traffic-progress'
 import { useCostInsights } from '@/hooks/use-cost'
 import type { ResourceValue, ServerCostInsights, ServerResponse } from '@/lib/api-schema'
@@ -175,6 +176,10 @@ function ExpiryStatus({ expiredAt, renewal }: { expiredAt?: string | null; renew
         {t('renewal_deadline')}: {isExpired ? t('detail_expired') : t('detail_expires')} {selectedDate}
         {!isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
       </span>
+      <RenewalDeadlineInfo renewal={renewal} />
+      {renewal && renewal.deadline_origin !== 'confirmed' && (
+        <span className="block text-muted-foreground text-xs">{t('renewal_forecast_explanation')}</span>
+      )}
       <span className="block text-muted-foreground text-xs">{t('renewal_cost_independent')}</span>
     </span>
   )

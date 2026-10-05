@@ -4,6 +4,7 @@ import { Check, ChevronsUpDown } from 'lucide-react'
 import { type FormEvent, useId, useMemo, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { RenewalDeadlineInfo } from '@/components/server/renewal-deadline-info'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -19,6 +20,7 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
@@ -77,6 +79,7 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
 }
 
 interface ServerEditState {
+  automaticRenewal: boolean
   billingCycle: string
   billingStartDay: string
   billingTimezone: string
@@ -102,6 +105,7 @@ interface ServerEditAction {
 
 function serverEditStateFromServer(server: ServerResponse): ServerEditState {
   return {
+    automaticRenewal: server.renewal?.enabled ?? false,
     billingCycle: server.billing_cycle ?? '',
     billingStartDay: server.billing_start_day?.toString() ?? '',
     billingTimezone: server.renewal?.billing_timezone ?? 'UTC',
@@ -248,14 +252,18 @@ function ServerEditBasicFields({
 
 function ServerEditBillingFields({
   dispatch,
+  server,
   state,
   t
 }: {
   dispatch: (action: ServerEditAction) => void
+  server: ServerResponse
   state: ServerEditState
   t: TFunction
 }) {
   const timezoneListId = useId()
+  const prerequisitesId = useId()
+  const hasPrerequisites = hasAutomaticRenewalPrerequisites(state)
   const timezones = useMemo(
     () => ['UTC', ...(typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [])],
     []
@@ -349,6 +357,29 @@ function ServerEditBillingFields({
         </datalist>
         <p className="mt-1 text-[11px] text-muted-foreground">{t('edit_billing_timezone_hint')}</p>
       </Field>
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-medium text-sm">{t('edit_automatic_renewal')}</span>
+          <Switch
+            aria-describedby={prerequisitesId}
+            aria-invalid={state.automaticRenewal && !hasPrerequisites}
+            aria-label={t('edit_automatic_renewal')}
+            checked={state.automaticRenewal}
+            disabled={!(state.automaticRenewal || hasPrerequisites)}
+            onCheckedChange={(automaticRenewal) => dispatch({ type: 'patch', value: { automaticRenewal } })}
+          />
+        </div>
+        <p
+          className="text-muted-foreground text-xs"
+          id={prerequisitesId}
+          role={state.automaticRenewal && !hasPrerequisites ? 'alert' : undefined}
+        >
+          {t('edit_renewal_prerequisites')}
+        </p>
+        <p className="text-muted-foreground text-xs">{t('renewal_forecast_explanation')}</p>
+        <RenewalDeadlineInfo renewal={server.renewal} />
+        <p className="text-muted-foreground text-xs">{t('renewal_cost_independent')}</p>
+      </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label={t('edit_traffic_limit')}>
           <Input
@@ -413,6 +444,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
   const initialExpiryDate = serverEditStateFromServer(server).expiredAt
   const initialBillingTimezone = server.renewal?.billing_timezone ?? 'UTC'
   const [state, dispatch] = useReducer(serverEditReducer, server, serverEditStateFromServer)
+  const invalidAutomaticRenewal = state.automaticRenewal && !hasAutomaticRenewalPrerequisites(state)
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
@@ -434,6 +466,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
 
   const buildPayload = (): UpdateServerInput => {
     const renewal = {
+      ...(state.automaticRenewal !== (server.renewal?.enabled ?? false) && { enabled: state.automaticRenewal }),
       ...(state.expiredAt !== initialExpiryDate && { expiry_date: state.expiredAt || null }),
       ...(state.billingTimezone !== initialBillingTimezone && { billing_timezone: state.billingTimezone || null })
     }
@@ -471,6 +504,9 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (invalidAutomaticRenewal) {
+      return
+    }
     const parsed = parseTagsInput(tagsInput)
     if (parsed.error) {
       toast.error(t(parsed.error))
@@ -505,7 +541,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
             t={t}
             tagsInput={tagsInput}
           />
-          <ServerEditBillingFields dispatch={dispatch} state={state} t={t} />
+          <ServerEditBillingFields dispatch={dispatch} server={server} state={state} t={t} />
 
           {mutation.error && (
             <div className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-sm">
@@ -518,13 +554,29 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
           <Button onClick={onClose} type="button" variant="outline">
             {t('common:cancel')}
           </Button>
-          <Button disabled={mutation.isPending || tagsMutation.isPending} type="submit">
+          <Button disabled={mutation.isPending || tagsMutation.isPending || invalidAutomaticRenewal} type="submit">
             {mutation.isPending || tagsMutation.isPending ? t('common:saving') : t('common:save')}
           </Button>
         </DialogFooter>
       </form>
     </DialogContent>
   )
+}
+
+function hasAutomaticRenewalPrerequisites(state: ServerEditState): boolean {
+  if (!(state.expiredAt && ['monthly', 'quarterly', 'yearly'].includes(state.billingCycle) && state.billingTimezone)) {
+    return false
+  }
+  try {
+    // Numeric UTC offsets are not IANA timezone identifiers.
+    if (state.billingTimezone.startsWith('+') || state.billingTimezone.startsWith('-')) {
+      return false
+    }
+    new Intl.DateTimeFormat('en', { timeZone: state.billingTimezone }).format()
+    return true
+  } catch {
+    return false
+  }
 }
 
 function Field({ label, children }: { children: React.ReactNode; label: string }) {

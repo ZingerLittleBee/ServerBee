@@ -2,7 +2,8 @@ name: CI iOS
 
 on:
   push:
-    branches: [main]
+    # Validate native changes on the renewal integration branch before its PR.
+    branches: [main, feat/renewal-tracking-integration]
     paths:
       - 'apps/ios/**'
       - 'tests/fixtures/push*-envelope-v1.json'
@@ -99,3 +100,13 @@ jobs:
           action: test
           working-directory: apps/ios
           trust-plugins: true
+          verbosity: verbose
+
+      - name: Preserve native test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-tests-${{ github.sha }}
+          path: apps/ios/test.xcresult
+          if-no-files-found: error
+          retention-days: 1
