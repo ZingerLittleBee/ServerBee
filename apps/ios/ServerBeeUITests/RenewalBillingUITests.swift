@@ -24,7 +24,19 @@ final class RenewalBillingUITests: XCTestCase {
 
         reveal("renewal.timezone").tap()
         let utc = app.buttons["UTC"].firstMatch
+        // The native menu scrolls to the current selection, so UTC at the
+        // beginning of the IANA list is initially outside its lazy viewport.
+        // Retain the menu's indexed element before scrolling moves that
+        // selection out of view; swiping the app would hit a different layer.
+        let menu = try XCTUnwrap(app.collectionViews.allElementsBoundByIndex.last(where: {
+            $0.buttons["America/New_York"].exists
+        }), app.debugDescription)
+        for _ in 0..<14 {
+            if utc.exists && utc.isHittable { break }
+            menu.swipeDown(velocity: .fast)
+        }
         XCTAssertTrue(utc.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(utc.isHittable, app.debugDescription)
         utc.tap()
         assertText("renewal.timezone", contains: "UTC")
         assertDate("Jan 31, 2026")
@@ -99,10 +111,14 @@ final class RenewalBillingUITests: XCTestCase {
         }
         screenshot("manual-calendar-before-day-selection")
         selectedDay.tap()
-        // The date popover can stay open after selection; tapping its production
-        // row label dismisses it without changing the chosen calendar date.
-        if app.buttons["15"].firstMatch.isHittable {
-            app.staticTexts["Expires"].firstMatch.tap()
+        // UIKit labels the day Button with its full date; "15" is a child
+        // StaticText. If the calendar stays open, a real tap on the editor
+        // title outside that popover dismisses it without changing the date.
+        if selectedDay.exists {
+            let navigation = app.navigationBars["Edit Server"]
+            XCTAssertTrue(navigation.exists, app.debugDescription)
+            navigation.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertFalse(selectedDay.exists, "Calendar must dismiss after the outside tap: \(app.debugDescription)")
         }
         assertDate("Feb 15, 2026")
         screenshot("manual-february-fifteenth-selected")
