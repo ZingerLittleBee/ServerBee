@@ -75,6 +75,54 @@ afterEach(async () => {
 })
 
 describe('server renewal date editing', () => {
+  it('does not confirm a clamped projection after restoring its selected date', async () => {
+    renderEditor({
+      ...server,
+      expired_at: '2026-03-01T04:59:59.999999999Z',
+      renewal: { ...server.renewal, enabled: true, expiry_date: '2026-02-28' }
+    })
+    const selectedDate = screen.getByLabelText('Expiration date')
+    fireEvent.change(selectedDate, { target: { value: '2026-03-01' } })
+    fireEvent.change(selectedDate, { target: { value: '2026-02-28' } })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Price' }), { target: { value: '15' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1]).toMatchObject({ price: 15, billing_cycle: 'monthly' })
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('renewal')
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('expired_at')
+  })
+
+  it('changes the interval of an active clamped projection without sending a date', async () => {
+    renderEditor({ ...server, renewal: { ...server.renewal, enabled: true, expiry_date: '2026-02-28' } })
+    fireEvent.click(screen.getByText('Monthly'))
+    const interval = await screen.findByRole('option', { name: 'Quarterly' })
+    fireEvent.mouseMove(interval)
+    fireEvent.click(interval)
+    expect(screen.getByLabelText('Expiration date')).toHaveValue('2026-02-28')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1]).toMatchObject({ billing_cycle: 'quarterly' })
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('renewal')
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('expired_at')
+  })
+
+  it('corrects a frozen deadline and timezone using the existing billing form', async () => {
+    renderEditor({ ...server, renewal: { ...server.renewal, deadline_origin: 'frozen' } })
+    expect(screen.getByText('Frozen projected deadline')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Billing timezone'), { target: { value: 'Asia/Tokyo' } })
+    fireEvent.change(screen.getByLabelText('Expiration date'), { target: { value: '2026-03-15' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1].renewal).toEqual({
+      billing_timezone: 'Asia/Tokyo',
+      expiry_date: '2026-03-15'
+    })
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('expired_at')
+  })
+
   it('preserves legacy-server saves without exposing an unsupported automatic switch', async () => {
     renderEditor({ ...server, renewal: undefined })
     expect(screen.queryByRole('switch', { name: 'Automatic renewal tracking' })).not.toBeInTheDocument()

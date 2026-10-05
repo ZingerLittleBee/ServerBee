@@ -244,3 +244,75 @@ final class RenewalDateTests: XCTestCase {
         """.utf8))
     }
 }
+
+extension RenewalDateTests {
+    @MainActor
+    func test_intervalOnlyEditOfClampedProjectionDoesNotSendConfirmation() throws {
+        var config = try selectedConfig()
+        config.renewal = ServerRenewal(
+            enabled: true, billingTimezone: "America/Los_Angeles", expiryDate: "2026-02-28",
+            confirmedExpiredAt: "2026-02-01T07:59:59Z", deadlineOrigin: "projected", occurrenceId: "february"
+        )
+        let model = EditServerViewModel()
+        model.prefill(from: config)
+        model.billingCycle = "quarterly"
+        let request = try object(model.buildRequest())
+        XCTAssertEqual(request["billing_cycle"] as? String, "quarterly")
+        XCTAssertNil(request["renewal"])
+        XCTAssertNil(request["expired_at"])
+    }
+
+    @MainActor
+    func test_restoringClampedDateAndTimezoneLeavesOnlyUnrelatedEditIntent() throws {
+        var config = try selectedConfig()
+        config.renewal = ServerRenewal(
+            enabled: true, billingTimezone: "America/Los_Angeles", expiryDate: "2026-02-28",
+            confirmedExpiredAt: "2026-02-01T07:59:59Z", deadlineOrigin: "projected", occurrenceId: "february"
+        )
+        let model = EditServerViewModel()
+        model.prefill(from: config)
+        model.expiryDate = try XCTUnwrap(BillingDate.date(from: "2026-03-01", timezone: model.billingTimezone))
+        model.expiryDate = try XCTUnwrap(BillingDate.date(from: "2026-02-28", timezone: model.billingTimezone))
+        model.billingTimezone = "Asia/Tokyo"
+        model.billingTimezone = "America/Los_Angeles"
+        model.priceText = "15"
+        let request = try object(model.buildRequest())
+        XCTAssertEqual(request["price"] as? Double, 15)
+        XCTAssertNil(request["renewal"])
+        XCTAssertNil(request["expired_at"])
+    }
+
+    @MainActor
+    func test_dateCorrectionAndTimezoneEditEncodeBothChangedFields() throws {
+        let model = EditServerViewModel()
+        model.prefill(from: try selectedConfig())
+        model.billingTimezone = "Asia/Tokyo"
+        model.expiryDate = try XCTUnwrap(BillingDate.date(from: "2028-02-29", timezone: model.billingTimezone))
+        let request = try object(model.buildRequest())
+        let renewal = try XCTUnwrap(request["renewal"] as? [String: Any])
+        XCTAssertEqual(renewal["expiry_date"] as? String, "2028-02-29")
+        XCTAssertEqual(renewal["billing_timezone"] as? String, "Asia/Tokyo")
+        XCTAssertNil(renewal["enabled"])
+        XCTAssertNil(request["expired_at"])
+    }
+
+    @MainActor
+    func test_frozenDeadlineRemainsUnconfirmedOnSaveAndUsesExistingDateCorrection() throws {
+        var config = try selectedConfig()
+        config.renewal = ServerRenewal(
+            enabled: false, billingTimezone: "America/Los_Angeles", expiryDate: "2026-02-28",
+            confirmedExpiredAt: "2026-02-01T07:59:59Z", deadlineOrigin: "frozen", occurrenceId: "february"
+        )
+        let model = EditServerViewModel()
+        model.prefill(from: config)
+        XCTAssertFalse(model.automaticRenewal)
+        XCTAssertNil(try object(model.buildRequest())["renewal"])
+        model.expiryDate = try XCTUnwrap(BillingDate.date(from: "2026-02-15", timezone: model.billingTimezone))
+        let request = try object(model.buildRequest())
+        let renewal = try XCTUnwrap(request["renewal"] as? [String: Any])
+        XCTAssertEqual(renewal["expiry_date"] as? String, "2026-02-15")
+        XCTAssertNil(renewal["enabled"])
+        XCTAssertNil(renewal["billing_timezone"])
+        XCTAssertNil(request["expired_at"])
+    }
+}
