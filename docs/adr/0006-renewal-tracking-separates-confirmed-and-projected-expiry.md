@@ -18,4 +18,12 @@ Expiry is entered as a date rather than an exact provider timestamp, and the ser
 
 Reminders use the existing configured expiration alerts and page indicators; this feature does not introduce a new default recurring notification schedule or notification-channel configuration.
 
-This records the agreed design boundary, not a shipped implementation. Catch-up behavior, disabling projection, historical-record handling, manual renewal entry, timezone changes, and the relationship to cost and traffic periods remain to be decided.
+Enabling projection on an already-expired record, or resuming after several missed periods, advances to the first renewal deadline that has not expired. The calculation preserves the original calendar anchor rather than starting a new schedule from the current date, and missed projected periods do not create payment records.
+
+Disabling projection freezes its current deadline instead of reverting to an older confirmed expiry. Reminders then use that frozen deadline, and its projected origin remains distinguishable from provider-confirmed information.
+
+Changing the billing timezone preserves the selected local expiry date and recalculates its UTC boundary in the new timezone. It does not preserve the previous UTC instant at the expense of changing the displayed date.
+
+The feature includes the Server, web dashboard, and native iOS client. Both clients must use the stored billing timezone for renewal entry and display rather than independently interpreting dates in the browser or device timezone.
+
+This records the agreed design boundary, not a shipped implementation. Historical-record handling, manual renewal entry, and the relationship to cost and traffic periods remain to be decided.
