@@ -339,7 +339,7 @@ impl NormalizedProfile {
         }
 
         let (renewal, expired_at) =
-            super::renewal::apply_initial(profile.renewal.as_ref(), profile.expired_at)
+            super::renewal::apply_initial(profile.renewal.as_ref(), profile.expired_at, profile.billing_cycle.as_deref())
                 .map_err(|e| OnboardingError::Validation(e.to_string()))?;
         // Preserve the predecessor canonical hash for legacy onboarding retries.
         let renewal_state = profile

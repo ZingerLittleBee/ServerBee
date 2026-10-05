@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RenewalState {
+    #[serde(default)]
+    pub enabled: bool,
     pub billing_timezone: String,
     pub confirmed_expired_at: Option<DateTime<Utc>>,
 }
@@ -30,6 +32,7 @@ pub struct RenewalProjection {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, utoipa::ToSchema)]
 pub struct RenewalInput {
+    pub enabled: Option<bool>,
     #[serde(
         default,
         deserialize_with = "super::server::deserialize_optional_nullable"
@@ -49,13 +52,14 @@ impl RenewalState {
             .as_deref()
             .and_then(|s| serde_json::from_str(s).ok())
             .unwrap_or_else(|| Self {
+                enabled: false,
                 billing_timezone: "UTC".into(),
                 confirmed_expired_at: model.expired_at,
             })
     }
     pub fn projection(&self, deadline: Option<DateTime<Utc>>) -> RenewalProjection {
         RenewalProjection {
-            enabled: false,
+            enabled: self.enabled,
             billing_timezone: self.billing_timezone.clone(),
             expiry_date: selected_date(deadline, &self.billing_timezone).map(|d| d.to_string()),
             confirmed_expired_at: self.confirmed_expired_at,
@@ -107,18 +111,22 @@ pub fn apply_edit(
     model: &server::Model,
     input: Option<&RenewalInput>,
     legacy: Option<Option<DateTime<Utc>>>,
+    billing_cycle: Option<&str>,
 ) -> Result<(RenewalState, Option<DateTime<Utc>>), AppError> {
-    apply_calendar(
+    let result = apply_calendar(
         RenewalState::from_server(model),
         model.expired_at,
         input,
         legacy,
-    )
+    )?;
+    validate_enabled(&result.0, result.1, billing_cycle)?;
+    Ok(result)
 }
 
 pub fn apply_initial(
     input: Option<&RenewalInput>,
     legacy: Option<DateTime<Utc>>,
+    billing_cycle: Option<&str>,
 ) -> Result<(RenewalState, Option<DateTime<Utc>>), AppError> {
     if input.is_some_and(|input| input.expiry_date.is_some()) && legacy.is_some() {
         return Err(AppError::Validation(
@@ -126,15 +134,25 @@ pub fn apply_initial(
         ));
     }
     // Preserve old create payload instants. Calendar input uses the new contract.
-    apply_calendar(
+    let result = apply_calendar(
         RenewalState {
-            billing_timezone: "UTC".into(),
+            enabled: false,
+                billing_timezone: "UTC".into(),
             confirmed_expired_at: legacy,
         },
         legacy,
         input,
         None,
-    )
+    )?;
+    validate_enabled(&result.0, result.1, billing_cycle)?;
+    Ok(result)
+}
+
+fn validate_enabled(state: &RenewalState, deadline: Option<DateTime<Utc>>, cycle: Option<&str>) -> Result<(), AppError> {
+    if state.enabled && (deadline.is_none() || !matches!(cycle, Some("monthly" | "quarterly" | "yearly"))) {
+        return Err(AppError::Validation("automatic renewal requires an expiry date and monthly, quarterly or yearly billing_cycle".into()));
+    }
+    Ok(())
 }
 
 fn apply_calendar(
@@ -209,6 +227,9 @@ fn apply_calendar(
         deadline = old_date
             .map(|d| date_boundary(d, &state.billing_timezone))
             .transpose()?;
+    }
+    if let Some(enabled) = input.and_then(|i| i.enabled) {
+        state.enabled = enabled;
     }
     Ok((state, deadline))
 }

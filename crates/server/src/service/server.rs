@@ -85,7 +85,7 @@ impl ServerService {
         Self::validate_update_input(&input)?;
 
         let (renewal, deadline) =
-            super::renewal::apply_edit(&model, input.renewal.as_ref(), input.expired_at)?;
+            super::renewal::apply_edit(&model, input.renewal.as_ref(), input.expired_at, input.billing_cycle.as_ref().map(|c| c.as_deref()).unwrap_or(model.billing_cycle.as_deref()))?;
         let mut active: server::ActiveModel = model.into();
         active.renewal_state = Set(Some(
             serde_json::to_string(&renewal).map_err(|e| AppError::Validation(e.to_string()))?,
