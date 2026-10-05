@@ -31,7 +31,8 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn } from '@/lib/utils'
-import type { DashboardWidget, SizingStrategy, WidgetTypeDefinition } from '@/lib/widget-types'
+import { parseConfig } from '@/lib/widget-helpers'
+import type { DashboardWidget, SizingStrategy, UptimeTimelineConfig, WidgetTypeDefinition } from '@/lib/widget-types'
 import { WIDGET_TYPES } from '@/lib/widget-types'
 import { layoutToPatch, widgetsToLayout } from './dashboard-layout'
 import { COLS, MARGIN, MARGIN_Y, ROW_HEIGHT, SCALE } from './grid-constants'
@@ -238,10 +239,17 @@ export function DashboardGrid({
       if (!widget) {
         return { kind: 'free' }
       }
+      if (widget.widget_type === 'uptime-timeline') {
+        const config = parseConfig<UptimeTimelineConfig | null>(widget.config_json)
+        const serverCount = config?.server_ids?.length || servers.length
+        if (serverCount === 1) {
+          return { kind: 'content-height' }
+        }
+      }
       const def = WIDGET_TYPE_MAP.get(widget.widget_type)
       return def?.sizing ?? { kind: 'free' }
     },
-    [widgetById]
+    [widgetById, servers.length]
   )
 
   // Persisted grid units are coarse (1 row == ROW_HEIGHT*SCALE px). The grid
@@ -483,6 +491,7 @@ export function DashboardGrid({
         {sortedWidgets.map((widget) => {
           const isAuto = getStrategy(widget.id).kind === 'content-height'
           const mobileHeight = mobileHeightPx(widget)
+          const mobileStyle = isAuto ? { minHeight: mobileHeight } : { height: mobileHeight }
           return (
             <div className="relative" data-widget-id={widget.id} key={widget.id}>
               {isEditing && (
@@ -495,7 +504,7 @@ export function DashboardGrid({
               )}
               <div
                 className={isEditing ? 'pointer-events-none' : undefined}
-                style={isAuto ? { minHeight: mobileHeight } : { height: mobileHeight }}
+                style={isAuto && widget.widget_type === 'uptime-timeline' ? undefined : mobileStyle}
               >
                 <VisibilityGate disabled={isEditing || isAuto}>
                   <WidgetRenderer servers={widgetServers} widget={widget} />

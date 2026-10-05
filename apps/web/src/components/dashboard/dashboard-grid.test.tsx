@@ -8,7 +8,17 @@ import { DashboardGrid } from './dashboard-grid'
 interface MockGridLayoutProps {
   children: ReactNode
   compactor?: { allowOverlap: boolean; preventCollision: boolean; type: null }
-  layout: Array<{ h: number; i: string; minH?: number; minW?: number; w: number; x: number; y: number }>
+  layout: Array<{
+    h: number
+    i: string
+    maxH?: number
+    minH?: number
+    minW?: number
+    resizeHandles?: string[]
+    w: number
+    x: number
+    y: number
+  }>
   onDrag?: (...args: unknown[]) => void
   onDragStart?: (...args: unknown[]) => void
   onDragStop?: (...args: unknown[]) => void
@@ -111,7 +121,80 @@ describe('DashboardGrid', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: originalInnerWidth })
+  })
+
+  it('fits a single-server uptime timeline to its measured content below two coarse rows', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(134)
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        private readonly callback: () => void
+
+        constructor(callback: () => void) {
+          this.callback = callback
+        }
+
+        observe() {
+          this.callback()
+        }
+
+        disconnect() {
+          // This observer only reports the initial fixture height.
+        }
+      }
+    )
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={[{ ...widgets[0], widget_type: 'uptime-timeline', grid_h: 2, config_json: '{"server_ids":["s1"]}' }]}
+      />
+    )
+
+    expect(getGridLayoutProps().layout[0]).toMatchObject({ h: 7, minH: 7, maxH: 7, resizeHandles: ['e'] })
+  })
+
+  it.each([
+    ['multiple servers', '{"server_ids":["s1","s2"]}'],
+    ['null configuration', 'null']
+  ])('keeps an uptime timeline freely resizable with %s', (_name, configJson) => {
+    render(
+      <DashboardGrid
+        isEditing
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={[{ ...widgets[0], widget_type: 'uptime-timeline', grid_h: 2, config_json: configJson }]}
+      />
+    )
+
+    expect(getGridLayoutProps().layout[0]).toMatchObject({ h: 8, minH: 8, maxH: 24 })
+    expect(getGridLayoutProps().layout[0].resizeHandles).toBeUndefined()
+  })
+
+  it('lets a single-server uptime timeline use its natural height on narrow screens', () => {
+    mockContainerWidth = 600
+    render(
+      <DashboardGrid
+        isEditing={false}
+        onLayoutChange={noop}
+        onWidgetDelete={noop}
+        onWidgetEdit={noop}
+        servers={[]}
+        widgets={[{ ...widgets[0], widget_type: 'uptime-timeline', grid_h: 3, config_json: '{"server_ids":["s1"]}' }]}
+      />
+    )
+
+    const container = screen.getByTestId('widget-w-1').closest('[data-widget-id]')?.firstElementChild
+    expect(container).not.toHaveStyle({ height: '240px' })
+    expect(container).not.toHaveStyle({ minHeight: '240px' })
   })
 
   it('renders widgets in view mode without edit/delete overlays', () => {

@@ -51,29 +51,35 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
     )
   }
 
+  if (serverIds.length === 1) {
+    const uptimeData = queries[0]?.data ?? []
+    const pct = computeAggregateUptime(uptimeData)
+    const name = serverNameMap.get(serverIds[0]) ?? serverIds[0]
+    return (
+      <DashboardCard className="h-full bg-card">
+        <div className="p-4" data-measure>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="font-semibold text-sm">{name}</h3>
+            <span className="font-medium text-sm">{pct !== null ? `${pct.toFixed(2)}%` : '\u2014'}</span>
+          </div>
+          {isLoading ? (
+            <div className="flex h-[72px] items-center justify-center text-muted-foreground text-xs">
+              {t('states.loading')}
+            </div>
+          ) : (
+            <UptimeTimeline days={uptimeData} rangeDays={days} showLabels showLegend />
+          )}
+        </div>
+      </DashboardCard>
+    )
+  }
+
   if (isLoading) {
     return (
       <DashboardCard className="flex h-full flex-col bg-card p-4">
         <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
           {t('states.loading')}
-        </div>
-      </DashboardCard>
-    )
-  }
-
-  if (serverIds.length === 1) {
-    const uptimeData = queries[0]?.data ?? []
-    const pct = computeAggregateUptime(uptimeData)
-    const name = serverNameMap.get(serverIds[0]) ?? serverIds[0]
-    return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-semibold text-sm">{name}</h3>
-          <span className="font-medium text-sm">{pct !== null ? `${pct.toFixed(2)}%` : '\u2014'}</span>
-        </div>
-        <div className="flex flex-1 items-end">
-          <UptimeTimeline days={uptimeData} rangeDays={days} showLabels showLegend />
         </div>
       </DashboardCard>
     )
