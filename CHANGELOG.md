@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.5] - 2026-10-05
+
 ### Added
 
 - **Encrypted mobile notifications through a dedicated Push Relay** -- The Server stores encrypted delivery work durably and sends it through a stateless Cloudflare Worker to APNs. The native iOS app provides explicit permission and subscription setup for alert triggers and recoveries, administrator security rules, and final scheduled-task outcomes, with successful tasks requiring opt-in. Operators must configure the HTTPS Relay and publisher APNs credentials; live device delivery still requires deployment and validation
