@@ -185,6 +185,58 @@ class FixtureProtocolTests(unittest.TestCase):
         self.assertNotIn("fixture-renewal-access", capture)
         self.assertNotIn("Authorization", capture)
 
+    def test_refresh_uses_the_complete_synthetic_session_without_recording_credentials(self):
+        self.reset("switch")
+        status, reply = self.request("/api/mobile/auth/refresh", "POST", {
+            "refresh_token": "fixture-renewal-refresh", "installation_id": "renewal-ui-installation-switch"
+        }, marker=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(reply["data"]["user"]["id"], "fixture-user")
+        self.assertEqual(reply["data"]["mobile_session_id"], "11111111-1111-4111-8111-111111111111")
+        self.assertEqual(reply["data"]["revocation_token"], "fixture-renewal-deletion")
+        capture = self.directory.joinpath("fixture-requests.jsonl").read_text()
+        for value in ["fixture-renewal-refresh", "fixture-renewal-deletion", "refresh_token"]:
+            self.assertNotIn(value, capture)
+
+    def test_previous_session_cleanup_keeps_its_exact_installation_and_session_scope(self):
+        self.reset("timezone")
+        status, reply = self.request("/api/mobile/auth/revoke", "POST", {
+            "revocation_token": "fixture-renewal-deletion",
+            "installation_id": "renewal-ui-installation-switch",
+            "expected_session_id": "11111111-1111-4111-8111-111111111111"
+        }, marker=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(reply, {"data": "ok"})
+        self.assertEqual(self.request("/__test/state")[1]["scenario"], "timezone")
+        capture = self.directory.joinpath("fixture-requests.jsonl").read_text()
+        self.assertNotIn("fixture-renewal-deletion", capture)
+        self.assertNotIn("revocation_token", capture)
+
+    def test_synthetic_auth_rejects_missing_or_crossed_identity_and_preserves_errors(self):
+        self.reset("switch")
+        for body in [{}, {"refresh_token": "arbitrary", "installation_id": "renewal-ui-installation-switch"},
+                     {"refresh_token": "fixture-renewal-refresh", "installation_id": "renewal-ui-installation-timezone"}]:
+            self.assertEqual(self.request("/api/mobile/auth/refresh", "POST", body, marker=False)[0], 422)
+        for body in [{"revocation_token": "arbitrary", "installation_id": "renewal-ui-installation-switch",
+                      "expected_session_id": "11111111-1111-4111-8111-111111111111"},
+                     {"revocation_token": "fixture-renewal-deletion", "installation_id": "renewal-ui-installation-switch",
+                      "expected_session_id": "22222222-2222-4222-8222-222222222222"}]:
+            self.assertEqual(self.request("/api/mobile/auth/revoke", "POST", body, marker=False)[0], 422)
+        self.assertEqual(len(self.reset("manual")["errors"]), 5)
+
+    def test_refresh_response_tracks_each_isolated_synthetic_session(self):
+        expected = {"switch": "11111111-1111-4111-8111-111111111111",
+                    "timezone": "22222222-2222-4222-8222-222222222222",
+                    "manual": "33333333-3333-4333-8333-333333333333"}
+        for scenario, session in expected.items():
+            self.reset(scenario)
+            status, reply = self.request("/api/mobile/auth/refresh", "POST", {
+                "refresh_token": "fixture-renewal-refresh", "installation_id": f"renewal-ui-installation-{scenario}"
+            }, marker=False)
+            self.assertEqual(status, 200)
+            self.assertEqual(reply["data"]["mobile_session_id"], session)
+            self.assertEqual(reply["data"]["revocation_token"], "fixture-renewal-deletion")
+
     def test_explicit_date_resubmission_on_switch_save_is_rejected_and_error_survives_reset(self):
         self.reset("switch")
         self.assertEqual(self.save({"enabled": True, "expiry_date": "2026-01-31"})[0], 422)

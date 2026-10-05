@@ -22,6 +22,17 @@ enum UITestSupport {
         /// the SAME id, so a seeded session survives access-token expiry instead
         /// of bouncing to the login screen.
         let installationId: String?
+        /// Complete out-of-band login metadata preserves the production
+        /// exact-session cleanup boundary across repeated Simulator launches.
+        let revocationToken: String?
+        let mobileSessionId: String?
+
+        var tokenResponse: MobileTokenResponse {
+            MobileTokenResponse(accessToken: accessToken, accessExpiresInSecs: 900,
+                refreshToken: refreshToken, refreshExpiresInSecs: 3600, tokenType: "Bearer",
+                user: MobileUser(id: userId, username: username, role: role),
+                revocationToken: revocationToken, mobileSessionId: mobileSessionId)
+        }
     }
 
     static var seed: Seed? {
@@ -39,7 +50,9 @@ enum UITestSupport {
             userId: env["SB_UITEST_USER_ID"] ?? "uitest",
             username: env["SB_UITEST_USERNAME"] ?? "admin",
             role: env["SB_UITEST_ROLE"] ?? "admin",
-            installationId: env["SB_UITEST_INSTALLATION_ID"]
+            installationId: env["SB_UITEST_INSTALLATION_ID"],
+            revocationToken: env["SB_UITEST_REVOCATION"],
+            mobileSessionId: env["SB_UITEST_MOBILE_SESSION_ID"]
         )
     }
 

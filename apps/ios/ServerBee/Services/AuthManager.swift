@@ -41,9 +41,7 @@ final class AuthManager {
         if let seed = UITestSupport.seed {
             setServerUrl(seed.serverUrl)
             if let installation = seed.installationId { try? KeychainService.saveString(installation, for: KeychainService.installationIdKey) }
-            handleLoginResponse(MobileTokenResponse(accessToken: seed.accessToken, accessExpiresInSecs: 900,
-                refreshToken: seed.refreshToken, refreshExpiresInSecs: 3600, tokenType: "Bearer",
-                user: MobileUser(id: seed.userId, username: seed.username, role: seed.role)))
+            handleLoginResponse(seed.tokenResponse)
             if UITestSupport.sessionRecovery, let context = captureContext() {
                 do { try suspendSessionForRecovery(context: context) } catch { recoveryError = error.localizedDescription }
             }

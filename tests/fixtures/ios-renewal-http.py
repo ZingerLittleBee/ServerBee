@@ -20,6 +20,13 @@ from urllib.parse import urlsplit
 
 SERVER_ID = "renewal-ui-server"
 ACCESS_MARKER = "fixture-renewal-access"
+REFRESH_MARKER = "fixture-renewal-refresh"
+DELETION_MARKER = "fixture-renewal-deletion"
+SESSION_IDS = {
+    "switch": "11111111-1111-4111-8111-111111111111",
+    "timezone": "22222222-2222-4222-8222-222222222222",
+    "manual": "33333333-3333-4333-8333-333333333333",
+}
 NY_JANUARY = "2026-02-01T04:59:59.999999999Z"
 NY_FEBRUARY = "2026-03-01T04:59:59.999999999Z"
 NY_MANUAL = "2026-02-16T04:59:59.999999999Z"
@@ -175,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("invalid request length")
                 if length:
                     body = json.loads(self.rfile.read(length))
-                if path.startswith("/api/"):
+                if path.startswith("/api/") and path not in {"/api/mobile/auth/refresh", "/api/mobile/auth/revoke"}:
                     authorized = self.headers.get("Authorization") == f"Bearer {ACCESS_MARKER}"
                     if not authorized:
                         raise ValueError("application request lacks fixture marker")
@@ -196,6 +203,31 @@ class Handler(BaseHTTPRequestHandler):
     def dispatch(self, path, body):
         fixture = self.server.fixture
         method = self.command
+        if method == "POST" and path == "/api/mobile/auth/revoke":
+            # Replaying an older synthetic identity must keep its own target;
+            # replacement login does not authorize deleting the current one.
+            valid = [{"revocation_token": DELETION_MARKER,
+                      "installation_id": f"renewal-ui-installation-{scenario}",
+                      "expected_session_id": session}
+                     for scenario, session in SESSION_IDS.items()]
+            if body not in valid:
+                return fixture.fail("invalid synthetic exact-session cleanup")
+            return 200, {"data": "ok"}
+        if method == "POST" and path == "/api/mobile/auth/refresh":
+            # Normal refresh authenticates by its captured body, not a bearer
+            # header. Keep this local client seam strict and per-scenario; never
+            # admit arbitrary authentication/provider traffic.
+            expected = {"refresh_token": REFRESH_MARKER,
+                        "installation_id": f"renewal-ui-installation-{fixture.scenario}"}
+            if fixture.scenario not in SESSION_IDS or body != expected:
+                return fixture.fail("invalid synthetic refresh identity")
+            return 200, {"data": {
+                "access_token": ACCESS_MARKER, "access_expires_in_secs": 900,
+                "refresh_token": REFRESH_MARKER, "refresh_expires_in_secs": 3600,
+                "token_type": "Bearer", "revocation_token": DELETION_MARKER,
+                "mobile_session_id": SESSION_IDS[fixture.scenario],
+                "user": {"id": "fixture-user", "username": "fixture-admin", "role": "admin"},
+            }}
         if method == "GET" and path == "/__test/state":
             return 200, fixture.state()
         if method == "POST" and path == "/__test/reset":
