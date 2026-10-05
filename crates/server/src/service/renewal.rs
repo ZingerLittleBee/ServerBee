@@ -145,6 +145,8 @@ fn apply_calendar(
 ) -> Result<(RenewalState, Option<DateTime<Utc>>), AppError> {
     let old_date = selected_date(original, &state.billing_timezone);
     let mut deadline = original;
+    let mut timezone_changed = false;
+    let mut date_replaced = false;
     let timezone = input.and_then(|i| i.billing_timezone.as_ref());
     if let Some(zone) = timezone {
         let zone = zone.as_deref().unwrap_or("UTC");
@@ -153,7 +155,7 @@ fn apply_calendar(
         })?;
         if zone != state.billing_timezone {
             state.billing_timezone = zone.into();
-            deadline = old_date.map(|d| date_boundary(d, zone)).transpose()?;
+            timezone_changed = true;
         }
     }
     let date = input.and_then(|i| i.expiry_date.as_ref());
@@ -177,6 +179,7 @@ fn apply_calendar(
             })
             .transpose()?;
         if date != old_date {
+            date_replaced = true;
             deadline = date
                 .map(|d| date_boundary(d, &state.billing_timezone))
                 .transpose()?;
@@ -188,6 +191,7 @@ fn apply_calendar(
         let unchanged = value == original
             || matches!((value, original), (Some(new), Some(old)) if new.date_naive() == old.date_naive() && new.time() == chrono::NaiveTime::MIN);
         if !unchanged {
+            date_replaced = true;
             let date = value.and_then(|instant| {
                 if instant.time() == chrono::NaiveTime::MIN {
                     Some(instant.date_naive())
@@ -200,6 +204,11 @@ fn apply_calendar(
                 .transpose()?;
             state.confirmed_expired_at = deadline;
         }
+    }
+    if timezone_changed && !date_replaced {
+        deadline = old_date
+            .map(|d| date_boundary(d, &state.billing_timezone))
+            .transpose()?;
     }
     Ok((state, deadline))
 }

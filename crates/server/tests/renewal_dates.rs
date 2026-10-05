@@ -435,3 +435,42 @@ async fn invalid_or_ambiguous_onboarding_calendar_has_no_durable_side_effects() 
         .unwrap();
     assert_eq!(body["data"], json!([]));
 }
+
+#[tokio::test]
+async fn combined_timezone_and_date_edit_validates_only_the_final_calendar() {
+    let (base, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    for date in [json!("2011-12-31"), Value::Null] {
+        let id = create_server(&admin, &base, "combined-calendar").await;
+        assert_eq!(
+            admin
+                .put(format!("{base}/api/servers/{id}"))
+                .json(&json!({"renewal":{"expiry_date":"2011-12-30","billing_timezone":"UTC"}}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        let response = admin
+            .put(format!("{base}/api/servers/{id}"))
+            .json(&json!({"renewal":{"expiry_date":date,"billing_timezone":"Pacific/Apia"}}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            200,
+            "the replaced UTC date need not exist in the new zone"
+        );
+        let body: Value = response.json().await.unwrap();
+        assert_eq!(body["data"]["renewal"]["expiry_date"], date);
+        assert_eq!(body["data"]["renewal"]["billing_timezone"], "Pacific/Apia");
+        if date.is_null() {
+            assert_eq!(body["data"]["expired_at"], Value::Null);
+        } else {
+            assert_eq!(body["data"]["expired_at"], "2011-12-31T09:59:59.999999999Z");
+        }
+    }
+}
