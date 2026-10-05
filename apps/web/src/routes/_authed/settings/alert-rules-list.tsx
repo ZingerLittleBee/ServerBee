@@ -197,19 +197,36 @@ function AlertRuleStates({ states }: { states: AlertStateResponse[] | undefined 
     <div className="border-t bg-muted/20 px-4 py-2">
       {states && states.length > 0 ? (
         <div className="space-y-1">
-          {states.map((state) => (
-            <div className="flex items-center justify-between text-xs" key={state.server_id}>
-              <span className="flex items-center gap-2">
-                <span className={`size-2 rounded-full ${state.resolved ? 'bg-green-500' : 'bg-red-500'}`} />
-                {state.server_name}
-              </span>
-              <span className="text-muted-foreground">
-                {state.resolved ? t('alerts.resolved') : `${t('alerts.triggered')} (${state.count}x)`}
-                {' · '}
-                {formatDateTime(state.first_triggered_at)}
-              </span>
-            </div>
-          ))}
+          {states.map((state) => {
+            // Older Servers only provide the resolved flag.
+            const status =
+              (state as AlertStateResponse & { status?: string }).status ?? (state.resolved ? 'resolved' : 'firing')
+            let statusColor = 'bg-muted-foreground'
+            let statusText = t('alerts.superseded')
+            if (status === 'firing') {
+              statusColor = 'bg-red-500'
+              statusText = `${t('alerts.triggered')} (${state.count}x)`
+            } else if (status === 'resolved') {
+              statusColor = 'bg-green-500'
+              statusText = t('alerts.resolved')
+            }
+            return (
+              <div
+                className="flex items-center justify-between text-xs"
+                key={`${state.server_id}-${state.first_triggered_at}`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className={`size-2 rounded-full ${statusColor}`} />
+                  {state.server_name}
+                </span>
+                <span className="text-muted-foreground">
+                  {statusText}
+                  {' · '}
+                  {formatDateTime(state.first_triggered_at)}
+                </span>
+              </div>
+            )
+          })}
         </div>
       ) : (
         <p className="text-muted-foreground text-xs">{t('alerts.no_triggered')}</p>

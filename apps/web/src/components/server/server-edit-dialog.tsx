@@ -26,6 +26,7 @@ import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
 import { buildCountryOptions, type CountryOption } from '@/lib/country-codes'
 import { projectServerCatalog } from '@/lib/server-catalog'
+import { invalidateServerCosts } from '@/lib/server-cost-cache'
 import { cn, countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
@@ -463,6 +464,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
     onSuccess: (data) => {
       projectServerCatalog(queryClient, { kind: 'server_saved', server: data })
+      invalidateServerCosts(queryClient, [data.id])
     }
   })
 
