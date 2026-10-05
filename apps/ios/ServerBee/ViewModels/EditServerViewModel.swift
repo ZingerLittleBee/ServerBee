@@ -18,6 +18,8 @@ final class EditServerViewModel {
     var currency = ""         // "" = none
     var billingCycle = ""     // "" = none
     var billingStartDayText = ""
+    var automaticRenewal = false
+    private(set) var supportsAutomaticRenewal = false
     var hasExpiry = false
     var expiryDate = Date()
     var billingTimezone = "UTC" {
@@ -42,6 +44,7 @@ final class EditServerViewModel {
     var isSaving = false
     var errorMessage: String?
     private var originalTags: [String] = []
+    private var originalAutomaticRenewal = false
     private var originalExpiryDate: String?
     private var originalBillingTimezone = "UTC"
     private var lastValidBillingTimezone = "UTC"
@@ -59,6 +62,9 @@ final class EditServerViewModel {
         currency = config.currency ?? ""
         billingCycle = config.billingCycle ?? ""
         billingStartDayText = config.billingStartDay.map(String.init) ?? ""
+        supportsAutomaticRenewal = config.renewal != nil
+        automaticRenewal = config.renewal?.enabled ?? false
+        originalAutomaticRenewal = automaticRenewal
         billingTimezone = config.renewal?.billingTimezone ?? "UTC"
         originalBillingTimezone = billingTimezone
         originalExpiryDate = config.renewal?.expiryDate
@@ -121,6 +127,25 @@ extension EditServerViewModel {
         return result.sorted()
     }
 
+    /// Validation concerns the resulting form, so switching off and clearing
+    /// the deadline/interval in one save remains valid. Recurrence is server-owned.
+    var automaticRenewalPrerequisiteMessage: String? {
+        guard TimeZone(identifier: billingTimezone) != nil else {
+            return String(localized: "Choose a valid billing timezone.")
+        }
+        guard hasExpiry, BillingDate.string(from: expiryDate, timezone: billingTimezone) != nil else {
+            return String(localized: "Automatic renewal requires an expiry date.")
+        }
+        guard ["monthly", "quarterly", "yearly"].contains(billingCycle) else {
+            return String(localized: "Automatic renewal requires a monthly, quarterly, or yearly cycle.")
+        }
+        return nil
+    }
+
+    var renewalValidationMessage: String? {
+        automaticRenewal ? automaticRenewalPrerequisiteMessage : nil
+    }
+
     func buildRequest() -> UpdateServerRequest {
         var request = UpdateServerRequest()
         request.name = name.trimmingCharacters(in: .whitespaces)
@@ -137,8 +162,10 @@ extension EditServerViewModel {
         let selectedDate = hasExpiry ? BillingDate.string(from: expiryDate, timezone: billingTimezone) : nil
         let dateChanged = selectedDate != originalExpiryDate
         let timezoneChanged = billingTimezone != originalBillingTimezone
-        if dateChanged || timezoneChanged {
+        let enabledChanged = supportsAutomaticRenewal && automaticRenewal != originalAutomaticRenewal
+        if dateChanged || timezoneChanged || enabledChanged {
             var renewal = UpdateRenewalRequest()
+            if enabledChanged { renewal.enabled = automaticRenewal }
             if dateChanged {
                 if let selectedDate { renewal.expiryDate = .set(selectedDate) } else { renewal.expiryDate = .clear }
             }
@@ -172,6 +199,10 @@ extension EditServerViewModel {
         }
         guard TimeZone(identifier: billingTimezone) != nil else {
             errorMessage = String(localized: "Choose a valid billing timezone.")
+            return false
+        }
+        if let message = renewalValidationMessage {
+            errorMessage = message
             return false
         }
         errorMessage = nil

@@ -1052,7 +1052,8 @@ async fn update_server(
     // Capabilities are agent-owned and not writable here (the `capabilities`
     // field was removed from `UpdateServerInput`), so updating a server can no
     // longer change what the agent is allowed to do.
-    let server = ServerService::update_server(&state.db, &id, input).await?;
+    let server =
+        ServerService::update_server_at(&state.db, &id, input, state.renewal_clock.now()).await?;
 
     let authority = state
         .agent_authority

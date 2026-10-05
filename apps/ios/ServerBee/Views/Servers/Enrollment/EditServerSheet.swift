@@ -22,6 +22,7 @@ struct EditServerSheet: View {
             Form {
                 basicSection
                 billingSection
+                renewalSection
                 if let error = viewModel.errorMessage {
                     Section {
                         Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.serverOffline)
@@ -45,6 +46,7 @@ private extension EditServerSheet {
     var basicSection: some View {
         Section {
             TextField(String(localized: "Name"), text: $viewModel.name)
+                .accessibilityIdentifier("server.name")
             Picker(String(localized: "Group"), selection: $viewModel.groupId) {
                 Text(String(localized: "No group")).tag("")
                 ForEach(viewModel.groups) { group in
@@ -79,14 +81,29 @@ private extension EditServerSheet {
             }
             TextField(String(localized: "Billing day (1-28)"), text: $viewModel.billingStartDayText)
                 .keyboardType(.numberPad)
+            TextField(String(localized: "Traffic limit (GiB)"), text: $viewModel.trafficLimitGiBText)
+                .keyboardType(.decimalPad)
+            Picker(String(localized: "Traffic type"), selection: $viewModel.trafficLimitType) {
+                Text(String(localized: "None")).tag("")
+                ForEach(Self.trafficTypes, id: \.self) { Text(Self.trafficTypeLabel($0)).tag($0) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    var renewalSection: some View {
+        Section(String(localized: "Renewal")) {
             Picker(String(localized: "Billing timezone"), selection: $viewModel.billingTimezone) {
                 ForEach(Self.billingTimezones, id: \.self) { Text(verbatim: $0).tag($0) }
             }
+            .accessibilityIdentifier("renewal.timezone")
             Toggle(String(localized: "Has expiry"), isOn: $viewModel.hasExpiry)
+                .accessibilityIdentifier("renewal.hasExpiry")
             if viewModel.hasExpiry {
                 DatePicker(String(localized: "Expires"), selection: $viewModel.expiryDate, displayedComponents: .date)
                     .environment(\.timeZone, viewModel.expiryTimezone)
                     .environment(\.calendar, viewModel.expiryCalendar)
+                    .accessibilityIdentifier("renewal.expiry")
                 Text(String(localized: "Valid through the selected date in the billing timezone."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -94,11 +111,33 @@ private extension EditServerSheet {
             Text(String(localized: "The renewal deadline is separate from the cost estimation period."))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            TextField(String(localized: "Traffic limit (GiB)"), text: $viewModel.trafficLimitGiBText)
-                .keyboardType(.decimalPad)
-            Picker(String(localized: "Traffic type"), selection: $viewModel.trafficLimitType) {
-                Text(String(localized: "None")).tag("")
-                ForEach(Self.trafficTypes, id: \.self) { Text(Self.trafficTypeLabel($0)).tag($0) }
+            if viewModel.supportsAutomaticRenewal {
+                Toggle(String(localized: "Automatic renewal"), isOn: $viewModel.automaticRenewal)
+                    .disabled(!viewModel.automaticRenewal && viewModel.automaticRenewalPrerequisiteMessage != nil)
+                    .accessibilityIdentifier("renewal.enabled")
+                    .accessibilityHint(String(localized: "Advance the forecast after each renewal date. Turning this off freezes the current deadline."))
+                if let message = viewModel.automaticRenewalPrerequisiteMessage {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("renewal.prerequisites")
+                }
+                Text(String(localized: "Automatic renewal advances a forecast after the expiry day ends. Provider renewal and payment remain your responsibility."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                if let renewal = config.renewal {
+                    if let label = renewal.deadlineOriginLabel {
+                        LabeledContent(String(localized: "Saved renewal deadline"), value: label)
+                            .accessibilityIdentifier("renewal.origin")
+                    }
+                    if let explanation = renewal.deadlineExplanation {
+                        Text(explanation).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    if let date = renewal.confirmedDisplayDate {
+                        LabeledContent(String(localized: "Last confirmed expiry"), value: date)
+                            .accessibilityIdentifier("renewal.confirmed")
+                    }
+                }
             }
         }
     }
@@ -121,6 +160,7 @@ private extension EditServerSheet {
                     }
                 }
                 .disabled(viewModel.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityIdentifier("server.save")
             }
         }
     }

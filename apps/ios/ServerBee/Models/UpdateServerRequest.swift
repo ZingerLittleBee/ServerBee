@@ -21,19 +21,22 @@ enum Tri<Value: Encodable & Sendable>: Sendable {
     }
 }
 
-/// Date-only renewal edits. Omission preserves the server's current anchor;
+/// Renewal edits. Omission preserves the server's current schedule;
 /// clearing is explicit and validation belongs to the server.
 struct UpdateRenewalRequest: Encodable, Sendable {
+    var enabled: Bool?
     var billingTimezone: Tri<String> = .unchanged
     var expiryDate: Tri<String> = .unchanged
 
     enum CodingKeys: String, CodingKey {
+        case enabled
         case billingTimezone = "billing_timezone"
         case expiryDate = "expiry_date"
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(enabled, forKey: .enabled)
         try billingTimezone.encode(into: &container, forKey: .billingTimezone)
         try expiryDate.encode(into: &container, forKey: .expiryDate)
     }

@@ -3568,6 +3568,7 @@ export interface components {
         };
         RenewalInput: {
             billing_timezone?: string | null;
+            enabled?: boolean | null;
             expiry_date?: string | null;
         };
         RenewalProjection: {

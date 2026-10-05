@@ -823,6 +823,16 @@ impl AlertService {
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
     ) -> Result<(), AppError> {
+        Self::evaluate_all_at(db, config, agent_manager, state_manager, Utc::now()).await
+    }
+
+    pub async fn evaluate_all_at(
+        db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
+        agent_manager: &AgentManager,
+        state_manager: &AlertStateManager,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<(), AppError> {
         // Event-driven conditions cannot be re-polled. Replay captured intents
         // before ordinary rules, including the first tick after Server restart.
         crate::service::alert_event_intents::replay(db, config, state_manager).await?;
@@ -855,7 +865,7 @@ impl AlertService {
             }
 
             if let Err(e) =
-                Self::evaluate_rule(db, config, agent_manager, state_manager, &rule).await
+                Self::evaluate_rule_at(db, config, agent_manager, state_manager, &rule, now).await
             {
                 tracing::error!("Error evaluating alert rule '{}': {e}", rule.name);
             }
@@ -863,12 +873,24 @@ impl AlertService {
         Ok(())
     }
 
+    #[cfg(test)]
     async fn evaluate_rule(
         db: &DatabaseConnection,
         config: &crate::config::AppConfig,
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
+    ) -> Result<(), AppError> {
+        Self::evaluate_rule_at(db, config, agent_manager, state_manager, rule, Utc::now()).await
+    }
+
+    async fn evaluate_rule_at(
+        db: &DatabaseConnection,
+        config: &crate::config::AppConfig,
+        agent_manager: &AgentManager,
+        state_manager: &AlertStateManager,
+        rule: &alert_rule::Model,
+        now: chrono::DateTime<Utc>,
     ) -> Result<(), AppError> {
         let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json).unwrap_or_default();
         if items.is_empty() {
@@ -878,7 +900,7 @@ impl AlertService {
         let servers = resolve_servers(db, &rule.cover_type, &rule.server_ids_json).await?;
 
         for srv in &servers {
-            let triggered = Self::check_server(db, agent_manager, &items, &srv.id).await;
+            let triggered = Self::check_server_at(db, agent_manager, &items, &srv.id, now).await;
 
             if triggered {
                 // Skip alerting if the server is in a maintenance window
@@ -906,11 +928,22 @@ impl AlertService {
         Ok(())
     }
 
+    #[cfg(test)]
     async fn check_server(
         db: &DatabaseConnection,
         agent_manager: &AgentManager,
         items: &[AlertRuleItem],
         server_id: &str,
+    ) -> bool {
+        Self::check_server_at(db, agent_manager, items, server_id, Utc::now()).await
+    }
+
+    async fn check_server_at(
+        db: &DatabaseConnection,
+        agent_manager: &AgentManager,
+        items: &[AlertRuleItem],
+        server_id: &str,
+        now: chrono::DateTime<Utc>,
     ) -> bool {
         for item in items {
             let matched = match item.rule_type.as_str() {
@@ -936,7 +969,7 @@ impl AlertService {
                 }
                 "expiration" => {
                     // Check if server's expired_at is within N days (default 7)
-                    check_expiration(db, server_id, item).await
+                    check_expiration_at(db, server_id, item, now).await
                 }
                 "network_latency" => check_network_latency(db, server_id, item).await,
                 "network_packet_loss" => check_network_packet_loss(db, server_id, item).await,
@@ -1268,7 +1301,17 @@ async fn check_transfer_cycle(
 /// Check if a server's `expired_at` is within N days of now (or already expired).
 /// `item.duration` = days threshold (default 7). Triggers if expired_at is set and
 /// expires within that many days.
+#[cfg(test)]
 async fn check_expiration(db: &DatabaseConnection, server_id: &str, item: &AlertRuleItem) -> bool {
+    check_expiration_at(db, server_id, item, Utc::now()).await
+}
+
+async fn check_expiration_at(
+    db: &DatabaseConnection,
+    server_id: &str,
+    item: &AlertRuleItem,
+    now: chrono::DateTime<Utc>,
+) -> bool {
     let srv = server::Entity::find_by_id(server_id)
         .one(db)
         .await
@@ -1281,7 +1324,7 @@ async fn check_expiration(db: &DatabaseConnection, server_id: &str, item: &Alert
         return false;
     };
     let days_threshold = item.duration.unwrap_or(7) as i64;
-    let deadline = Utc::now() + Duration::days(days_threshold);
+    let deadline = now + Duration::days(days_threshold);
     expired_at <= deadline
 }
 
@@ -1635,10 +1678,7 @@ mod tests {
 
     #[test]
     fn test_validate_rejects_multiple_security_items() {
-        let items = vec![
-            item("ssh_brute_force_detected"),
-            item("ssh_new_ip_login"),
-        ];
+        let items = vec![item("ssh_brute_force_detected"), item("ssh_new_ip_login")];
         let err = validate_alert_rule_items(&items).expect_err("should reject multi-security");
         assert!(matches!(err, AppError::BadRequest(_)));
     }
@@ -3104,15 +3144,9 @@ mod tests {
 
         let state_manager = AlertStateManager::new();
         let config = crate::config::AppConfig::default();
-        AlertService::check_event_rules(
-            &db,
-            &config,
-            &state_manager,
-            "srv-1",
-            "ssh_new_ip_login",
-        )
-        .await
-        .expect("check_event_rules");
+        AlertService::check_event_rules(&db, &config, &state_manager, "srv-1", "ssh_new_ip_login")
+            .await
+            .expect("check_event_rules");
         assert!(!state_manager.is_triggered("rule-ip", "srv-1", ""));
     }
 

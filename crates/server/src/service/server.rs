@@ -81,11 +81,30 @@ impl ServerService {
         id: &str,
         input: UpdateServerInput,
     ) -> Result<server::Model, AppError> {
-        let model = Self::get_server(db, id).await?;
-        Self::validate_update_input(&input)?;
+        Self::update_server_at(db, id, input, Utc::now()).await
+    }
 
-        let (renewal, deadline) =
-            super::renewal::apply_edit(&model, input.renewal.as_ref(), input.expired_at)?;
+    pub async fn update_server_at(
+        db: &DatabaseConnection,
+        id: &str,
+        input: UpdateServerInput,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<server::Model, AppError> {
+        Self::validate_update_input(&input)?;
+        let tx = db.begin().await?;
+        let model = super::renewal::load_for_update(&tx, id).await?;
+
+        let (renewal, deadline) = super::renewal::apply_edit(
+            &model,
+            input.renewal.as_ref(),
+            input.expired_at,
+            input
+                .billing_cycle
+                .as_ref()
+                .map(|c| c.as_deref())
+                .unwrap_or(model.billing_cycle.as_deref()),
+            now,
+        )?;
         let mut active: server::ActiveModel = model.into();
         active.renewal_state = Set(Some(
             serde_json::to_string(&renewal).map_err(|e| AppError::Validation(e.to_string()))?,
@@ -147,8 +166,9 @@ impl ServerService {
         // owned by the agent host (its config file) and the server only
         // mirrors what the agent reports — see `update_capabilities_mirror`.
 
-        active.updated_at = Set(Utc::now());
-        let updated = active.update(db).await?;
+        active.updated_at = Set(now);
+        let updated = active.update(&tx).await?;
+        tx.commit().await?;
         Ok(updated)
     }
 

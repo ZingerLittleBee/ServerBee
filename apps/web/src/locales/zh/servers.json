@@ -367,5 +367,12 @@
   "upgrade_status_failed": "升级失败",
   "upgrade_status_timeout": "升级超时",
   "upgrade_error_with_backup": "备份保存在",
-  "upgrade_backup_path": "备份位置"
+  "upgrade_backup_path": "备份位置",
+  "edit_automatic_renewal": "自动续费跟踪",
+  "edit_renewal_prerequisites": "请选择到期日期、月付/季付/年付周期和有效的 IANA 账单时区。",
+  "renewal_origin_confirmed": "操作员确认的到期日",
+  "renewal_origin_projected": "预测到期日",
+  "renewal_origin_frozen": "已冻结的预测到期日",
+  "renewal_confirmed_history": "上次操作员确认的到期日：{{date}}（{{timezone}}）",
+  "renewal_forecast_explanation": "跟踪会在每个到期日期结束后推进预测。关闭后将冻结当前到期日。该估算不代表服务商已续费或付款成功。"
 }
