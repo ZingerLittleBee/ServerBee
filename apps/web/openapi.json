@@ -9945,6 +9945,16 @@
               "null"
             ]
           },
+          "renewal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RenewalInput"
+              }
+            ]
+          },
           "tags": {
             "type": "array",
             "items": {
@@ -10248,6 +10258,14 @@
               }
             }
           }
+        ]
+      },
+      "DeadlineOrigin": {
+        "type": "string",
+        "enum": [
+          "confirmed",
+          "projected",
+          "frozen"
         ]
       },
       "DeleteRequest": {
@@ -12718,6 +12736,61 @@
           }
         }
       },
+      "RenewalInput": {
+        "type": "object",
+        "properties": {
+          "billing_timezone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiry_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "RenewalProjection": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "billing_timezone",
+          "deadline_origin"
+        ],
+        "properties": {
+          "billing_timezone": {
+            "type": "string"
+          },
+          "confirmed_expired_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "deadline_origin": {
+            "$ref": "#/components/schemas/DeadlineOrigin"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expiry_date": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "occurrence_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ResourceValue": {
         "type": "object",
         "properties": {
@@ -13694,6 +13767,9 @@
               "string",
               "null"
             ]
+          },
+          "renewal": {
+            "$ref": "#/components/schemas/RenewalProjection"
           },
           "swap_total": {
             "type": [
@@ -15382,6 +15458,16 @@
             "type": [
               "string",
               "null"
+            ]
+          },
+          "renewal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RenewalInput"
+              }
             ]
           },
           "traffic_limit": {

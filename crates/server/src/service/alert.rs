@@ -3258,6 +3258,7 @@ mod tests {
             hidden: Set(false),
             capabilities: Set(0),
             protocol_version: Set(1),
+            renewal_state: Set(None),
             expired_at: Set(expired_at),
             created_at: Set(now),
             updated_at: Set(now),

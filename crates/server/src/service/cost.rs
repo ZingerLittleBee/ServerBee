@@ -835,6 +835,7 @@ mod tests {
             price: Set(price),
             billing_cycle: Set(billing_cycle.map(str::to_string)),
             currency: Set(currency.map(str::to_string)),
+            renewal_state: Set(None),
             expired_at: Set(expired_at),
             traffic_limit: Set(Some(1024_i64.pow(4))),
             traffic_limit_type: Set(Some("sum".to_string())),

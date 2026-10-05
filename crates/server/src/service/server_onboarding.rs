@@ -338,16 +338,6 @@ impl NormalizedProfile {
             ));
         }
 
-        if profile
-            .renewal
-            .as_ref()
-            .is_some_and(|input| input.expiry_date.is_some())
-            && profile.expired_at.is_some()
-        {
-            return Err(OnboardingError::Validation(
-                "expiry_date and expired_at cannot be submitted together".into(),
-            ));
-        }
         let (renewal, expired_at) =
             super::renewal::apply_initial(profile.renewal.as_ref(), profile.expired_at)
                 .map_err(|e| OnboardingError::Validation(e.to_string()))?;

@@ -102,8 +102,24 @@ async fn predecessor_database() -> (tempfile::TempDir, std::path::PathBuf) {
     let db = sea_orm::Database::connect(format!("sqlite://{}?mode=rwc", path.display()))
         .await
         .unwrap();
-    let steps = Migrator::migrations().len() as u32 - 1;
+    let steps = Migrator::migrations()
+        .iter()
+        .position(|migration| migration.name() == "m20261005_000086_renewal_dates")
+        .expect("renewal migration remains registered") as u32;
     Migrator::up(&db, Some(steps)).await.unwrap();
+    let columns = db
+        .query_all(sea_orm::Statement::from_string(
+            sea_orm::DatabaseBackend::Sqlite,
+            "PRAGMA table_info(servers)",
+        ))
+        .await
+        .unwrap();
+    assert!(
+        !columns
+            .iter()
+            .any(|column| column.try_get::<String>("", "name").unwrap() == "renewal_state"),
+        "fixture must predate renewal schema"
+    );
     let user = AuthService::create_user(&db, "admin", "testpass", "admin")
         .await
         .unwrap();
@@ -386,4 +402,36 @@ async fn predecessor_onboarding_retry_keeps_its_original_request_identity() {
     let body: Value = response.json().await.unwrap();
     assert_eq!(body["data"]["server_id"], "legacy-host");
     assert!(body["data"]["enrollment"].is_null());
+}
+
+#[tokio::test]
+async fn invalid_or_ambiguous_onboarding_calendar_has_no_durable_side_effects() {
+    let (base, _tmp) = start_test_server().await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    for fields in [
+        json!({"renewal":{"expiry_date":"2026-02-30"}}),
+        json!({"renewal":{"expiry_date":"2026-01-31","billing_timezone":"not-a-timezone"}}),
+        json!({"renewal":{"expiry_date":"2026-01-31"},"expired_at":"2026-01-31T00:00:00Z"}),
+    ] {
+        let mut payload = fields;
+        payload["name"] = json!("invalid-create");
+        payload["onboarding_request_id"] = json!(uuid::Uuid::new_v4().to_string());
+        let response = admin
+            .post(format!("{base}/api/servers"))
+            .json(&payload)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 422);
+    }
+    let body: Value = admin
+        .get(format!("{base}/api/servers"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["data"], json!([]));
 }

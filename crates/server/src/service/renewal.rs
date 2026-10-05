@@ -120,6 +120,11 @@ pub fn apply_initial(
     input: Option<&RenewalInput>,
     legacy: Option<DateTime<Utc>>,
 ) -> Result<(RenewalState, Option<DateTime<Utc>>), AppError> {
+    if input.is_some_and(|input| input.expiry_date.is_some()) && legacy.is_some() {
+        return Err(AppError::Validation(
+            "expiry_date and expired_at cannot be submitted together".into(),
+        ));
+    }
     // Preserve old create payload instants. Calendar input uses the new contract.
     apply_calendar(
         RenewalState {
