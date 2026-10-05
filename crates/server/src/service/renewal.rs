@@ -122,7 +122,13 @@ impl RenewalState {
                     .filter(|day| *day > 0)
                     .ok_or_else(|| AppError::Validation("renewal date is out of range".into()))?;
             };
-            let boundary = date_boundary(candidate, &self.billing_timezone)?;
+            // A timezone may skip a whole anchored date. It cannot represent an
+            // occurrence; retain the anchor and examine the following period.
+            let Some(boundary) = representable_date_boundary(candidate, &self.billing_timezone)?
+            else {
+                periods += 1;
+                continue;
+            };
             if boundary >= now {
                 *deadline = Some(boundary);
                 self.deadline_origin = DeadlineOrigin::Projected;
@@ -150,6 +156,15 @@ pub fn selected_date(deadline: Option<DateTime<Utc>>, timezone: &str) -> Option<
 }
 
 pub fn date_boundary(date: NaiveDate, timezone: &str) -> Result<DateTime<Utc>, AppError> {
+    representable_date_boundary(date, timezone)?.ok_or_else(|| {
+        AppError::Validation("expiry_date does not exist in billing_timezone".into())
+    })
+}
+
+fn representable_date_boundary(
+    date: NaiveDate,
+    timezone: &str,
+) -> Result<Option<DateTime<Utc>>, AppError> {
     let tz: Tz = timezone.parse().map_err(|_| {
         AppError::Validation("billing_timezone must be a valid IANA timezone".into())
     })?;
@@ -159,9 +174,7 @@ pub fn date_boundary(date: NaiveDate, timezone: &str) -> Result<DateTime<Utc>, A
             .earliest()
             .is_some()
     }) {
-        return Err(AppError::Validation(
-            "expiry_date does not exist in billing_timezone".into(),
-        ));
+        return Ok(None);
     }
     let next = date
         .succ_opt()
@@ -174,7 +187,9 @@ pub fn date_boundary(date: NaiveDate, timezone: &str) -> Result<DateTime<Utc>, A
             .from_local_datetime(&(midnight + Duration::minutes(minutes)))
             .earliest()
         {
-            return Ok(boundary.with_timezone(&Utc) - Duration::nanoseconds(1));
+            return Ok(Some(
+                boundary.with_timezone(&Utc) - Duration::nanoseconds(1),
+            ));
         }
     }
     Err(AppError::Validation(
@@ -391,7 +406,18 @@ pub async fn advance_all(db: &DatabaseConnection, now: DateTime<Utc>) -> Result<
         };
         let mut state = RenewalState::from_server(&model);
         let mut deadline = model.expired_at;
-        if state.advance(&mut deadline, model.billing_cycle.as_deref(), now)? {
+        let advanced = match state.advance(&mut deadline, model.billing_cycle.as_deref(), now) {
+            Ok(advanced) => advanced,
+            Err(AppError::Validation(reason)) => {
+                // A damaged calendar configuration cannot stop healthy schedules.
+                // Database/transaction errors still propagate to the caller.
+                tracing::error!(server_id = %model.id, %reason, "Skipping invalid renewal schedule");
+                tx.rollback().await?;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        if advanced {
             let mut active: server::ActiveModel = model.into();
             active.expired_at = Set(deadline);
             active.renewal_state = Set(Some(

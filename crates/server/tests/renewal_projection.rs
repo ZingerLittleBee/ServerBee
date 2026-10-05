@@ -706,3 +706,114 @@ async fn cost_expiry_advisories_share_renewal_time_without_changing_independent_
         );
     }
 }
+
+#[tokio::test]
+async fn automatic_projection_skips_nonexistent_anchored_days_and_recovers_after_restart() {
+    let clock = ManualClock::at("2011-12-31T00:00:00Z");
+    let (base, tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let id = create_server(&admin, &base, "apia-skipped-occurrence").await;
+    let response = admin.put(format!("{base}/api/servers/{id}"))
+        .json(&json!({"billing_cycle":"monthly","renewal":{"enabled":true,"expiry_date":"2011-11-30","billing_timezone":"Pacific/Apia"}}))
+        .send().await.unwrap();
+    assert_eq!(
+        response.status(),
+        200,
+        "a nonexistent projected December 30 cannot block catch-up"
+    );
+    let january = detail(&admin, &base, &id).await;
+    assert_eq!(january["renewal"]["expiry_date"], "2012-01-30");
+    assert_eq!(january["expired_at"], "2012-01-30T09:59:59.999999999Z");
+    assert_eq!(
+        january["renewal"]["confirmed_expired_at"],
+        "2011-12-01T09:59:59.999999999Z"
+    );
+    // Persist an enabled pre-transition schedule, then genuinely close/reopen SQLite.
+    clock.set("2011-11-30T12:00:00Z");
+    let before_jump = create_server(&admin, &base, "apia-startup-occurrence").await;
+    configure(
+        &admin,
+        &base,
+        &before_jump,
+        "monthly",
+        "2011-11-30",
+        "Pacific/Apia",
+    )
+    .await;
+    state.db.clone().close().await.unwrap();
+    clock.set("2011-12-31T00:00:00Z");
+    let (base, restarted) = reopen(&tmp, clock).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let restored = detail(&admin, &base, &before_jump).await;
+    assert_eq!(restored["renewal"]["expiry_date"], "2012-01-30");
+    assert_eq!(restored["expired_at"], "2012-01-30T09:59:59.999999999Z");
+    tick(&restarted).await;
+    assert_eq!(
+        detail(&admin, &base, &before_jump).await["renewal"],
+        restored["renewal"]
+    );
+}
+
+#[tokio::test]
+async fn invalid_persisted_schedule_does_not_block_other_forecasts_or_hide_database_failure() {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let clock = ManualClock::at("2026-01-31T12:00:00Z");
+    let (base, tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let invalid = create_server(&admin, &base, "damaged-schedule").await;
+    let healthy = create_server(&admin, &base, "healthy-schedule").await;
+    for id in [&invalid, &healthy] {
+        configure(
+            &admin,
+            &base,
+            id,
+            "monthly",
+            "2026-01-31",
+            "America/New_York",
+        )
+        .await;
+    }
+    // Seed a durable invalid calendar record; all evaluation and persistence remain real.
+    let mut damaged = detail(&admin, &base, &invalid).await["renewal"].clone();
+    damaged["billing_timezone"] = json!("Not/A_Real_Zone");
+    damaged["anchor_day"] = json!(31);
+    state
+        .db
+        .execute(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "UPDATE servers SET renewal_state = ? WHERE id = ?",
+            [damaged.to_string().into(), invalid.clone().into()],
+        ))
+        .await
+        .unwrap();
+    state.db.clone().close().await.unwrap();
+    clock.set("2026-02-01T05:00:00Z");
+    let (base, restarted) = reopen(&tmp, clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    assert_eq!(
+        detail(&admin, &base, &healthy).await["renewal"]["expiry_date"],
+        "2026-02-28"
+    );
+    assert_eq!(
+        detail(&admin, &base, &invalid).await["name"],
+        "damaged-schedule"
+    );
+    clock.set("2026-03-01T05:00:00Z");
+    tick(&restarted).await;
+    assert_eq!(
+        detail(&admin, &base, &healthy).await["renewal"]["expiry_date"],
+        "2026-03-31"
+    );
+    restarted.db.clone().close().await.unwrap();
+    assert!(
+        matches!(
+            serverbee_server::task::alert_evaluator::evaluate_once(&restarted).await,
+            Err(serverbee_server::error::AppError::Internal(_))
+        ),
+        "database failures must remain visible"
+    );
+}
