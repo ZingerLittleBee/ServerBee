@@ -367,5 +367,12 @@
   "upgrade_status_failed": "Upgrade failed",
   "upgrade_status_timeout": "Upgrade timed out",
   "upgrade_error_with_backup": "Backup saved at",
-  "upgrade_backup_path": "Backup location"
+  "upgrade_backup_path": "Backup location",
+  "edit_automatic_renewal": "Automatic renewal tracking",
+  "edit_renewal_prerequisites": "Choose an expiry date, a monthly, quarterly or yearly interval, and a valid IANA billing timezone.",
+  "renewal_origin_confirmed": "Operator-confirmed deadline",
+  "renewal_origin_projected": "Projected deadline",
+  "renewal_origin_frozen": "Frozen projected deadline",
+  "renewal_confirmed_history": "Last operator-confirmed expiry: {{date}} ({{timezone}})",
+  "renewal_forecast_explanation": "Tracking advances the forecast after each expiry date ends. Disabling freezes the current deadline. This estimate does not confirm provider renewal or payment."
 }

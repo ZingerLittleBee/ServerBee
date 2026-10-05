@@ -7,6 +7,13 @@ import { ServerEditDialog } from './server-edit-dialog'
 
 const apiBoundary = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }))
 const CALENDAR_DATES = [{ date: '2026-01-31' }, { date: '2024-02-29' }]
+const MISSING_PREREQUISITES = [
+  { label: 'date', billingCycle: 'monthly', date: null, timezone: 'America/New_York' },
+  { label: 'interval', billingCycle: null, date: '2026-03-08', timezone: 'America/New_York' },
+  { label: 'supported interval', billingCycle: 'weekly', date: '2026-03-08', timezone: 'America/New_York' },
+  { label: 'valid timezone', billingCycle: 'monthly', date: '2026-03-08', timezone: 'Mars/Olympus' },
+  { label: 'IANA timezone', billingCycle: 'monthly', date: '2026-03-08', timezone: '+01:00' }
+]
 
 // jsdom does not implement the browser animation boundary used by ScrollArea.
 Element.prototype.getAnimations = () => []
@@ -68,6 +75,77 @@ afterEach(async () => {
 })
 
 describe('server renewal date editing', () => {
+  it.each(MISSING_PREREQUISITES)('cannot opt in without a $label', (input) => {
+    renderEditor({
+      ...server,
+      billing_cycle: input.billingCycle,
+      renewal: { ...server.renewal, expiry_date: input.date, billing_timezone: input.timezone }
+    })
+    const automaticRenewal = screen.getByRole('switch', { name: 'Automatic renewal tracking' })
+    expect(automaticRenewal).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(automaticRenewal)
+    expect(automaticRenewal).not.toBeChecked()
+    expect(automaticRenewal).toHaveAccessibleDescription(
+      'Choose an expiry date, a monthly, quarterly or yearly interval, and a valid IANA billing timezone.'
+    )
+  })
+
+  it('omits renewal intent after restoring the original automatic setting', async () => {
+    renderEditor({ ...server, renewal: { ...server.renewal, enabled: true } })
+    const automaticRenewal = screen.getByRole('switch', { name: 'Automatic renewal tracking' })
+    fireEvent.click(automaticRenewal)
+    fireEvent.click(automaticRenewal)
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Price' }), { target: { value: '12.50' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('renewal')
+  })
+
+  it('distinguishes the projected deadline from confirmed history and explains the forecast', () => {
+    renderEditor({ ...server, renewal: { ...server.renewal, enabled: true } })
+
+    expect(screen.getByText('Projected deadline')).toBeInTheDocument()
+    expect(screen.getByText('Last operator-confirmed expiry: 2/8/2026 (America/New_York)')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Tracking advances the forecast after each expiry date ends. Disabling freezes the current deadline. This estimate does not confirm provider renewal or payment.'
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByText('Renewal deadline is separate from the cost estimation period.')).toBeInTheDocument()
+  })
+
+  it('blocks an enabled configuration with a cleared date until tracking is disabled', async () => {
+    renderEditor({ ...server, renewal: { ...server.renewal, enabled: true } })
+    fireEvent.click(screen.getByRole('button', { name: 'Clear expiration date' }))
+    fireEvent.change(screen.getByLabelText('Billing timezone'), { target: { value: '' } })
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Choose an expiry date, a monthly, quarterly or yearly interval, and a valid IANA billing timezone.'
+    )
+    fireEvent.click(screen.getByRole('switch', { name: 'Automatic renewal tracking' }))
+    expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1].renewal).toEqual({
+      enabled: false,
+      expiry_date: null,
+      billing_timezone: null
+    })
+  })
+
+  it('opts in to automatic renewal without resubmitting the selected date or timezone', async () => {
+    renderEditor()
+    const automaticRenewal = screen.getByRole('switch', { name: 'Automatic renewal tracking' })
+    expect(automaticRenewal).not.toBeChecked()
+    fireEvent.click(automaticRenewal)
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1].renewal).toEqual({ enabled: true })
+  })
+
   it('selects a billing date even when that date is skipped in the browser timezone', async () => {
     renderEditor({
       ...server,
@@ -213,5 +291,13 @@ describe('server renewal date editing', () => {
     expect(screen.getByLabelText('账单时区')).toHaveValue('America/New_York')
     expect(screen.getByText('请选择 IANA 时区。服务有效期包含此时区内所选到期日期的整天。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '清除到期日期' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: '自动续费跟踪' })).not.toBeChecked()
+    expect(screen.getByText('预测到期日')).toBeInTheDocument()
+    expect(screen.getByText('请选择到期日期、月付/季付/年付周期和有效的 IANA 账单时区。')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '跟踪会在每个到期日期结束后推进预测。关闭后将冻结当前到期日。该估算不代表服务商已续费或付款成功。'
+      )
+    ).toBeInTheDocument()
   })
 })
