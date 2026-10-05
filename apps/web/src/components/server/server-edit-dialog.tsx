@@ -357,29 +357,31 @@ function ServerEditBillingFields({
         </datalist>
         <p className="mt-1 text-[11px] text-muted-foreground">{t('edit_billing_timezone_hint')}</p>
       </Field>
-      <div className="space-y-1">
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-medium text-sm">{t('edit_automatic_renewal')}</span>
-          <Switch
-            aria-describedby={prerequisitesId}
-            aria-invalid={state.automaticRenewal && !hasPrerequisites}
-            aria-label={t('edit_automatic_renewal')}
-            checked={state.automaticRenewal}
-            disabled={!(state.automaticRenewal || hasPrerequisites)}
-            onCheckedChange={(automaticRenewal) => dispatch({ type: 'patch', value: { automaticRenewal } })}
-          />
+      {server.renewal && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-medium text-sm">{t('edit_automatic_renewal')}</span>
+            <Switch
+              aria-describedby={prerequisitesId}
+              aria-invalid={state.automaticRenewal && !hasPrerequisites}
+              aria-label={t('edit_automatic_renewal')}
+              checked={state.automaticRenewal}
+              disabled={!(state.automaticRenewal || hasPrerequisites)}
+              onCheckedChange={(automaticRenewal) => dispatch({ type: 'patch', value: { automaticRenewal } })}
+            />
+          </div>
+          <p
+            className="text-muted-foreground text-xs"
+            id={prerequisitesId}
+            role={state.automaticRenewal && !hasPrerequisites ? 'alert' : undefined}
+          >
+            {t('edit_renewal_prerequisites')}
+          </p>
+          <p className="text-muted-foreground text-xs">{t('renewal_forecast_explanation')}</p>
+          <RenewalDeadlineInfo renewal={server.renewal} />
+          <p className="text-muted-foreground text-xs">{t('renewal_cost_independent')}</p>
         </div>
-        <p
-          className="text-muted-foreground text-xs"
-          id={prerequisitesId}
-          role={state.automaticRenewal && !hasPrerequisites ? 'alert' : undefined}
-        >
-          {t('edit_renewal_prerequisites')}
-        </p>
-        <p className="text-muted-foreground text-xs">{t('renewal_forecast_explanation')}</p>
-        <RenewalDeadlineInfo renewal={server.renewal} />
-        <p className="text-muted-foreground text-xs">{t('renewal_cost_independent')}</p>
-      </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label={t('edit_traffic_limit')}>
           <Input

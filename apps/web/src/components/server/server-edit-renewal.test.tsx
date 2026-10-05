@@ -75,6 +75,16 @@ afterEach(async () => {
 })
 
 describe('server renewal date editing', () => {
+  it('preserves legacy-server saves without exposing an unsupported automatic switch', async () => {
+    renderEditor({ ...server, renewal: undefined })
+    expect(screen.queryByRole('switch', { name: 'Automatic renewal tracking' })).not.toBeInTheDocument()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Legacy rename' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('renewal')
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('expired_at')
+  })
+
   it.each(MISSING_PREREQUISITES)('cannot opt in without a $label', (input) => {
     renderEditor({
       ...server,
