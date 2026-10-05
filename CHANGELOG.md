@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Encrypted mobile notifications through a dedicated Push Relay** -- The Server stores encrypted delivery work durably and sends it through a stateless Cloudflare Worker to APNs. The native iOS app provides explicit permission and subscription setup for alert triggers and recoveries, administrator security rules, and final scheduled-task outcomes, with successful tasks requiring opt-in. Operators must configure the HTTPS Relay and publisher APNs credentials; live device delivery still requires deployment and validation
+
+- **Documentation landing page and bilingual search improvements** -- The documentation site has a redesigned landing page, language-specific Markdown and LLM exports, sitemap metadata, and Chinese word segmentation for search
+
+### Changed
+
+- **Native iOS TestFlight version is 2.0.0** -- The rewritten client and its Notification Service Extension use the existing official app identity and separate private and shared Keychain groups
+
+### Security
+
+- **Documentation server-function XSS is patched** -- The documentation site upgrades TanStack Start to a fixed release
+
+### Fixed
+
+- **Mobile notification work survives retries and Server restart** -- Durable outbox delivery retains its original expiry, rechecks current recipients and registration revisions, and preserves final task aggregation and pending event recovery
+
+- **Documentation navigation, search, and accessibility are more reliable** -- Unknown routes return 404, legacy routes redirect, scrolling survives hydration and history navigation, search restores keyboard focus, and translated labels and contrast support keyboard and screen-reader use
+
 ## [1.0.0-beta.4] - 2026-09-30
 
 ### Security
