@@ -14,6 +14,7 @@ interface AlertListWidgetProps {
 }
 
 interface AlertEvent {
+  alert_key?: string
   count: number
   event_at: string
   resolved_at: string | null
@@ -67,14 +68,25 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
         <ScrollArea className="flex-1" contentClassName="flex flex-col gap-1.5">
           {filtered.map((event) => {
             const isFiring = event.status === 'firing'
+            const isResolved = event.status === 'resolved'
+            const statusLabel = t(`widgets.alertList.status.${event.status}`, { defaultValue: event.status })
+            let statusColor = 'bg-muted-foreground'
+            if (isFiring) {
+              statusColor = 'bg-red-500'
+            } else if (isResolved) {
+              statusColor = 'bg-green-500'
+            }
             const serverName = serverNameMap.get(event.server_id) ?? event.server_name
             return (
               <div
                 className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50"
-                key={`${event.rule_id}-${event.server_id}-${event.status}`}
+                key={event.alert_key ?? `${event.rule_id}-${event.server_id}-${event.event_at}-${event.status}`}
               >
                 <span
-                  className={`inline-block size-2 shrink-0 rounded-full ${isFiring ? 'bg-red-500' : 'bg-green-500'}`}
+                  aria-label={statusLabel}
+                  className={`inline-block size-2 shrink-0 rounded-full ${statusColor}`}
+                  role="img"
+                  title={statusLabel}
                 />
                 <span className="min-w-0 flex-1 truncate">
                   <span className="font-medium">{event.rule_name}</span>

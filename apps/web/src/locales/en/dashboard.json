@@ -140,6 +140,11 @@
     },
     "alertList": {
       "title": "Alerts",
+      "status": {
+        "firing": "Triggered",
+        "resolved": "Resolved",
+        "superseded": "Superseded by the next renewal deadline"
+      },
       "empty": {
         "noEvents": "No alert events"
       }

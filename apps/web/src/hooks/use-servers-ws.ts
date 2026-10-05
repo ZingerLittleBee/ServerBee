@@ -21,6 +21,7 @@ const MAX_SECURITY_EVENTS_IN_CACHE = 200
 type WsMessage =
   | { type: 'full_sync'; servers: ServerMetrics[]; upgrades?: UpgradeJob[] }
   | { type: 'update'; servers: LiveMetrics[] }
+  | { type: 'server_catalog_changed'; server_ids: string[] }
   | { type: 'server_online'; server_id: string }
   | { type: 'server_offline'; server_id: string }
   | {
@@ -402,6 +403,15 @@ export function handleWsMessage(raw: unknown, queryClient: QueryClient): void {
     return
   }
   switch (raw.type) {
+    case 'server_catalog_changed':
+      if (
+        Array.isArray(raw.server_ids) &&
+        raw.server_ids.length > 0 &&
+        raw.server_ids.every((id) => typeof id === 'string' && id.length > 0)
+      ) {
+        projectServerCatalog(queryClient, { kind: 'catalog_changed', serverIds: raw.server_ids })
+      }
+      break
     case 'traceroute_update':
       dispatchToSubscribers('traceroute_update', raw)
       break
