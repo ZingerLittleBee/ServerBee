@@ -36,8 +36,7 @@ pub const COVER_TYPE_ALL: &str = "all";
 pub const COVER_TYPE_INCLUDE: &str = "include";
 pub const COVER_TYPE_EXCLUDE: &str = "exclude";
 /// All accepted `cover_type` values for alert_rule and block_list inputs.
-pub const VALID_COVER_TYPES: &[&str] =
-    &[COVER_TYPE_ALL, COVER_TYPE_INCLUDE, COVER_TYPE_EXCLUDE];
+pub const VALID_COVER_TYPES: &[&str] = &[COVER_TYPE_ALL, COVER_TYPE_INCLUDE, COVER_TYPE_EXCLUDE];
 
 /// `origin` discriminants for block_list rows.
 pub const ORIGIN_MANUAL: &str = "manual";
@@ -45,8 +44,7 @@ pub const ORIGIN_AUTO: &str = "auto";
 
 /// Security rule types whose payload carries a `source_ip` and may attach a
 /// `block_source_ip` action.
-pub const SOURCE_IP_RULE_TYPES: &[&str] =
-    &["ssh_brute_force_detected", "port_scan_detected"];
+pub const SOURCE_IP_RULE_TYPES: &[&str] = &["ssh_brute_force_detected", "port_scan_detected"];
 
 // ── Alert Rule Types ──
 
@@ -900,6 +898,34 @@ impl AlertService {
         let servers = resolve_servers(db, &rule.cover_type, &rule.server_ids_json).await?;
 
         for srv in &servers {
+            if items.iter().any(|item| item.rule_type == "expiration")
+                && !items
+                    .iter()
+                    .any(|item| EVENT_DRIVEN_RULE_TYPES.contains(&item.rule_type.as_str()))
+            {
+                let other: Vec<_> = items
+                    .iter()
+                    .filter(|item| item.rule_type != "expiration")
+                    .cloned()
+                    .collect();
+                let matched = Self::check_server_at(db, agent_manager, &other, &srv.id, now).await;
+                if let Some(notify) = crate::service::renewal_reminders::evaluate(
+                    db,
+                    state_manager,
+                    rule,
+                    &srv.id,
+                    &items,
+                    matched,
+                    now,
+                )
+                .await?
+                {
+                    if notify {
+                        Self::notify_triggered(db, config, rule, &srv.id, &srv.name, now).await;
+                    }
+                    continue;
+                }
+            }
             let triggered = Self::check_server_at(db, agent_manager, &items, &srv.id, now).await;
 
             if triggered {
@@ -1904,8 +1930,7 @@ mod tests {
                         _ => break,
                     }
                 }
-                let _ = socket
-                    .try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                let _ = socket.try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
                 let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
             }
         });
@@ -2024,7 +2049,10 @@ mod tests {
             .expect("query states");
         assert_eq!(rows.len(), 1, "no duplicate alert_state rows");
         assert!(!rows[0].resolved, "re-armed row should be firing again");
-        assert!(rows[0].resolved_at.is_none(), "resolved_at cleared on re-arm");
+        assert!(
+            rows[0].resolved_at.is_none(),
+            "resolved_at cleared on re-arm"
+        );
         assert_eq!(rows[0].count, 1, "count reset on re-arm");
     }
 
@@ -2660,10 +2688,12 @@ mod tests {
     async fn test_latest_record_time_picks_latest_and_none() {
         let (db, _tmp) = setup_test_db().await;
         // No records => None.
-        assert!(RecordService::latest_record_time(&db, "srv-1")
-            .await
-            .expect("query should succeed")
-            .is_none());
+        assert!(
+            RecordService::latest_record_time(&db, "srv-1")
+                .await
+                .expect("query should succeed")
+                .is_none()
+        );
 
         let older = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         let newer = Utc.with_ymd_and_hms(2026, 1, 1, 1, 0, 0).unwrap();
