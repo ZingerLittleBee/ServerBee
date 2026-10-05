@@ -33,7 +33,18 @@ final class RenewalBillingUITests: XCTestCase {
         }), app.debugDescription)
         for _ in 0..<14 {
             if utc.exists && utc.isHittable { break }
-            menu.swipeDown(velocity: .fast)
+            // The menu's accessibility frame extends beyond the window.
+            // Drag across its visible viewport instead of using XCTest's
+            // shorter default swipe, which stopped among the Africa entries.
+            let frame = menu.frame
+            let viewport = frame.intersection(app.windows.firstMatch.frame)
+            XCTAssertFalse(viewport.isEmpty, menu.debugDescription)
+            let origin = menu.coordinate(withNormalizedOffset: .zero)
+            let start = origin.withOffset(CGVector(dx: viewport.midX - frame.minX,
+                                                   dy: viewport.minY + viewport.height * 0.1 - frame.minY))
+            let end = origin.withOffset(CGVector(dx: viewport.midX - frame.minX,
+                                                 dy: viewport.minY + viewport.height * 0.9 - frame.minY))
+            start.press(forDuration: 0.05, thenDragTo: end)
         }
         XCTAssertTrue(utc.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(utc.isHittable, app.debugDescription)
