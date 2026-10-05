@@ -7,6 +7,7 @@ const LIVE_SERVERS_KEY = ['server-catalog', 'live'] as const
 const SERVER_LIST_KEY = ['server-catalog', 'list'] as const
 const SERVER_DETAIL_PREFIX = ['server-catalog', 'detail'] as const
 const listRequestGenerations = new WeakMap<QueryClient, number>()
+const catalogRefreshGenerations = new WeakMap<QueryClient, number>()
 
 type TemporaryGrant = NonNullable<ServerResponse['temporary']>[number]
 
@@ -560,16 +561,23 @@ export function useServerDetail(serverId: string, options: CatalogQueryOptions =
 
 export async function refreshServerCatalog(queryClient: QueryClient): Promise<void> {
   const generation = nextListRequestGeneration(queryClient)
-  await queryClient.cancelQueries({ exact: true, queryKey: SERVER_LIST_KEY })
+  catalogRefreshGenerations.set(queryClient, (catalogRefreshGenerations.get(queryClient) ?? 0) + 1)
+  await Promise.all([
+    queryClient.cancelQueries({ exact: true, queryKey: SERVER_LIST_KEY }),
+    queryClient.cancelQueries({ queryKey: SERVER_DETAIL_PREFIX })
+  ])
   if (!isCurrentListRequest(queryClient, generation)) {
     return
   }
   try {
-    await queryClient.fetchQuery({
-      queryFn: () => fetchAndProjectRestSnapshot(queryClient, generation),
-      queryKey: SERVER_LIST_KEY,
-      staleTime: 0
-    })
+    await Promise.all([
+      queryClient.fetchQuery({
+        queryFn: () => fetchAndProjectRestSnapshot(queryClient, generation),
+        queryKey: SERVER_LIST_KEY,
+        staleTime: 0
+      }),
+      queryClient.invalidateQueries({ queryKey: SERVER_DETAIL_PREFIX })
+    ])
   } catch (error) {
     if (isCurrentListRequest(queryClient, generation)) {
       throw error
@@ -599,8 +607,13 @@ async function fetchAndProjectRestSnapshot(
 }
 
 async function fetchAndProjectServerDetail(queryClient: QueryClient, serverId: string): Promise<ServerResponse> {
+  const generation = catalogRefreshGenerations.get(queryClient)
   const server = await api.get<ServerResponse>(`/api/servers/${serverId}`)
-  projectServerCatalog(queryClient, { kind: 'server_saved', server })
+  // Cancellation stops React Query from accepting an obsolete request, but the
+  // HTTP boundary may still finish. Its catalog projection must also be fenced.
+  if (catalogRefreshGenerations.get(queryClient) === generation) {
+    projectServerCatalog(queryClient, { kind: 'server_saved', server })
+  }
   return server
 }
 
