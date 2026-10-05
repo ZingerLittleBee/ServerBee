@@ -1718,9 +1718,7 @@ mod delete_audit_tests {
     async fn delete_server_writes_audit_log() {
         let (db, _tmp) = setup_test_db().await;
         insert_server(&db, "srv-del", "Doomed").await;
-        let state = AppState::new(db.clone(), AppConfig::default())
-            .await
-            .unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
 
         let res = delete_server(
             State(state.clone()),
@@ -1736,7 +1734,8 @@ mod delete_audit_tests {
         assert!(
             logs.iter().any(|l| l.action == "server_deleted"
                 && l.user_id == "admin-1"
-                && l.detail
+                && l
+                    .detail
                     .as_deref()
                     .is_some_and(|d| d.contains("srv-del") && d.contains("Doomed"))),
             "expected a server_deleted audit row, got: {logs:?}"
@@ -1748,9 +1747,7 @@ mod delete_audit_tests {
         let (db, _tmp) = setup_test_db().await;
         insert_server(&db, "srv-a", "A").await;
         insert_server(&db, "srv-b", "B").await;
-        let state = AppState::new(db.clone(), AppConfig::default())
-            .await
-            .unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
 
         let res = batch_delete(
             State(state.clone()),

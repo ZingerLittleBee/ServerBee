@@ -127,10 +127,10 @@ async fn scheduled_evaluation_advances_offline_month_end_and_restores_anchor_aft
         .send().await.unwrap();
     assert_eq!(response.status(), 200);
     clock.set("2026-02-01T05:00:00Z");
-    // The production scheduler's first tick is immediate; no client opens a billing page.
-    let task = tokio::spawn(serverbee_server::task::alert_evaluator::run(state.clone()));
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
-    task.abort();
+    // The scheduler invokes this same production iteration; time moves directly.
+    serverbee_server::task::alert_evaluator::evaluate_once(&state)
+        .await
+        .unwrap();
     let model = detail(&admin, &base, &id).await;
     assert_eq!(model["renewal"]["expiry_date"], "2026-02-28");
     assert_eq!(model["expired_at"], "2026-03-01T04:59:59.999999999Z");
@@ -314,4 +314,395 @@ async fn enabling_legacy_instant_keeps_entire_selected_day_and_confirmed_history
         after["renewal"]["confirmed_expired_at"],
         "2026-01-31T12:34:56Z"
     );
+}
+
+async fn configure(
+    admin: &reqwest::Client,
+    base: &str,
+    id: &str,
+    cycle: &str,
+    date: &str,
+    zone: &str,
+) {
+    let response = admin.put(format!("{base}/api/servers/{id}"))
+        .json(&json!({"billing_cycle":cycle,"renewal":{"enabled":true,"expiry_date":date,"billing_timezone":zone}}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+}
+async fn tick(state: &serverbee_server::state::AppState) {
+    serverbee_server::task::alert_evaluator::evaluate_once(state)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn current_local_date_remains_valid_until_its_last_nanosecond() {
+    let clock = ManualClock::at("2026-01-31T12:00:00Z");
+    let (base, _tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let id = create_server(&admin, &base, "full-local-day").await;
+    configure(
+        &admin,
+        &base,
+        &id,
+        "monthly",
+        "2026-01-31",
+        "America/New_York",
+    )
+    .await;
+    let original = detail(&admin, &base, &id).await;
+    for time in ["2026-02-01T04:59:59Z", "2026-02-01T04:59:59.999999999Z"] {
+        clock.set(time);
+        tick(&state).await;
+        let current = detail(&admin, &base, &id).await;
+        assert_eq!(current["renewal"], original["renewal"]);
+        assert_eq!(current["expired_at"], original["expired_at"]);
+    }
+    clock.set("2026-02-01T05:00:00Z");
+    tick(&state).await;
+    assert_eq!(
+        detail(&admin, &base, &id).await["renewal"]["expiry_date"],
+        "2026-02-28"
+    );
+    clock.set("2026-03-01T05:00:00Z");
+    tick(&state).await;
+    let march = detail(&admin, &base, &id).await;
+    assert_eq!(march["renewal"]["expiry_date"], "2026-03-31");
+    assert_eq!(march["expired_at"], "2026-04-01T03:59:59.999999999Z");
+    assert_eq!(
+        march["renewal"]["confirmed_expired_at"],
+        original["renewal"]["confirmed_expired_at"]
+    );
+}
+
+#[tokio::test]
+async fn quarterly_month_end_clamps_and_restores_the_original_day() {
+    let clock = ManualClock::at("2026-01-31T12:00:00Z");
+    let (base, _tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let id = create_server(&admin, &base, "quarterly-anchor").await;
+    configure(
+        &admin,
+        &base,
+        &id,
+        "quarterly",
+        "2026-01-31",
+        "America/New_York",
+    )
+    .await;
+    clock.set("2026-02-01T05:00:00Z");
+    tick(&state).await;
+    let april = detail(&admin, &base, &id).await;
+    assert_eq!(april["renewal"]["expiry_date"], "2026-04-30");
+    assert_eq!(april["expired_at"], "2026-05-01T03:59:59.999999999Z");
+    clock.set("2026-05-01T04:00:00Z");
+    tick(&state).await;
+    let july = detail(&admin, &base, &id).await;
+    assert_eq!(july["renewal"]["expiry_date"], "2026-07-31");
+    assert_eq!(july["expired_at"], "2026-08-01T03:59:59.999999999Z");
+    assert_eq!(
+        july["renewal"]["confirmed_expired_at"],
+        "2026-02-01T04:59:59.999999999Z"
+    );
+}
+
+#[tokio::test]
+async fn yearly_leap_day_returns_after_non_leap_years_and_persistent_reopen() {
+    let clock = ManualClock::at("2024-02-29T12:00:00Z");
+    let (base, tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let id = create_server(&admin, &base, "annual-leap-anchor").await;
+    configure(
+        &admin,
+        &base,
+        &id,
+        "yearly",
+        "2024-02-29",
+        "America/New_York",
+    )
+    .await;
+    clock.set("2024-03-01T05:00:00Z");
+    tick(&state).await;
+    let non_leap = detail(&admin, &base, &id).await;
+    assert_eq!(non_leap["renewal"]["expiry_date"], "2025-02-28");
+    assert_eq!(non_leap["expired_at"], "2025-03-01T04:59:59.999999999Z");
+    state.db.clone().close().await.unwrap();
+    clock.set("2028-02-28T12:00:00Z");
+    let (base, _restarted) = reopen(&tmp, clock).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let leap = detail(&admin, &base, &id).await;
+    assert_eq!(leap["renewal"]["expiry_date"], "2028-02-29");
+    assert_eq!(leap["expired_at"], "2028-03-01T04:59:59.999999999Z");
+    assert_eq!(
+        leap["renewal"]["confirmed_expired_at"],
+        "2024-03-01T04:59:59.999999999Z"
+    );
+}
+
+#[tokio::test]
+async fn onboarding_validates_before_mutation_and_retries_keep_original_identity_across_time() {
+    let clock = ManualClock::at("2026-03-01T05:00:00Z");
+    let (base, _tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    for invalid in [
+        json!({"enabled":true,"expiry_date":"2026-01-31","billing_timezone":"UTC"}),
+        json!({"enabled":true,"billing_timezone":"UTC"}),
+        json!({"enabled":true,"expiry_date":"2026-01-31","billing_timezone":null}),
+    ] {
+        let response = admin.post(format!("{base}/api/servers"))
+            .json(&json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"invalid-create","renewal":invalid}))
+            .send().await.unwrap();
+        assert_eq!(response.status(), 422);
+    }
+    let body: Value = admin
+        .get(format!("{base}/api/servers"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        body["data"].as_array().unwrap().is_empty(),
+        "invalid enabled onboarding creates no server"
+    );
+    let request = json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"valid-projected-create","billing_cycle":"monthly","renewal":{"enabled":true,"expiry_date":"2026-01-31","billing_timezone":"America/New_York"}});
+    let response = admin
+        .post(format!("{base}/api/servers"))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.unwrap();
+    let id = body["data"]["server_id"].as_str().unwrap();
+    assert_eq!(
+        detail(&admin, &base, id).await["renewal"]["expiry_date"],
+        "2026-03-31"
+    );
+    clock.set("2026-06-01T04:00:00Z");
+    tick(&state).await;
+    let replay = admin
+        .post(format!("{base}/api/servers"))
+        .json(&request)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        replay.status(),
+        200,
+        "runtime projection cannot change canonical onboarding identity"
+    );
+    let replay: Value = replay.json().await.unwrap();
+    assert_eq!(replay["data"]["server_id"], id);
+    let current = detail(&admin, &base, id).await;
+    assert_eq!(current["renewal"]["expiry_date"], "2026-06-30");
+    assert_eq!(
+        current["renewal"]["confirmed_expired_at"],
+        "2026-02-01T04:59:59.999999999Z"
+    );
+}
+
+#[tokio::test]
+async fn concurrent_http_metadata_edits_and_scheduler_ticks_keep_one_stable_schedule() {
+    let clock = ManualClock::at("2026-01-31T12:00:00Z");
+    let (base, _tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let id = create_server(&admin, &base, "before-rollover").await;
+    configure(
+        &admin,
+        &base,
+        &id,
+        "monthly",
+        "2026-01-31",
+        "America/New_York",
+    )
+    .await;
+    let original = detail(&admin, &base, &id).await;
+    clock.set("2026-02-01T05:00:00Z");
+    let mut work = tokio::task::JoinSet::new();
+    for _ in 0..8 {
+        let state = state.clone();
+        work.spawn(async move {
+            tick(&state).await;
+        });
+    }
+    let response = admin
+        .put(format!("{base}/api/servers/{id}"))
+        .json(&json!({"name":"after-rollover","price":99.5}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    while let Some(result) = work.join_next().await {
+        result.unwrap();
+    }
+    let current = detail(&admin, &base, &id).await;
+    assert_eq!(current["name"], "after-rollover");
+    assert_eq!(current["price"], 99.5);
+    assert_eq!(current["renewal"]["expiry_date"], "2026-02-28");
+    assert_eq!(
+        current["renewal"]["confirmed_expired_at"],
+        original["renewal"]["confirmed_expired_at"]
+    );
+    assert_ne!(
+        current["renewal"]["occurrence_id"],
+        original["renewal"]["occurrence_id"]
+    );
+    for _ in 0..3 {
+        tick(&state).await;
+    }
+    assert_eq!(
+        detail(&admin, &base, &id).await["renewal"],
+        current["renewal"]
+    );
+    clock.set("2026-03-01T05:00:00Z");
+    tick(&state).await;
+    assert_eq!(
+        detail(&admin, &base, &id).await["renewal"]["expiry_date"],
+        "2026-03-31"
+    );
+}
+
+#[tokio::test]
+async fn ordinary_expiration_window_tracks_current_projection_without_historical_backlog() {
+    let clock = ManualClock::at("2026-02-01T05:00:00Z");
+    let (base, _tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let id = create_server(&admin, &base, "current-reminder-target").await;
+    configure(
+        &admin,
+        &base,
+        &id,
+        "monthly",
+        "2026-01-31",
+        "America/New_York",
+    )
+    .await;
+    let response = admin.post(format!("{base}/api/alert-rules"))
+        .json(&json!({"name":"seven-day-renewal","trigger_mode":"once","cover_type":"include","server_ids":[id],"rules":[{"rule_type":"expiration","duration":7}]}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let rule: Value = response.json().await.unwrap();
+    let rule_id = rule["data"]["id"].as_str().unwrap();
+    tick(&state).await;
+    let events: Value = admin
+        .get(format!("{base}/api/alert-rules/{rule_id}/states"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        events["data"].as_array().unwrap().is_empty(),
+        "historical January confirmation must not remain the reminder target"
+    );
+    clock.set("2026-02-23T12:00:00Z");
+    tick(&state).await;
+    let events: Value = admin
+        .get(format!("{base}/api/alert-rules/{rule_id}/states"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(events["data"].as_array().unwrap().len(), 1);
+    assert_eq!(events["data"][0]["server_id"], id);
+    assert_eq!(events["data"][0]["resolved"], false);
+}
+
+#[tokio::test]
+async fn cost_expiry_advisories_share_renewal_time_without_changing_independent_cost_periods() {
+    let clock = ManualClock::at("2026-02-01T05:00:00Z");
+    let (base, _tmp, state) = controlled_server(clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let id = create_server(&admin, &base, "forecast-cost-advisory").await;
+    configure(
+        &admin,
+        &base,
+        &id,
+        "monthly",
+        "2026-01-31",
+        "America/New_York",
+    )
+    .await;
+    let response = admin
+        .put(format!("{base}/api/servers/{id}"))
+        .json(&json!({"price":31.0,"currency":"USD","billing_start_day":7}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    let cost: Value = admin
+        .get(format!("{base}/api/servers/{id}/cost-insights"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        !cost["data"]["advisories"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("expired_billing")),
+        "current February projection has not expired on February 1"
+    );
+    let response = admin
+        .put(format!("{base}/api/servers/{id}"))
+        .json(&json!({"renewal":{"enabled":false}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    clock.set("2026-03-01T05:00:00Z");
+    tick(&state).await;
+    let frozen_cost: Value = admin
+        .get(format!("{base}/api/servers/{id}/cost-insights"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(
+        frozen_cost["data"]["advisories"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("expired_billing"))
+    );
+    assert_eq!(cost["data"]["configured"], true);
+    for field in [
+        "cycle_start",
+        "cycle_end",
+        "cycle_days",
+        "days_elapsed",
+        "days_remaining",
+        "cost_per_second",
+        "cost_per_hour",
+        "cost_per_day",
+        "cost_per_month_equivalent",
+        "cycle_cost_elapsed",
+        "cycle_cost_remaining",
+        "cycle_burn_percent",
+    ] {
+        assert!(
+            !cost["data"][field].is_null(),
+            "configured cost field {field} remains available"
+        );
+        assert_eq!(
+            cost["data"][field], frozen_cost["data"][field],
+            "renewal time must not replace cost estimation calendar: {field}"
+        );
+    }
 }
