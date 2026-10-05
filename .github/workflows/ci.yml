@@ -237,6 +237,7 @@ jobs:
               --test router_probes_extra
               --test router_security_rate
               --test renewal_dates
+              --test renewal_edits
               --test renewal_projection
               --test router_server_crud
               --test router_server_extra
