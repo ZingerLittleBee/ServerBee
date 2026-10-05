@@ -49,6 +49,11 @@ python3 "$RENEWAL_ROOT/tests/check-ios-renewal-results.py" --kind unit \
   --renewal-source "$RENEWAL_ROOT/apps/ios/ServerBeeTests/RenewalDateTests.swift" \
   --output "$RENEWAL_EVIDENCE_DIR/unit-validated.json"
 
+cd "$RENEWAL_ROOT/apps/ios"
+# Regenerate with the installed XcodeGen after adding the new source bundle.
+xcodegen generate > "$RENEWAL_EVIDENCE_DIR/xcodegen.log" 2>&1
+xcodebuild -showdestinations -project ServerBee.xcodeproj -scheme ServerBeeUI \
+  -skipPackagePluginValidation > "$RENEWAL_EVIDENCE_DIR/xcode-destinations.txt" 2>&1
 xcrun simctl list devices available -j > "$RENEWAL_EVIDENCE_DIR/simulators.json"
 xcrun simctl list runtimes -j > "$RENEWAL_EVIDENCE_DIR/runtimes.json"
 python3 - "$RENEWAL_EVIDENCE_DIR" <<'PY'
@@ -56,6 +61,7 @@ import json, pathlib, sys
 directory = pathlib.Path(sys.argv[1])
 devices = json.loads(directory.joinpath('simulators.json').read_text())['devices']
 runtimes = json.loads(directory.joinpath('runtimes.json').read_text())['runtimes']
+destinations = directory.joinpath('xcode-destinations.txt').read_text().splitlines()
 options = []
 for runtime in runtimes:
     if not runtime.get('isAvailable') or not runtime['identifier'].startswith('com.apple.CoreSimulator.SimRuntime.iOS-'):
@@ -64,11 +70,13 @@ for runtime in runtimes:
     if version < (17,):
         continue
     for device in devices.get(runtime['identifier'], []):
-        if device.get('isAvailable') and device['name'].startswith('iPhone'):
+        compatible = any(device['udid'] in line and 'platform:iOS Simulator' in line
+                         and 'error:' not in line for line in destinations)
+        if device.get('isAvailable') and device['name'].startswith('iPhone') and compatible:
             preferred = device['name'] == 'iPhone 16' and version == (18, 5)
             options.append((preferred, version, device['name'], device, runtime))
 if not options:
-    raise SystemExit('No installed available iPhone Simulator with iOS >=17')
+    raise SystemExit('No installed iPhone Simulator with iOS >=17 supported by the selected Xcode scheme')
 _, _, _, device, runtime = sorted(options, key=lambda entry: entry[:3], reverse=True)[0]
 directory.joinpath('destination.json').write_text(json.dumps({'device': device, 'runtime': runtime}, indent=2) + '\n')
 directory.joinpath('simulator-udid.txt').write_text(device['udid'] + '\n')
@@ -103,9 +111,6 @@ else:
     raise SystemExit('Loopback renewal fixture did not become ready within 10 seconds')
 PY
 export TEST_RUNNER_SERVERBEE_RENEWAL_FIXTURE_URL="$(cat "$RENEWAL_EVIDENCE_DIR/fixture-url.txt")"
-cd "$RENEWAL_ROOT/apps/ios"
-# Regenerate with the installed XcodeGen after adding the new source bundle.
-xcodegen generate > "$RENEWAL_EVIDENCE_DIR/xcodegen.log" 2>&1
 set +e
 xcodebuild -project ServerBee.xcodeproj -scheme ServerBeeUI -configuration Debug \
   -destination "platform=iOS Simulator,id=$RENEWAL_SIM_UDID" \
