@@ -6,7 +6,7 @@ icon: Smartphone
 
 链路为 **Server → 独立 ServerBee Cloudflare Worker → APNs → iOS Notification Service Extension**。Server 负责订阅、用户/会话授权、加密待投递任务和最终任务汇总。Relay 保管发布者 APNs 凭据并转发密文。[移动端](/zh/docs/mobile)介绍用户设置，[配置](/zh/docs/configuration#push_relay--已验证移动通知设置)介绍 Server 地址。
 
-修订后的未发布架构仅提供公开 `POST /v1/send`，没有 App Attest、版本/分发策略、challenge、投递 grant、Relay 持久数据库或替代授权系统。Server 自己数据库中的持久业务 outbox 保留。本地测试与模拟器结果不证明真实 APNs 投递或签名设备展示。本手册描述另行授权的运维操作，本身不部署、不配置凭据、不修改 Apple 账户。
+修订后的架构仅提供公开 `POST /v1/send`，没有 App Attest、版本/分发策略、challenge、投递 grant、Relay 持久数据库或替代授权系统。Server 自己数据库中的持久业务 outbox 保留。本地测试与模拟器结果不证明真实 APNs 投递或签名设备展示。本手册描述另行授权的运维操作，本身不部署、不配置凭据、不修改 Apple 账户。
 
 ## 公开 Relay 的已接受风险
 

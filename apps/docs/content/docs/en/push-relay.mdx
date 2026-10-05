@@ -6,7 +6,7 @@ icon: Smartphone
 
 The path is **Server → dedicated ServerBee Cloudflare Worker → APNs → iOS Notification Service Extension**. The Server owns subscriptions, user/session authorization, encrypted pending work and final task aggregation. Relay holds the publisher's APNs credentials and forwards ciphertext. [Mobile](/en/docs/mobile) covers user setup; [Configuration](/en/docs/configuration#push_relay----verified-mobile-setup) covers the Server URL.
 
-The revised, unreleased architecture uses one public `POST /v1/send`. It has no App Attest, build/distribution policy, challenges, delivery grants, durable Relay database or replacement authorization service. The Server's durable business outbox remains in its own database. Local tests and Simulator results do not establish live APNs delivery or signed-device presentation. This runbook describes separately authorized operator actions; it does not deploy infrastructure, provision secrets or change Apple accounts.
+The revised architecture uses one public `POST /v1/send`. It has no App Attest, build/distribution policy, challenges, delivery grants, durable Relay database or replacement authorization service. The Server's durable business outbox remains in its own database. Local tests and Simulator results do not establish live APNs delivery or signed-device presentation. This runbook describes separately authorized operator actions; it does not deploy infrastructure, provision secrets or change Apple accounts.
 
 ## Accepted Public-Relay Risks
 
