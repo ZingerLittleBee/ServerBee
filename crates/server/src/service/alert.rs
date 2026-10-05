@@ -411,6 +411,15 @@ impl AlertStateManager {
 
     // Publish synchronously after commit. Durable eligibility never relies on
     // this display cache, including after cancellation or process restart.
+    pub(super) fn publish_adopted_renewal(&self, state: &alert_state::Model) {
+        self.triggered.remove(&(
+            state.rule_id.clone(),
+            state.server_id.clone(),
+            String::new(),
+        ));
+        self.publish_state(state);
+    }
+
     pub(super) fn publish_state(&self, state: &alert_state::Model) {
         let key = (
             state.rule_id.clone(),

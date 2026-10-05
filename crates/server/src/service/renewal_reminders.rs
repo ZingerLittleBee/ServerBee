@@ -24,6 +24,62 @@ pub(super) enum Outcome {
     Superseded,
 }
 
+/// Enabling the same future legacy date changes representation, not its once admission.
+/// Only pure expiration once rows are adopted; event-intent dimensions stay untouched.
+pub(super) async fn adopt_legacy_once(
+    tx: &sea_orm::DatabaseTransaction,
+    model: &crate::entity::server::Model,
+    selected: &RenewalState,
+    deadline: Option<DateTime<Utc>>,
+    now: DateTime<Utc>,
+) -> Result<Vec<alert_state::Model>, AppError> {
+    let previous = RenewalState::from_server(model);
+    let Some(occurrence) = selected.occurrence_id.as_ref() else {
+        return Ok(Vec::new());
+    };
+    let old_date = renewal::selected_date(model.expired_at, &previous.billing_timezone);
+    let new_date = renewal::selected_date(deadline, &selected.billing_timezone);
+    if previous.occurrence_id.is_some()
+        || previous.enabled
+        || !selected.enabled
+        || previous.billing_timezone != selected.billing_timezone
+        || old_date != new_date
+        || !new_date
+            .zip(renewal::selected_date(
+                Some(now),
+                &selected.billing_timezone,
+            ))
+            .is_some_and(|(date, today)| date >= today)
+    {
+        return Ok(Vec::new());
+    }
+    let states = alert_state::Entity::find()
+        .filter(alert_state::Column::ServerId.eq(&model.id))
+        .filter(alert_state::Column::EventKey.eq(""))
+        .all(tx)
+        .await?;
+    let mut adopted = Vec::new();
+    for state in states {
+        let Some(rule) = alert_rule::Entity::find_by_id(&state.rule_id)
+            .one(tx)
+            .await?
+        else {
+            continue;
+        };
+        let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json).unwrap_or_default();
+        if rule.trigger_mode != "once"
+            || items.is_empty()
+            || !items.iter().all(|item| item.rule_type == "expiration")
+        {
+            continue;
+        }
+        let mut active: alert_state::ActiveModel = state.into();
+        active.event_key = Set(format!("renewal:{occurrence}"));
+        adopted.push(active.update(tx).await?);
+    }
+    Ok(adopted)
+}
+
 pub(super) async fn evaluate(
     db: &DatabaseConnection,
     manager: &AlertStateManager,
@@ -150,11 +206,15 @@ pub(super) async fn evaluate(
         }));
     }
     let should_notify = existing.as_ref().is_none_or(|state| {
-        rule.trigger_mode != "once" && now - state.last_notified_at >= Duration::minutes(5)
+        rule.trigger_mode != "once"
+            && (state.resolved || now - state.last_notified_at >= Duration::minutes(5))
     });
     if !should_notify {
         tx.commit().await?;
         for row in &archived {
+            manager.publish_state(row);
+        }
+        if let Some(row) = &existing {
             manager.publish_state(row);
         }
         return Ok(Some(if archived.is_empty() {
@@ -165,9 +225,17 @@ pub(super) async fn evaluate(
     }
     let row = if let Some(previous) = existing {
         let count = previous.count;
+        let recovered = previous.resolved;
         let mut active: alert_state::ActiveModel = previous.into();
+        if recovered {
+            active.first_triggered_at = Set(now);
+        }
         active.last_notified_at = Set(now);
-        active.count = Set(count.saturating_add(1));
+        active.count = Set(if recovered {
+            1
+        } else {
+            count.saturating_add(1)
+        });
         active.resolved = Set(false);
         active.resolved_at = Set(None);
         active.updated_at = Set(now);

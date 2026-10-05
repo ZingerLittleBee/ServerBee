@@ -3472,6 +3472,35 @@ async fn persisted_alert_cycle(
         .expect("read durable alert state")
 }
 
+/// Rollback expiration fixtures use the persisted complete occurrence dimension.
+async fn expiration_dimension(state: &AppState, server: &str) -> String {
+    let model = serverbee_server::entity::server::Entity::find_by_id(server)
+        .one(&state.db)
+        .await
+        .unwrap()
+        .unwrap();
+    serverbee_server::service::renewal::RenewalState::from_server(&model)
+        .occurrence_id
+        .map(|id| format!("renewal:{id}"))
+        .unwrap_or_default()
+}
+
+async fn persisted_expiration_cycle(
+    state: &AppState,
+    rule: &str,
+    server: &str,
+    key: &str,
+) -> Option<serverbee_server::entity::alert_state::Model> {
+    use serverbee_server::entity::alert_state;
+    alert_state::Entity::find()
+        .filter(alert_state::Column::RuleId.eq(rule))
+        .filter(alert_state::Column::ServerId.eq(server))
+        .filter(alert_state::Column::EventKey.eq(key))
+        .one(&state.db)
+        .await
+        .unwrap()
+}
+
 async fn attach_alert_webhook(
     client: &reqwest::Client,
     base: &str,
@@ -3533,11 +3562,23 @@ async fn assert_alert_rollback(
     state: &AppState,
     rule: &str,
     server: &str,
+    dimension: &str,
     before: &Option<serverbee_server::entity::alert_state::Model>,
+    states_before: &[serverbee_server::entity::alert_state::Model],
     jobs_before: &[serverbee_server::entity::mobile_push_outbox::Model],
 ) {
+    let all_states = serverbee_server::entity::alert_state::Entity::find()
+        .filter(serverbee_server::entity::alert_state::Column::RuleId.eq(rule))
+        .filter(serverbee_server::entity::alert_state::Column::ServerId.eq(server))
+        .all(&state.db)
+        .await
+        .unwrap();
     assert_eq!(
-        &persisted_alert_cycle(state, rule, server).await,
+        all_states, states_before,
+        "Failed admission cannot leak any unexpected dimension or mutate retained history"
+    );
+    assert_eq!(
+        &persisted_expiration_cycle(state, rule, server, dimension).await,
         before,
         "Failed transaction must not consume a transition or rearm"
     );
@@ -3547,13 +3588,29 @@ async fn assert_alert_rollback(
         "First recipient and durable alert state must roll back with the failed recipient/commit"
     );
     assert_eq!(
-        state.alert_state_manager.is_triggered(rule, server, ""),
+        state
+            .alert_state_manager
+            .is_triggered(rule, server, dimension),
         before.as_ref().is_some_and(|cycle| !cycle.resolved)
     );
+    let selected_dimension = expiration_dimension(state, server).await;
+    if selected_dimension != dimension {
+        assert!(
+            !state
+                .alert_state_manager
+                .is_triggered(rule, server, &selected_dimension)
+        );
+        assert!(
+            persisted_expiration_cycle(state, rule, server, &selected_dimension)
+                .await
+                .is_none(),
+            "Failed admission must not create the new selected occurrence"
+        );
+    }
     if let Some(cycle) = before.as_ref().filter(|cycle| !cycle.resolved) {
         let cached = state
             .alert_state_manager
-            .get_info(rule, server, "")
+            .get_info(rule, server, dimension)
             .expect("Firing cache survives failed recovery");
         assert_eq!(cached.first_triggered_at, cycle.first_triggered_at);
         assert_eq!(cached.last_notified_at, cycle.last_notified_at);
@@ -3577,6 +3634,7 @@ async fn exercise_alert_rollback_restart(phase: AlertRollbackPhase, fault: Alert
     .await;
     let (server, rule) = alert_http_fixture(&client, &base, admin, "once").await;
     let webhook = attach_alert_webhook(&client, &base, admin, &rule).await;
+    let dimension = expiration_dimension(&state, &server).await;
     match phase {
         AlertRollbackPhase::Trigger => {}
         AlertRollbackPhase::Recovery => {
@@ -3590,14 +3648,34 @@ async fn exercise_alert_rollback_restart(phase: AlertRollbackPhase, fault: Alert
             set_alert_expiration(&client, &base, admin, &server, true).await;
         }
     }
-    let before = persisted_alert_cycle(&state, &rule, &server).await;
+    let before = persisted_expiration_cycle(&state, &rule, &server, &dimension).await;
+    match phase {
+        AlertRollbackPhase::Trigger => assert!(before.is_none()),
+        AlertRollbackPhase::Recovery => assert!(!before.as_ref().unwrap().resolved),
+        AlertRollbackPhase::Rearm => assert!(before.as_ref().unwrap().resolved),
+    }
+    let states_before = serverbee_server::entity::alert_state::Entity::find()
+        .filter(serverbee_server::entity::alert_state::Column::RuleId.eq(&rule))
+        .filter(serverbee_server::entity::alert_state::Column::ServerId.eq(&server))
+        .all(&state.db)
+        .await
+        .unwrap();
     let jobs_before = alert_jobs(&state).await;
     let external_before = webhook.lock().await.len();
     fault_alert_admission(&state, fault).await;
     // Repeat in the same process: a failed attempt cannot consume the hot cache.
     for _ in 0..2 {
         evaluate_alerts(&state).await;
-        assert_alert_rollback(&state, &rule, &server, &before, &jobs_before).await;
+        assert_alert_rollback(
+            &state,
+            &rule,
+            &server,
+            &dimension,
+            &before,
+            &states_before,
+            &jobs_before,
+        )
+        .await;
         assert_eq!(
             webhook.lock().await.len(),
             external_before,
@@ -3612,16 +3690,32 @@ async fn exercise_alert_rollback_restart(phase: AlertRollbackPhase, fault: Alert
     // production cache has loaded, before removing only the external fault.
     let restarted = reopen_alert_state(&state, &directory).await;
     evaluate_alerts(&restarted).await;
-    assert_alert_rollback(&restarted, &rule, &server, &before, &jobs_before).await;
+    assert_alert_rollback(
+        &restarted,
+        &rule,
+        &server,
+        &dimension,
+        &before,
+        &states_before,
+        &jobs_before,
+    )
+    .await;
     restarted
         .db
         .execute_unprepared("DROP TRIGGER fail_alert_admission")
         .await
         .unwrap();
     evaluate_alerts(&restarted).await;
-    let admitted_state = persisted_alert_cycle(&restarted, &rule, &server)
-        .await
-        .unwrap();
+    let admitted_dimension = if matches!(phase, AlertRollbackPhase::Recovery) {
+        dimension.clone()
+    } else {
+        expiration_dimension(&restarted, &server).await
+    };
+    let admitted_state =
+        persisted_expiration_cycle(&restarted, &rule, &server, &admitted_dimension)
+            .await
+            .unwrap();
+    assert_eq!(admitted_state.event_key, admitted_dimension);
     let admitted_jobs = alert_jobs(&restarted).await;
     let new_jobs: Vec<_> = admitted_jobs
         .iter()

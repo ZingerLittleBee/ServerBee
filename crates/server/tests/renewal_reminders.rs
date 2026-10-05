@@ -640,3 +640,213 @@ async fn explicitly_clearing_expiry_resolves_its_retained_occurrence() {
         1
     );
 }
+
+#[tokio::test]
+async fn enabling_tracking_for_same_legacy_date_does_not_readmit_its_once_reminder() {
+    let clock = ManualClock::at("2026-10-15T12:00:00Z");
+    use sea_orm::ConnectionTrait;
+    let (_base, tmp, initial) =
+        common::start_test_server_with_renewal_clock(100, clock.clone()).await;
+    let mut config = initial.config.clone();
+    config.push_relay.url = "https://unused-fixture-relay.invalid".into();
+    let (base, state) = reopen(&tmp, clock.clone(), config).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let response = admin.post(format!("{base}/api/servers"))
+        .json(&json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"legacy expiry","billing_cycle":"monthly","expired_at":"2026-10-31T12:34:56Z"}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    let id = response.json::<Value>().await.unwrap()["data"]["server_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let before = get(&admin, &base, &format!("servers/{id}")).await;
+    assert!(before["renewal"]["occurrence_id"].is_null());
+    let response = admin.post(format!("{base}/api/alert-rules"))
+        .json(&json!({"name":"legacy once","rules":[{"rule_type":"expiration","duration":60}],"trigger_mode":"once","enabled":true,"cover_type":"include","server_ids":[id]}))
+        .send().await.unwrap();
+    assert_eq!(response.status(), 200);
+    register_encrypted_alerts(&admin, &base).await;
+    tick(&state).await;
+    let old = get(&admin, &base, "alert-events").await;
+    assert_eq!(old.as_array().unwrap().len(), 1);
+    let old_key = old[0]["alert_key"].as_str().unwrap();
+    let original_detail = get(&admin, &base, &format!("alert-events/{old_key}")).await;
+    let original_jobs = jobs(&state).await;
+    assert_eq!(original_jobs.len(), 1);
+    let rule = old[0]["rule_id"].as_str().unwrap();
+    state.db.execute_unprepared("CREATE TRIGGER renewal_adoption_failure BEFORE UPDATE ON alert_states WHEN NEW.event_key != OLD.event_key BEGIN SELECT RAISE(FAIL,'isolated adoption fault'); END").await.unwrap();
+    let failed = admin
+        .put(format!("{base}/api/servers/{id}"))
+        .json(&json!({"renewal":{"enabled":true}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(failed.status(), 500);
+    assert_eq!(get(&admin, &base, &format!("servers/{id}")).await, before);
+    assert_eq!(
+        get(&admin, &base, &format!("alert-events/{old_key}")).await,
+        original_detail
+    );
+    assert!(state.alert_state_manager.is_triggered(rule, &id, ""));
+    assert_eq!(jobs(&state).await, original_jobs);
+    state
+        .db
+        .execute_unprepared("DROP TRIGGER renewal_adoption_failure")
+        .await
+        .unwrap();
+    let response = admin
+        .put(format!("{base}/api/servers/{id}"))
+        .json(&json!({"renewal":{"enabled":true}}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    tick(&state).await;
+    let enabled = get(&admin, &base, &format!("servers/{id}")).await;
+    assert_eq!(enabled["renewal"]["expiry_date"], "2026-10-31");
+    assert_eq!(
+        enabled["renewal"]["confirmed_expired_at"],
+        before["expired_at"]
+    );
+    let same = get(&admin, &base, "alert-events").await;
+    assert_eq!(
+        same.as_array().unwrap().len(),
+        1,
+        "enabling tracking for the same selected date must not fabricate another once reminder"
+    );
+    assert_eq!(same[0]["count"], 1);
+
+    let old_key = old[0]["alert_key"].as_str().unwrap();
+    let new_key = same[0]["alert_key"].as_str().unwrap();
+    assert_ne!(old_key, new_key);
+    assert_eq!(
+        admin
+            .get(format!("{base}/api/alert-events/{old_key}"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404,
+        "an adopted complete dimension overwrites the legacy key, which must never select another occurrence"
+    );
+    let detail = get(&admin, &base, &format!("alert-events/{new_key}")).await;
+    assert_eq!(detail["alert_key"], new_key);
+    assert_eq!(
+        detail["first_triggered_at"],
+        original_detail["first_triggered_at"]
+    );
+    let rule = same[0]["rule_id"].as_str().unwrap();
+    assert!(!state.alert_state_manager.is_triggered(rule, &id, ""));
+    assert!(state.alert_state_manager.is_triggered(
+        rule,
+        &id,
+        &format!(
+            "renewal:{}",
+            enabled["renewal"]["occurrence_id"].as_str().unwrap()
+        )
+    ));
+
+    assert_eq!(
+        jobs(&state).await,
+        original_jobs,
+        "adoption never enqueues or reencrypts delivery"
+    );
+    let (reopened_base, reopened) = reopen(&tmp, clock.clone(), state.config.clone()).await;
+    tick(&reopened).await;
+    assert_eq!(jobs(&reopened).await, original_jobs);
+    for enabled in [false, true] {
+        assert_eq!(
+            admin
+                .put(format!("{reopened_base}/api/servers/{id}"))
+                .json(&json!({"renewal":{"enabled":enabled}}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        tick(&reopened).await;
+        assert_eq!(jobs(&reopened).await, original_jobs);
+    }
+    clock.set("2026-11-01T00:00:00Z");
+    tick(&state).await;
+    assert_eq!(
+        get(&admin, &base, "alert-events")
+            .await
+            .as_array()
+            .unwrap()
+            .len(),
+        2,
+        "a different monthly date still admits its own reminder"
+    );
+    assert_eq!(
+        jobs(&state).await.len(),
+        2,
+        "only the next current occurrence adds a job, with no calendar recovery"
+    );
+}
+
+#[tokio::test]
+async fn always_reminder_retriggers_after_real_recovery_within_debounce_window() {
+    let clock = ManualClock::at("2026-10-30T12:00:00Z");
+    let (base, _tmp, state) =
+        common::start_test_server_with_renewal_clock(100, clock.clone()).await;
+    let admin = http_client();
+    login_admin(&admin, &base).await;
+    let (_, rule) = configure(&admin, &base, 60).await;
+    assert_eq!(
+        admin
+            .put(format!("{base}/api/alert-rules/{rule}"))
+            .json(&json!({"trigger_mode":"always"}))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    tick(&state).await;
+    let old = get(&admin, &base, "alert-events").await;
+    let old_key = old[0]["alert_key"].as_str().unwrap();
+    for duration in [0, 60] {
+        clock.set(if duration == 0 {
+            "2026-10-30T12:00:15Z"
+        } else {
+            "2026-10-30T12:00:30Z"
+        });
+        assert_eq!(
+            admin
+                .put(format!("{base}/api/alert-rules/{rule}"))
+                .json(&json!({"rules":[{"rule_type":"expiration","duration":duration}]}))
+                .send()
+                .await
+                .unwrap()
+                .status(),
+            200
+        );
+        tick(&state).await;
+    }
+    let events = get(&admin, &base, "alert-events").await;
+    assert_eq!(
+        events[0]["status"], "firing",
+        "an always rule starts a new real trigger cycle after recovery"
+    );
+    assert_eq!(events[0]["count"], 1);
+    assert_ne!(events[0]["alert_key"], old_key);
+    let detail = get(
+        &admin,
+        &base,
+        &format!("alert-events/{}", events[0]["alert_key"].as_str().unwrap()),
+    )
+    .await;
+    assert_eq!(detail["first_triggered_at"], "2026-10-30T12:00:30+00:00");
+    assert_eq!(
+        admin
+            .get(format!("{base}/api/alert-events/{old_key}"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+}
