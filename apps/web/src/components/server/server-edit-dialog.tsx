@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
-import { CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
+import { Check, ChevronsUpDown } from 'lucide-react'
 import { type FormEvent, useId, useMemo, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Command,
@@ -29,13 +28,6 @@ import { cn, countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
-
-function formatIsoDate(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
 
 function parseTagsInput(raw: string): { tags: string[]; error: string | null } {
   const parts = raw.split(TAG_SPLIT_RE).flatMap((t) => {
@@ -333,7 +325,7 @@ function ServerEditBillingFields({
         </Field>
       </div>
       <Field label={t('edit_expiration')}>
-        <DatePickerField
+        <ExpiryDateField
           ariaLabel={t('edit_expiration')}
           onChange={(expiredAt) => dispatch({ type: 'patch', value: { expiredAt } })}
           value={state.expiredAt}
@@ -666,42 +658,23 @@ function CountryOverrideField({
   )
 }
 
-interface DatePickerFieldProps {
+interface ExpiryDateFieldProps {
   ariaLabel: string
   onChange: (value: string) => void
   value: string
 }
 
-function DatePickerField({ ariaLabel, onChange, value }: DatePickerFieldProps) {
+function ExpiryDateField({ ariaLabel, onChange, value }: ExpiryDateFieldProps) {
   const { t } = useTranslation('servers')
-  const selected = value ? new Date(`${value}T00:00:00`) : undefined
   return (
     <div>
-      <Popover>
-        <PopoverTrigger
-          render={
-            <Button
-              aria-label={ariaLabel}
-              className="w-full justify-start font-normal"
-              type="button"
-              variant="outline"
-            />
-          }
-        >
-          <CalendarIcon className="size-4 text-muted-foreground" />
-          <span className={value ? '' : 'text-muted-foreground'}>
-            {value || t('edit_expiration_placeholder', { defaultValue: 'YYYY-MM-DD' })}
-          </span>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-0">
-          <Calendar
-            captionLayout="dropdown"
-            mode="single"
-            onSelect={(date) => onChange(date ? formatIsoDate(date) : '')}
-            selected={selected}
-          />
-        </PopoverContent>
-      </Popover>
+      <Input
+        aria-label={ariaLabel}
+        name="expiry_date"
+        onChange={(e) => onChange(e.target.value)}
+        type="date"
+        value={value}
+      />
       {value && (
         <Button className="mt-1" onClick={() => onChange('')} size="sm" type="button" variant="ghost">
           {t('edit_expiration_clear')}

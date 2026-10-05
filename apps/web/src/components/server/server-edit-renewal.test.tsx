@@ -6,13 +6,7 @@ import type { ServerResponse } from '@/lib/api-schema'
 import { ServerEditDialog } from './server-edit-dialog'
 
 const apiBoundary = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }))
-const MONTH_LABEL = /month/i
-const MARCH_TENTH = /March 10.*2026/
-const YEAR_LABEL = /year/i
-const CALENDAR_DATES = [
-  { date: '2026-01-31', label: /January 31.*2026/, month: '0', year: '2026' },
-  { date: '2024-02-29', label: /February 29.*2024/, month: '1', year: '2024' }
-]
+const CALENDAR_DATES = [{ date: '2026-01-31' }, { date: '2024-02-29' }]
 
 // jsdom does not implement the browser animation boundary used by ScrollArea.
 Element.prototype.getAnimations = () => []
@@ -74,10 +68,26 @@ afterEach(async () => {
 })
 
 describe('server renewal date editing', () => {
+  it('selects a billing date even when that date is skipped in the browser timezone', async () => {
+    renderEditor({
+      ...server,
+      expired_at: '2011-12-30T00:00:00Z',
+      renewal: { ...server.renewal, billing_timezone: 'UTC', expiry_date: '2011-12-29' }
+    })
+    const selectedDate = screen.getByLabelText('Expiration date')
+    expect(selectedDate).toHaveValue('2011-12-29')
+    fireEvent.change(selectedDate, { target: { value: '2011-12-30' } })
+    expect(selectedDate).toHaveValue('2011-12-30')
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1].renewal).toEqual({ expiry_date: '2011-12-30' })
+  })
+
   it('displays the server-selected local expiry date instead of its UTC day', () => {
     renderEditor()
 
-    expect(screen.getByRole('button', { name: 'Expiration date' })).toHaveTextContent('2026-03-08')
+    expect(screen.getByLabelText('Expiration date')).toHaveValue('2026-03-08')
   })
 
   it('preserves the existing deadline when saving an unrelated name change', async () => {
@@ -95,9 +105,7 @@ describe('server renewal date editing', () => {
 
   it('submits an explicitly selected expiry as a local date without a UTC timestamp', async () => {
     renderEditor()
-    fireEvent.click(screen.getByRole('button', { name: 'Expiration date' }))
-    fireEvent.change(await screen.findByRole('combobox', { name: MONTH_LABEL }), { target: { value: '2' } })
-    fireEvent.click(screen.getByRole('button', { name: MARCH_TENTH }))
+    fireEvent.change(screen.getByLabelText('Expiration date'), { target: { value: '2026-03-10' } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
@@ -112,7 +120,7 @@ describe('server renewal date editing', () => {
     const timezone = screen.getByLabelText('Billing timezone')
     expect(timezone).toHaveValue('America/New_York')
     fireEvent.change(timezone, { target: { value: 'Asia/Tokyo' } })
-    expect(screen.getByRole('button', { name: 'Expiration date' })).toHaveTextContent('2026-03-08')
+    expect(screen.getByLabelText('Expiration date')).toHaveValue('2026-03-08')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
@@ -190,10 +198,7 @@ describe('server renewal date editing', () => {
     CALENDAR_DATES
   )('encodes the selected calendar date $date without browser timezone conversion', async (date) => {
     renderEditor()
-    fireEvent.click(screen.getByRole('button', { name: 'Expiration date' }))
-    fireEvent.change(await screen.findByRole('combobox', { name: MONTH_LABEL }), { target: { value: date.month } })
-    fireEvent.change(screen.getByRole('combobox', { name: YEAR_LABEL }), { target: { value: date.year } })
-    fireEvent.click(screen.getByRole('button', { name: date.label }))
+    fireEvent.change(screen.getByLabelText('Expiration date'), { target: { value: date.date } })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
@@ -204,7 +209,7 @@ describe('server renewal date editing', () => {
     await i18next.changeLanguage('zh')
     renderEditor()
 
-    expect(screen.getByRole('button', { name: '到期日期' })).toHaveTextContent('2026-03-08')
+    expect(screen.getByLabelText('到期日期')).toHaveValue('2026-03-08')
     expect(screen.getByLabelText('账单时区')).toHaveValue('America/New_York')
     expect(screen.getByText('请选择 IANA 时区。服务有效期包含此时区内所选到期日期的整天。')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '清除到期日期' })).toBeInTheDocument()
