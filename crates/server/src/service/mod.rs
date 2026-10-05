@@ -60,3 +60,4 @@ pub(crate) mod alert_event_intents;
 pub mod renewal;
 
 pub mod renewal_clock;
+pub mod renewal_reminders;

@@ -7,6 +7,50 @@ import XCTest
 /// and capabilities vanish the instant the first WS frame arrived.
 @MainActor
 final class ServersViewModelMergeTests: XCTestCase {
+    func test_restRefreshPreservesWebSocketCatalogFields() throws {
+        let vm = ServersViewModel()
+        let fullSync = try JSONDecoder.snakeCase.decode(BrowserMessage.self, from: Data(
+            #"{"type":"full_sync","servers":[{"id":"1","name":"Original","online":true,"tags":["production"],"group_name":"Legacy group"}]}"#.utf8
+        ))
+        vm.handleWSMessage(fullSync)
+        let rest = try JSONDecoder.snakeCase.decode([ServerStatus].self, from: Data(
+            #"[{"id":"1","name":"Renamed","ipv4":null,"group_id":null,"renewal":null,"expired_at":null}]"#.utf8
+        ))
+        vm.applyConfig(rest)
+        XCTAssertEqual(vm.servers.first?.name, "Renamed")
+        XCTAssertEqual(vm.servers.first?.tags, ["production"])
+        XCTAssertEqual(vm.servers.first?.groupName, "Legacy group")
+        XCTAssertEqual(vm.servers.first?.online, true)
+        XCTAssertNil(vm.servers.first?.groupId)
+
+        // Explicit tag updates remain authoritative, including clearing all tags.
+        vm.applyConfig([ServerStatus(id: "1", name: "Renamed", tags: [])])
+        XCTAssertEqual(vm.servers.first?.tags, [])
+    }
+
+    func test_catalogRefreshKeepsLiveStateAndAppliesEdits() {
+        let vm = ServersViewModel()
+        var original = config("1")
+        original.expiredAt = "2026-04-01T03:59:59Z"
+        original.renewal = ServerRenewal(
+            enabled: true, billingTimezone: "America/New_York", expiryDate: "2026-03-31",
+            confirmedExpiredAt: "2026-02-01T04:59:59Z", deadlineOrigin: "projected", occurrenceId: "march"
+        )
+        vm.applyConfig([original])
+        vm.handleWSMessage(.update(servers: [liveFrame("1", online: true, cpu: 42)]))
+        XCTAssertEqual(vm.servers.first?.renewal?.expiryDate, "2026-03-31", "Live updates retain REST renewal metadata")
+        vm.handleWSMessage(.fullSync(servers: [liveFrame("1", online: true, cpu: 42)], upgrades: []))
+        XCTAssertEqual(vm.servers.first?.expiredAt, "2026-04-01T03:59:59Z", "Full sync preserves billing until REST refresh")
+        vm.applyConfig([ServerStatus(id: "1", name: "Renamed")])
+
+        XCTAssertEqual(vm.servers.first?.name, "Renamed")
+        XCTAssertNil(vm.servers.first?.ipv4)
+        XCTAssertNil(vm.servers.first?.expiredAt)
+        XCTAssertNil(vm.servers.first?.renewal)
+        XCTAssertEqual(vm.servers.first?.cpuUsage, 42)
+        XCTAssertEqual(vm.servers.first?.online, true)
+    }
+
     private func config(_ id: String) -> ServerStatus {
         var s = ServerStatus(
             id: id, name: "srv-\(id)", online: nil, cpuUsage: nil,

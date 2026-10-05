@@ -8674,6 +8674,9 @@
           },
           "server_name": {
             "type": "string"
+          },
+          "status": {
+            "type": "string"
           }
         }
       },

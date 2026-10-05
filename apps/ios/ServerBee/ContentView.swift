@@ -133,9 +133,13 @@ struct ContentView: View {
                             Task { await alertsViewModel.handleWSAlertEvent(apiClient: apiClient) }
                         },
                         security: { broadcast in securityFeed?.ingest(broadcast) },
-                        upgrades: { msg in ContentView.applyUpgrade(msg, to: upgradeJobs) }
+                        upgrades: { msg in ContentView.applyUpgrade(msg, to: upgradeJobs) },
+                        catalogRefresh: { ids in
+                            await serversViewModel.refreshCatalog(serverIds: ids, apiClient: apiClient)
+                            await alertsViewModel?.fetchEvents(apiClient: apiClient)
+                        }
                     )
-                    router.dispatch(message)
+                    await router.dispatchAndRefresh(message)
                 }
             }
             if let context = auth.captureContext() {

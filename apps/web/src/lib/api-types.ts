@@ -2442,6 +2442,7 @@ export interface components {
             resolved_at?: string | null;
             server_id: string;
             server_name: string;
+            status?: string;
         };
         ApiKeyResponse: {
             created_at: string;

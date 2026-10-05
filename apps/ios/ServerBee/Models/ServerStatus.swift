@@ -60,6 +60,9 @@ struct ServerStatus: Decodable, Identifiable, Hashable, Sendable {
     var agentAuthority: AgentAuthorityState?
     /// Decoder compatibility for older Server payloads.
     var hasToken: Bool?
+    /// Authenticated REST catalog fields; live metric frames never own billing.
+    var expiredAt: String?
+    var renewal: ServerRenewal?
     /// ISO-8601 string. The WS frame sends `last_active` as a Unix **epoch
     /// second integer**; the decoder normalises both forms to a string here so
     /// view code keeps a single representation.
@@ -112,6 +115,8 @@ struct ServerStatus: Decodable, Identifiable, Hashable, Sendable {
         case effectiveCapabilities = "effective_capabilities"
         case agentAuthority = "agent_authority"
         case hasToken = "has_token"
+        case expiredAt = "expired_at"
+        case renewal
         case lastActiveAt = "last_active_at"
         case lastActive = "last_active"
     }
@@ -170,6 +175,8 @@ extension ServerStatus {
         effectiveCapabilities = try container.decodeIfPresent(Int.self, forKey: .effectiveCapabilities)
         agentAuthority = try container.decodeIfPresent(AgentAuthorityState.self, forKey: .agentAuthority)
         hasToken = try container.decodeIfPresent(Bool.self, forKey: .hasToken)
+        expiredAt = try container.decodeIfPresent(String.self, forKey: .expiredAt)
+        renewal = try container.decodeIfPresent(ServerRenewal.self, forKey: .renewal)
 
         // `last_active` is a Unix epoch integer over the WS, an ISO string over
         // REST (`last_active_at`). Normalise to an ISO string. Using `try?` so a
@@ -238,19 +245,12 @@ extension ServerStatus {
         return ISO8601DateFormatter.shared.date(from: lastActiveAt)
     }
 
-    /// Merge non-nil fields from another status (used for WebSocket partial
-    /// updates AND for overlaying a live WS frame onto REST config). Fields that
-    /// are `nil` in `other` preserve the local value, so a metrics-only frame
-    /// never erases config fields like `ipv4`, `capabilities`, or billing.
-    mutating func merge(from other: ServerStatus) {
+    /// Preserve only runtime fields when replacing the authoritative REST catalog.
+    mutating func mergeLiveMetrics(from other: ServerStatus) {
         if let v = other.online { online = v }
         if let v = other.cpuUsage { cpuUsage = v }
-        if let v = other.cpuCores { cpuCores = v }
-        if let v = other.memoryTotal, v > 0 { memoryTotal = v }
         if let v = other.memoryUsed { memoryUsed = v }
-        if let v = other.swapTotal { swapTotal = v }
         if let v = other.swapUsed { swapUsed = v }
-        if let v = other.diskTotal, v > 0 { diskTotal = v }
         if let v = other.diskUsed { diskUsed = v }
         if let v = other.diskReadPerSec { diskReadPerSec = v }
         if let v = other.diskWritePerSec { diskWritePerSec = v }
@@ -265,6 +265,19 @@ extension ServerStatus {
         if let v = other.tcpCount { tcpCount = v }
         if let v = other.udpCount { udpCount = v }
         if let v = other.uptime { uptime = v }
+        if let v = other.lastActiveAt { lastActiveAt = v }
+    }
+
+    /// Merge non-nil fields from another status (used for WebSocket partial
+    /// updates AND for overlaying a live WS frame onto REST config). Fields that
+    /// are `nil` in `other` preserve the local value, so a metrics-only frame
+    /// never erases config fields like `ipv4`, `capabilities`, or billing.
+    mutating func merge(from other: ServerStatus) {
+        mergeLiveMetrics(from: other)
+        if let v = other.cpuCores { cpuCores = v }
+        if let v = other.memoryTotal, v > 0 { memoryTotal = v }
+        if let v = other.swapTotal { swapTotal = v }
+        if let v = other.diskTotal, v > 0 { diskTotal = v }
         if let v = other.os { os = v }
         if let v = other.cpuName { cpuName = v }
         if let v = other.ipv4 { ipv4 = v }
@@ -279,7 +292,8 @@ extension ServerStatus {
         if let v = other.effectiveCapabilities { effectiveCapabilities = v }
         if let v = other.agentAuthority { agentAuthority = v }
         if let v = other.hasToken { hasToken = v }
-        if let v = other.lastActiveAt { lastActiveAt = v }
+        if let v = other.expiredAt { expiredAt = v }
+        if let v = other.renewal { renewal = v }
     }
 }
 

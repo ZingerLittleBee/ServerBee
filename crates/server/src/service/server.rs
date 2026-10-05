@@ -90,6 +90,30 @@ impl ServerService {
         input: UpdateServerInput,
         now: chrono::DateTime<Utc>,
     ) -> Result<server::Model, AppError> {
+        Self::update_server_inner(db, id, input, now, None).await
+    }
+
+    pub async fn update_server_at_with_alerts(
+        db: &DatabaseConnection,
+        id: &str,
+        input: UpdateServerInput,
+        now: chrono::DateTime<Utc>,
+        manager: &super::alert::AlertStateManager,
+    ) -> Result<server::Model, AppError> {
+        Self::update_server_inner(db, id, input, now, Some(manager)).await
+    }
+
+    async fn update_server_inner(
+        db: &DatabaseConnection,
+        id: &str,
+        input: UpdateServerInput,
+        now: chrono::DateTime<Utc>,
+        manager: Option<&super::alert::AlertStateManager>,
+    ) -> Result<server::Model, AppError> {
+        let _admission = match manager {
+            Some(manager) => Some(manager.admission_lock.lock().await),
+            None => None,
+        };
         Self::validate_update_input(&input)?;
         let tx = db.begin().await?;
         let model = super::renewal::load_for_update(&tx, id).await?;
@@ -105,6 +129,9 @@ impl ServerService {
                 .unwrap_or(model.billing_cycle.as_deref()),
             now,
         )?;
+        let adopted =
+            super::renewal_reminders::adopt_legacy_occurrence(&tx, &model, &renewal, deadline)
+                .await?;
         let mut active: server::ActiveModel = model.into();
         active.renewal_state = Set(Some(
             serde_json::to_string(&renewal).map_err(|e| AppError::Validation(e.to_string()))?,
@@ -169,6 +196,11 @@ impl ServerService {
         active.updated_at = Set(now);
         let updated = active.update(&tx).await?;
         tx.commit().await?;
+        if let Some(manager) = manager {
+            for row in &adopted {
+                manager.publish_adopted_renewal(row);
+            }
+        }
         Ok(updated)
     }
 

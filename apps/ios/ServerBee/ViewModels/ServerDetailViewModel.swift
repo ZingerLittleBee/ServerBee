@@ -31,7 +31,9 @@ final class ServerDetailViewModel {
         isLoadingConfig = true
         defer { isLoadingConfig = false }
         do {
-            config = try await apiClient.get("/api/servers/\(serverId)")
+            let refreshed: ServerConfig = try await apiClient.get("/api/servers/\(serverId)")
+            guard !Task.isCancelled else { return }
+            config = refreshed
         } catch {
             AppLog.viewModel.error("ServerConfig fetch failed: \(String(describing: error), privacy: .public)")
         }

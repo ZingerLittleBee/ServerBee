@@ -175,6 +175,14 @@ Each alert rule specifies which servers it applies to:
 - Sends a notification only on the **first trigger**.
 - No further notifications are sent until the condition recovers and triggers again.
 
+### Renewal Expiration Reminders
+
+For a server with a stored renewal occurrence, an expiration rule in `once` mode sends at most one reminder for each rule, server and occurrence. A new monthly deadline can therefore send its own reminder even when a 60-day window stays continuously true. Retries, Server restart and disabling automatic tracking do not resend the same occurrence.
+
+The threshold uses the stored billing timezone's local expiry date. A zero-day reminder remains eligible throughout that date. Automatic tracking catches up to the current deadline after downtime without sending a backlog for missed occurrences. Previous automatic targets appear as **Superseded** in alert history; advancement sends no recovery notification and does not confirm provider renewal, payment or service availability. An explicitly edited date or a condition that stops matching can still produce the normal recovery transition.
+
+Authenticated Web and native iOS views refetch the Server-owned deadline, alert history and cost advisories after catalog changes and reconnects. Clients do not calculate recurring deadlines.
+
 ### State Persistence
 
 Trigger state is persisted to the `alert_states` table in SQLite and loaded into a hot cache on startup. As a result:

@@ -149,6 +149,7 @@
   "alerts.no_rules": "暂无告警规则",
   "alerts.states": "状态",
   "alerts.resolved": "已恢复",
+  "alerts.superseded": "已由下一个续费到期日替代",
   "alerts.triggered": "已触发",
   "alerts.no_triggered": "暂无触发状态",
   "alerts.metric_cpu": "CPU %",

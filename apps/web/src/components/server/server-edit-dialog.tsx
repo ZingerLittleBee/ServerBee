@@ -26,6 +26,7 @@ import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
 import { buildCountryOptions, type CountryOption } from '@/lib/country-codes'
 import { projectServerCatalog } from '@/lib/server-catalog'
+import { invalidateServerCosts } from '@/lib/server-cost-cache'
 import { cn, countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
@@ -443,8 +444,14 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
   // override; otherwise we leave it blank and surface the auto-detected value as
   // a hint, so saving an untouched form never accidentally pins GeoIP.
   const initialCountryCode = server.geo_manual ? (server.country_code ?? '') : ''
-  const initialExpiryDate = serverEditStateFromServer(server).expiredAt
-  const initialBillingTimezone = server.renewal?.billing_timezone ?? 'UTC'
+  // The draft belongs to the snapshot opened in this dialog. Catalog refreshes
+  // may advance the deadline while it stays open; they must not turn untouched
+  // draft fields into explicit renewal edits.
+  const [initialRenewal] = useState(() => ({
+    expiryDate: serverEditStateFromServer(server).expiredAt,
+    billingTimezone: server.renewal?.billing_timezone ?? 'UTC',
+    enabled: server.renewal?.enabled ?? false
+  }))
   const [state, dispatch] = useReducer(serverEditReducer, server, serverEditStateFromServer)
   const invalidAutomaticRenewal = state.automaticRenewal && !hasAutomaticRenewalPrerequisites(state)
 
@@ -463,14 +470,17 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
     onSuccess: (data) => {
       projectServerCatalog(queryClient, { kind: 'server_saved', server: data })
+      invalidateServerCosts(queryClient, [data.id])
     }
   })
 
   const buildPayload = (): UpdateServerInput => {
     const renewal = {
-      ...(state.automaticRenewal !== (server.renewal?.enabled ?? false) && { enabled: state.automaticRenewal }),
-      ...(state.expiredAt !== initialExpiryDate && { expiry_date: state.expiredAt || null }),
-      ...(state.billingTimezone !== initialBillingTimezone && { billing_timezone: state.billingTimezone || null })
+      ...(state.automaticRenewal !== initialRenewal.enabled && { enabled: state.automaticRenewal }),
+      ...(state.expiredAt !== initialRenewal.expiryDate && { expiry_date: state.expiredAt || null }),
+      ...(state.billingTimezone !== initialRenewal.billingTimezone && {
+        billing_timezone: state.billingTimezone || null
+      })
     }
     const payload: UpdateServerInput = {
       name: state.name,

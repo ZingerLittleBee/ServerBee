@@ -36,8 +36,7 @@ pub const COVER_TYPE_ALL: &str = "all";
 pub const COVER_TYPE_INCLUDE: &str = "include";
 pub const COVER_TYPE_EXCLUDE: &str = "exclude";
 /// All accepted `cover_type` values for alert_rule and block_list inputs.
-pub const VALID_COVER_TYPES: &[&str] =
-    &[COVER_TYPE_ALL, COVER_TYPE_INCLUDE, COVER_TYPE_EXCLUDE];
+pub const VALID_COVER_TYPES: &[&str] = &[COVER_TYPE_ALL, COVER_TYPE_INCLUDE, COVER_TYPE_EXCLUDE];
 
 /// `origin` discriminants for block_list rows.
 pub const ORIGIN_MANUAL: &str = "manual";
@@ -45,8 +44,7 @@ pub const ORIGIN_AUTO: &str = "auto";
 
 /// Security rule types whose payload carries a `source_ip` and may attach a
 /// `block_source_ip` action.
-pub const SOURCE_IP_RULE_TYPES: &[&str] =
-    &["ssh_brute_force_detected", "port_scan_detected"];
+pub const SOURCE_IP_RULE_TYPES: &[&str] = &["ssh_brute_force_detected", "port_scan_detected"];
 
 // ── Alert Rule Types ──
 
@@ -235,6 +233,8 @@ pub struct UpdateAlertRule {
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AlertStateResponse {
+    #[schema(required = false)]
+    pub status: String,
     pub server_id: String,
     pub server_name: String,
     pub first_triggered_at: chrono::DateTime<chrono::Utc>,
@@ -411,6 +411,15 @@ impl AlertStateManager {
 
     // Publish synchronously after commit. Durable eligibility never relies on
     // this display cache, including after cancellation or process restart.
+    pub(super) fn publish_adopted_renewal(&self, state: &alert_state::Model) {
+        self.triggered.remove(&(
+            state.rule_id.clone(),
+            state.server_id.clone(),
+            String::new(),
+        ));
+        self.publish_state(state);
+    }
+
     pub(super) fn publish_state(&self, state: &alert_state::Model) {
         let key = (
             state.rule_id.clone(),
@@ -720,6 +729,7 @@ impl AlertService {
                 .unwrap_or_else(|| "Unknown".to_string());
 
             result.push(AlertStateResponse {
+                status: alert_status(&state).into(),
                 server_id: state.server_id,
                 server_name,
                 first_triggered_at: state.first_triggered_at,
@@ -769,7 +779,7 @@ impl AlertService {
         let result = states
             .into_iter()
             .map(|s| {
-                let status = if s.resolved { "resolved" } else { "firing" };
+                let status = alert_status(&s);
                 let event_at = if s.resolved {
                     s.resolved_at
                         .map(|t| t.to_rfc3339())
@@ -823,7 +833,9 @@ impl AlertService {
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
     ) -> Result<(), AppError> {
-        Self::evaluate_all_at(db, config, agent_manager, state_manager, Utc::now()).await
+        Self::evaluate_all_at(db, config, agent_manager, state_manager, Utc::now())
+            .await
+            .map(|_| ())
     }
 
     pub async fn evaluate_all_at(
@@ -832,7 +844,7 @@ impl AlertService {
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
         now: chrono::DateTime<Utc>,
-    ) -> Result<(), AppError> {
+    ) -> Result<Vec<String>, AppError> {
         // Event-driven conditions cannot be re-polled. Replay captured intents
         // before ordinary rules, including the first tick after Server restart.
         crate::service::alert_event_intents::replay(db, config, state_manager).await?;
@@ -841,6 +853,7 @@ impl AlertService {
             .all(db)
             .await?;
 
+        let mut changed = Vec::new();
         for rule in rules {
             // A failed event admission reserves the dimension/cycle. Do not
             // overwrite it with a later periodic evaluation of a mixed rule.
@@ -864,13 +877,13 @@ impl AlertService {
                 continue;
             }
 
-            if let Err(e) =
-                Self::evaluate_rule_at(db, config, agent_manager, state_manager, &rule, now).await
+            match Self::evaluate_rule_at(db, config, agent_manager, state_manager, &rule, now).await
             {
-                tracing::error!("Error evaluating alert rule '{}': {e}", rule.name);
+                Ok(mut servers) => changed.append(&mut servers),
+                Err(e) => tracing::error!("Error evaluating alert rule '{}': {e}", rule.name),
             }
         }
-        Ok(())
+        Ok(changed)
     }
 
     #[cfg(test)]
@@ -881,7 +894,9 @@ impl AlertService {
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
     ) -> Result<(), AppError> {
-        Self::evaluate_rule_at(db, config, agent_manager, state_manager, rule, Utc::now()).await
+        Self::evaluate_rule_at(db, config, agent_manager, state_manager, rule, Utc::now())
+            .await
+            .map(|_| ())
     }
 
     async fn evaluate_rule_at(
@@ -891,15 +906,54 @@ impl AlertService {
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
         now: chrono::DateTime<Utc>,
-    ) -> Result<(), AppError> {
+    ) -> Result<Vec<String>, AppError> {
         let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json).unwrap_or_default();
         if items.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let servers = resolve_servers(db, &rule.cover_type, &rule.server_ids_json).await?;
 
+        let mut changed = Vec::new();
         for srv in &servers {
+            if items.iter().any(|item| item.rule_type == "expiration")
+                && !items
+                    .iter()
+                    .any(|item| EVENT_DRIVEN_RULE_TYPES.contains(&item.rule_type.as_str()))
+            {
+                let other: Vec<_> = items
+                    .iter()
+                    .filter(|item| item.rule_type != "expiration")
+                    .cloned()
+                    .collect();
+                let matched = Self::check_server_at(db, agent_manager, &other, &srv.id, now).await;
+                if let Some(outcome) = crate::service::renewal_reminders::evaluate(
+                    db,
+                    state_manager,
+                    rule,
+                    &srv.id,
+                    &items,
+                    matched,
+                    now,
+                )
+                .await?
+                {
+                    if !matches!(outcome, crate::service::renewal_reminders::Outcome::Silent) {
+                        changed.push(srv.id.clone());
+                    }
+                    match outcome {
+                        crate::service::renewal_reminders::Outcome::Triggered => {
+                            Self::notify_triggered(db, config, rule, &srv.id, &srv.name, now).await
+                        }
+                        crate::service::renewal_reminders::Outcome::Resolved => {
+                            Self::handle_resolved(db, config, rule, &srv.id, &srv.name).await
+                        }
+                        crate::service::renewal_reminders::Outcome::Silent
+                        | crate::service::renewal_reminders::Outcome::Superseded => {}
+                    }
+                    continue;
+                }
+            }
             let triggered = Self::check_server_at(db, agent_manager, &items, &srv.id, now).await;
 
             if triggered {
@@ -925,7 +979,7 @@ impl AlertService {
             }
         }
 
-        Ok(())
+        Ok(changed)
     }
 
     #[cfg(test)]
@@ -1093,6 +1147,17 @@ impl AlertService {
         crate::service::alert_event_intents::replay(db, config, state_manager).await?;
 
         Ok(())
+    }
+}
+
+/// Calendar supersession is retained for detail without claiming recovery.
+pub fn alert_status(state: &alert_state::Model) -> &'static str {
+    if state.resolved && state.resolved_at.is_none() && state.event_key.starts_with("renewal:") {
+        "superseded"
+    } else if state.resolved {
+        "resolved"
+    } else {
+        "firing"
     }
 }
 
@@ -1904,8 +1969,7 @@ mod tests {
                         _ => break,
                     }
                 }
-                let _ = socket
-                    .try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
+                let _ = socket.try_write(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n");
                 let _ = tx.send(String::from_utf8_lossy(&buf).into_owned());
             }
         });
@@ -2024,7 +2088,10 @@ mod tests {
             .expect("query states");
         assert_eq!(rows.len(), 1, "no duplicate alert_state rows");
         assert!(!rows[0].resolved, "re-armed row should be firing again");
-        assert!(rows[0].resolved_at.is_none(), "resolved_at cleared on re-arm");
+        assert!(
+            rows[0].resolved_at.is_none(),
+            "resolved_at cleared on re-arm"
+        );
         assert_eq!(rows[0].count, 1, "count reset on re-arm");
     }
 
@@ -2660,10 +2727,12 @@ mod tests {
     async fn test_latest_record_time_picks_latest_and_none() {
         let (db, _tmp) = setup_test_db().await;
         // No records => None.
-        assert!(RecordService::latest_record_time(&db, "srv-1")
-            .await
-            .expect("query should succeed")
-            .is_none());
+        assert!(
+            RecordService::latest_record_time(&db, "srv-1")
+                .await
+                .expect("query should succeed")
+                .is_none()
+        );
 
         let older = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
         let newer = Utc.with_ymd_and_hms(2026, 1, 1, 1, 0, 0).unwrap();

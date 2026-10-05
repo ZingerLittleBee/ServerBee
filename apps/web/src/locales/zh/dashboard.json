@@ -139,6 +139,11 @@
       }
     },
     "alertList": {
+      "status": {
+        "firing": "已触发",
+        "resolved": "已恢复",
+        "superseded": "已由下一个续费到期日替代"
+      },
       "title": "告警",
       "empty": {
         "noEvents": "暂无告警事件"

@@ -344,6 +344,9 @@ fn apply_calendar(
         deadline = old_date
             .map(|d| date_boundary(d, &state.billing_timezone))
             .transpose()?;
+        if state.occurrence_id.is_none() {
+            state.occurrence_id = deadline.map(|_| uuid::Uuid::new_v4().to_string());
+        }
     }
     if date_replaced {
         state.deadline_origin = DeadlineOrigin::Confirmed;
@@ -389,8 +392,31 @@ pub async fn load_for_update(
 }
 
 /// Production catch-up evaluates each server from a stable, freshly locked schedule.
-pub async fn advance_all(db: &DatabaseConnection, now: DateTime<Utc>) -> Result<(), AppError> {
+pub(super) async fn advance_locked(
+    tx: &DatabaseTransaction,
+    model: server::Model,
+    now: DateTime<Utc>,
+) -> Result<(server::Model, bool), AppError> {
+    let mut state = RenewalState::from_server(&model);
+    let mut deadline = model.expired_at;
+    if !state.advance(&mut deadline, model.billing_cycle.as_deref(), now)? {
+        return Ok((model, false));
+    }
+    let mut active: server::ActiveModel = model.into();
+    active.expired_at = Set(deadline);
+    active.renewal_state = Set(Some(
+        serde_json::to_string(&state).map_err(|e| AppError::Internal(e.to_string()))?,
+    ));
+    active.updated_at = Set(now);
+    Ok((active.update(tx).await?, true))
+}
+
+pub async fn advance_all(
+    db: &DatabaseConnection,
+    now: DateTime<Utc>,
+) -> Result<Vec<String>, AppError> {
     let servers = server::Entity::find().all(db).await?;
+    let mut changed = Vec::new();
     for candidate in servers {
         if !RenewalState::from_server(&candidate).enabled {
             continue;
@@ -404,29 +430,21 @@ pub async fn advance_all(db: &DatabaseConnection, now: DateTime<Utc>) -> Result<
             }
             Err(error) => return Err(error),
         };
-        let mut state = RenewalState::from_server(&model);
-        let mut deadline = model.expired_at;
-        let advanced = match state.advance(&mut deadline, model.billing_cycle.as_deref(), now) {
-            Ok(advanced) => advanced,
+        let advanced = match advance_locked(&tx, model, now).await {
+            Ok((_, advanced)) => advanced,
             Err(AppError::Validation(reason)) => {
                 // A damaged calendar configuration cannot stop healthy schedules.
                 // Database/transaction errors still propagate to the caller.
-                tracing::error!(server_id = %model.id, %reason, "Skipping invalid renewal schedule");
+                tracing::error!(server_id = %candidate.id, %reason, "Skipping invalid renewal schedule");
                 tx.rollback().await?;
                 continue;
             }
             Err(error) => return Err(error),
         };
-        if advanced {
-            let mut active: server::ActiveModel = model.into();
-            active.expired_at = Set(deadline);
-            active.renewal_state = Set(Some(
-                serde_json::to_string(&state).map_err(|e| AppError::Internal(e.to_string()))?,
-            ));
-            active.updated_at = Set(now);
-            active.update(&tx).await?;
-        }
         tx.commit().await?;
+        if advanced {
+            changed.push(candidate.id);
+        }
     }
-    Ok(())
+    Ok(changed)
 }
