@@ -76,6 +76,19 @@ final class RenewalDateTests: XCTestCase {
     }
 
     @MainActor
+    func test_timezoneEditThroughInvalidIntermediateValuePreservesSelectedDate() throws {
+        let model = EditServerViewModel()
+        model.prefill(from: try selectedConfig())
+        model.billingTimezone = "Asia/"
+        model.billingTimezone = "Asia/Tokyo"
+        XCTAssertEqual(BillingDate.string(from: model.expiryDate, timezone: "Asia/Tokyo"), "2026-03-08")
+        let request = try object(model.buildRequest())
+        let renewal = try XCTUnwrap(request["renewal"] as? [String: Any])
+        XCTAssertEqual(renewal["billing_timezone"] as? String, "Asia/Tokyo")
+        XCTAssertNil(renewal["expiry_date"])
+    }
+
+    @MainActor
     func test_changedDateSendsLiteralDateAndClearingSendsNull() throws {
         let model = EditServerViewModel()
         model.prefill(from: try selectedConfig())
@@ -98,6 +111,13 @@ final class RenewalDateTests: XCTestCase {
         XCTAssertEqual(BillingDate.string(from: date, timezone: "America/Los_Angeles"), "2026-03-08")
         XCTAssertEqual(BillingDate.string(from: date, timezone: "Asia/Tokyo"), "2026-03-09")
         XCTAssertNil(BillingDate.date(from: "2026-02-29", timezone: "UTC"))
+    }
+
+    func test_datePickerSupportsLocalDateWhoseMidnightDoesNotExist() throws {
+        let date = try XCTUnwrap(BillingDate.date(from: "2018-11-04", timezone: "America/Sao_Paulo"))
+        XCTAssertEqual(BillingDate.string(from: date, timezone: "America/Sao_Paulo"), "2018-11-04")
+        let utc = ISO8601DateFormatter.shared.date(from: "2018-11-04T14:00:00Z")
+        XCTAssertEqual(date, utc)
     }
 
     func test_selectedDateDisplayUsesStoredTimezoneAtUTCDateBoundary() throws {

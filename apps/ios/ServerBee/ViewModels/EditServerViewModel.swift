@@ -22,10 +22,11 @@ final class EditServerViewModel {
     var expiryDate = Date()
     var billingTimezone = "UTC" {
         didSet {
-            guard oldValue != billingTimezone,
-                  let date = BillingDate.string(from: expiryDate, timezone: oldValue),
+            guard lastValidBillingTimezone != billingTimezone,
+                  let date = BillingDate.string(from: expiryDate, timezone: lastValidBillingTimezone),
                   let converted = BillingDate.date(from: date, timezone: billingTimezone) else { return }
             expiryDate = converted
+            lastValidBillingTimezone = billingTimezone
         }
     }
     var expiryTimezone: TimeZone { TimeZone(identifier: billingTimezone) ?? .gmt }
@@ -43,6 +44,7 @@ final class EditServerViewModel {
     private var originalTags: [String] = []
     private var originalExpiryDate: String?
     private var originalBillingTimezone = "UTC"
+    private var lastValidBillingTimezone = "UTC"
 
     static let gibibyte = 1_073_741_824.0
 

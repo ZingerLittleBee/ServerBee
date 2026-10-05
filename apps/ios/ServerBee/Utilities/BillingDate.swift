@@ -9,10 +9,12 @@ enum BillingDate {
     }
 
     static func date(from string: String, timezone: String) -> Date? {
-        guard let formatter = formatter(timezone: timezone),
-              let date = formatter.date(from: string), formatter.string(from: date) == string else { return nil }
-        // Noon gives the date picker a stable instant even where DST changes at midnight.
-        return formatter.calendar.date(bySettingHour: 12, minute: 0, second: 0, of: date)
+        guard let formatter = formatter(timezone: timezone) else { return nil }
+        // Parse at noon directly: some valid local dates have no midnight at DST start.
+        formatter.dateFormat = "yyyy-MM-dd HH:mm"
+        let noon = "\(string) 12:00"
+        guard let date = formatter.date(from: noon), formatter.string(from: date) == noon else { return nil }
+        return date
     }
 
     static func display(from date: Date, timezone: String) -> String {
