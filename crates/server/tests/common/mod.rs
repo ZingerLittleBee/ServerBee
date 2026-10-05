@@ -37,6 +37,17 @@ pub async fn start_test_server_with_state() -> (String, tempfile::TempDir, std::
 pub async fn start_test_server_with_login_limit(
     login_max: u32,
 ) -> (String, tempfile::TempDir, std::sync::Arc<AppState>) {
+    start_test_server_with_renewal_clock(
+        login_max,
+        std::sync::Arc::new(serverbee_server::service::renewal_clock::SystemRenewalClock),
+    )
+    .await
+}
+
+pub async fn start_test_server_with_renewal_clock(
+    login_max: u32,
+    clock: std::sync::Arc<dyn serverbee_server::service::renewal_clock::RenewalClock>,
+) -> (String, tempfile::TempDir, std::sync::Arc<AppState>) {
     let tmp = tempfile::tempdir().expect("Failed to create temp dir");
     let data_dir = tmp.path().to_str().unwrap().to_string();
 
@@ -88,7 +99,7 @@ pub async fn start_test_server_with_login_limit(
         .await
         .expect("Failed to seed admin");
 
-    let state = AppState::new(db, config)
+    let state = AppState::new_with_renewal_clock(db, config, clock)
         .await
         .expect("Failed to create AppState");
     let security_recovery = state.security_service.start_recovery();

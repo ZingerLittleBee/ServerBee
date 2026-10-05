@@ -75,6 +75,7 @@ pub struct RateLimitEntry {
 
 pub struct AppState {
     pub db: DatabaseConnection,
+    pub renewal_clock: Arc<dyn crate::service::renewal_clock::RenewalClock>,
     pub agent_manager: Arc<AgentManager>,
     pub agent_authority: Arc<AgentAuthority>,
     pub server_onboarding: Arc<ServerOnboarding>,
@@ -189,13 +190,28 @@ impl AppState {
     }
 
     pub async fn new(db: DatabaseConnection, config: AppConfig) -> Result<Arc<Self>, AppError> {
+        Self::new_with_renewal_clock(
+            db,
+            config,
+            Arc::new(crate::service::renewal_clock::SystemRenewalClock),
+        )
+        .await
+    }
+
+    pub async fn new_with_renewal_clock(
+        db: DatabaseConnection,
+        config: AppConfig,
+        renewal_clock: Arc<dyn crate::service::renewal_clock::RenewalClock>,
+    ) -> Result<Arc<Self>, AppError> {
+        crate::service::renewal::advance_all(&db, renewal_clock.now()).await?;
         let (browser_tx, _) = broadcast::channel(256);
         let agent_manager = Arc::new(AgentManager::new(browser_tx.clone()));
         let agent_authority = Arc::new(AgentAuthority::new(db.clone(), agent_manager.clone()));
-        let server_onboarding = Arc::new(ServerOnboarding::new(
+        let server_onboarding = Arc::new(ServerOnboarding::new_with_renewal_clock(
             db.clone(),
             agent_authority.clone(),
             config.auth.max_servers,
+            renewal_clock.clone(),
         ));
         let upgrade_tracker = UpgradeJobTracker::new(browser_tx.clone());
         let upgrade_release_service = UpgradeReleaseService::new(&config.upgrade);
@@ -263,6 +279,7 @@ impl AppState {
             crate::service::traceroute_enrich::TracerouteEnricher::new().with_asn(asn_arc.clone());
         Ok(Arc::new(Self {
             db,
+            renewal_clock,
             agent_manager,
             agent_authority,
             server_onboarding,

@@ -1,8 +1,12 @@
 use std::sync::Arc;
 
+#[cfg(test)]
 use crate::config::AppConfig;
+#[cfg(test)]
 use crate::service::agent_manager::AgentManager;
-use crate::service::alert::{AlertService, AlertStateManager};
+use crate::service::alert::AlertService;
+#[cfg(test)]
+use crate::service::alert::AlertStateManager;
 use crate::state::AppState;
 
 /// Runs every 60 seconds to evaluate all enabled alert rules.
@@ -14,19 +18,30 @@ pub async fn run(state: Arc<AppState>) {
     loop {
         interval.tick().await;
 
-        evaluate_tick(
-            &state.db,
-            &state.config,
-            &state.agent_manager,
-            &state.alert_state_manager,
-        )
-        .await;
+        if let Err(error) = evaluate_once(&state).await {
+            tracing::error!("Renewal/alert evaluation error: {error}");
+        }
     }
+}
+
+/// One production scheduler iteration, also used with a controlled renewal clock.
+pub async fn evaluate_once(state: &AppState) -> Result<(), crate::error::AppError> {
+    let now = state.renewal_clock.now();
+    crate::service::renewal::advance_all(&state.db, now).await?;
+    AlertService::evaluate_all_at(
+        &state.db,
+        &state.config,
+        &state.agent_manager,
+        &state.alert_state_manager,
+        now,
+    )
+    .await
 }
 
 /// Performs the per-tick work of the alert evaluator: evaluate all enabled
 /// alert rules once and log any error. Extracted from the `run` loop so it can
 /// be exercised in isolation; behavior (work, ordering, logging) is unchanged.
+#[cfg(test)]
 pub(crate) async fn evaluate_tick(
     db: &sea_orm::DatabaseConnection,
     config: &AppConfig,
@@ -62,7 +77,12 @@ mod tests {
         let (browser_tx, _rx) = broadcast::channel::<BrowserMessage>(16);
         let agent_manager = AgentManager::new(browser_tx.clone());
         let state_manager = AlertStateManager::new();
-        (agent_manager, state_manager, AppConfig::default(), browser_tx)
+        (
+            agent_manager,
+            state_manager,
+            AppConfig::default(),
+            browser_tx,
+        )
     }
 
     async fn insert_test_server(db: &sea_orm::DatabaseConnection, id: &str, name: &str) {
@@ -139,13 +159,7 @@ mod tests {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "s1", "Srv").await;
         // A rule whose only item is the event-driven `ip_changed` type.
-        insert_alert_rule(
-            &db,
-            "r-event",
-            true,
-            r#"[{"rule_type":"ip_changed"}]"#,
-        )
-        .await;
+        insert_alert_rule(&db, "r-event", true, r#"[{"rule_type":"ip_changed"}]"#).await;
         let (agent_manager, state_manager, config, _tx) = build_deps();
 
         evaluate_tick(&db, &config, &agent_manager, &state_manager).await;
