@@ -9,12 +9,23 @@ import XCTest
 final class ServersViewModelMergeTests: XCTestCase {
     func test_catalogRefreshKeepsLiveStateAndAppliesEdits() {
         let vm = ServersViewModel()
-        vm.applyConfig([config("1")])
+        var original = config("1")
+        original.expiredAt = "2026-04-01T03:59:59Z"
+        original.renewal = ServerRenewal(
+            enabled: true, billingTimezone: "America/New_York", expiryDate: "2026-03-31",
+            confirmedExpiredAt: "2026-02-01T04:59:59Z", deadlineOrigin: "projected", occurrenceId: "march"
+        )
+        vm.applyConfig([original])
         vm.handleWSMessage(.update(servers: [liveFrame("1", online: true, cpu: 42)]))
+        XCTAssertEqual(vm.servers.first?.renewal?.expiryDate, "2026-03-31", "Live updates retain REST renewal metadata")
+        vm.handleWSMessage(.fullSync(servers: [liveFrame("1", online: true, cpu: 42)], upgrades: []))
+        XCTAssertEqual(vm.servers.first?.expiredAt, "2026-04-01T03:59:59Z", "Full sync preserves billing until REST refresh")
         vm.applyConfig([ServerStatus(id: "1", name: "Renamed")])
 
         XCTAssertEqual(vm.servers.first?.name, "Renamed")
         XCTAssertNil(vm.servers.first?.ipv4)
+        XCTAssertNil(vm.servers.first?.expiredAt)
+        XCTAssertNil(vm.servers.first?.renewal)
         XCTAssertEqual(vm.servers.first?.cpuUsage, 42)
         XCTAssertEqual(vm.servers.first?.online, true)
     }

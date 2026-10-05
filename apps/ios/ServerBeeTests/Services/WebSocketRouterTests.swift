@@ -25,6 +25,13 @@ final class WebSocketRouterTests: XCTestCase {
         let detail = ServerDetailViewModel()
         let traffic = ServerTrafficViewModel()
         let insights = InsightsViewModel()
+        traffic.cost = try JSONDecoder.snakeCase.decode(ServerCostInsights.self, from: Data(
+            #"{"server_id":"renewing","configured":true,"advisories":["expired_billing"]}"#.utf8
+        ))
+        insights.costOverview = try JSONDecoder.snakeCase.decode(CostOverviewResponse.self, from: Data(
+            #"{"currencies":[],"servers":[{"server_id":"renewing","name":"Old name","configured":true,"advisories":["expired_billing"]}]}"#.utf8
+        ))
+        list.applyConfig([ServerStatus(id: "renewing", name: "Old name", expiredAt: "2026-03-01T04:59:59Z")])
         list.handleWSMessage(.fullSync(servers: [ServerStatus(id: "renewing", name: "Old name", online: true, cpuUsage: 42)], upgrades: []))
         let log = AuthenticationRequestLog()
         AuthenticationURLProtocol.handler = { request in
@@ -32,7 +39,12 @@ final class WebSocketRouterTests: XCTestCase {
             XCTAssertEqual(request.request.value(forHTTPHeaderField: "Authorization"), "Bearer catalog-access")
             let body: String
             switch request.request.url?.path {
-            case "/api/servers": body = #"{"data":[{"id":"renewing","name":"Current name"}]}"#
+            case "/api/servers":
+                body = """
+                {"data":[{"id":"renewing","name":"Current name","expired_at":"2026-04-01T03:59:59Z",
+                "renewal":{"enabled":true,"billing_timezone":"America/New_York","expiry_date":"2026-03-31",
+                "confirmed_expired_at":"2026-02-01T04:59:59Z","deadline_origin":"projected","occurrence_id":"march"}}]}
+                """
             case "/api/server-groups": body = #"{"data":[]}"#
             case "/api/servers/renewing":
                 body = """
@@ -61,6 +73,9 @@ final class WebSocketRouterTests: XCTestCase {
         XCTAssertEqual(list.servers.first?.name, "Current name")
         XCTAssertEqual(list.servers.first?.cpuUsage, 42)
         XCTAssertEqual(list.servers.first?.online, true)
+        XCTAssertEqual(list.servers.first?.expiredAt, "2026-04-01T03:59:59Z")
+        XCTAssertEqual(list.servers.first?.renewal?.occurrenceId, "march")
+        XCTAssertEqual(list.servers.first?.renewal?.expiryDate, "2026-03-31")
 
         // These are the same awaitable loaders used by revision-driven view tasks.
         await detail.fetchConfig(serverId: "renewing", apiClient: api)
