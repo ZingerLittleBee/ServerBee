@@ -180,17 +180,15 @@ pub(super) async fn evaluate(
         .one(&tx)
         .await?;
     let mut recovered = manual_recovery && !archived.is_empty();
-    if !matched {
-        if let Some(current) = existing.as_ref().filter(|state| !state.resolved) {
-            let mut active: alert_state::ActiveModel = current.clone().into();
-            active.resolved = Set(true);
-            active.resolved_at = Set(Some(now));
-            active.updated_at = Set(now);
-            let row = active.update(&tx).await?;
-            mobile_alert_push::enqueue(&tx, &rule, &row, &model.name).await?;
-            archived.push(row);
-            recovered = true;
-        }
+    if !matched && let Some(current) = existing.as_ref().filter(|state| !state.resolved) {
+        let mut active: alert_state::ActiveModel = current.clone().into();
+        active.resolved = Set(true);
+        active.resolved_at = Set(Some(now));
+        active.updated_at = Set(now);
+        let row = active.update(&tx).await?;
+        mobile_alert_push::enqueue(&tx, &rule, &row, &model.name).await?;
+        archived.push(row);
+        recovered = true;
     }
     if !matched || MaintenanceService::is_in_maintenance_at(&tx, server_id, now).await? {
         tx.commit().await?;
