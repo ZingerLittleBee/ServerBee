@@ -1,5 +1,9 @@
 # Ubiquitous Language
 
+- **Renewal tracking** — operator-maintained information about a server's service validity and renewal reminders. It does not authorize or execute a payment to the service provider. _Avoid_: payment processing, invoice settlement.
+- **Confirmed expiry** — the service-validity deadline recorded by an operator using the provider's renewal information. It is distinct from a date inferred from a billing cycle. _Avoid_: projected expiry, payment status.
+- **Projected expiry** — an estimated future service-validity deadline based on an expected renewal schedule. It does not confirm that a renewal or payment has occurred. _Avoid_: confirmed expiry, paid-through date.
+
 - **Mobile notification** — an alert transition, security rule match, or final task outcome delivered to a user's ServerBee mobile app. _Avoid_: live update, browser event.
 - **Mobile notification subscription** — a user's choice of notification categories for one ServerBee mobile installation. Subscribing does not grant access to otherwise restricted events or task results.
 
