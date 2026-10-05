@@ -129,6 +129,7 @@ async fn insert_server_with_ips(
         billing_cycle: Set(None),
         currency: Set(None),
         expired_at: Set(None),
+        renewal_state: Set(None),
         traffic_limit: Set(None),
         traffic_limit_type: Set(None),
         billing_start_day: Set(None),

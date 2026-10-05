@@ -18721,6 +18721,52 @@
           }
         }
       }
+    },
+    "Billing timezone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单时区"
+          }
+        }
+      }
+    },
+    "Choose a valid billing timezone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择有效的账单时区。"
+          }
+        }
+      }
+    },
+    "Valid through the selected date in the billing timezone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在账单时区内，有效期持续至所选日期结束。"
+          }
+        }
+      }
+    },
+    "The renewal deadline is separate from the cost estimation period.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The renewal deadline is separate from the cost estimation period."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "续费到期日独立于费用估算周期。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

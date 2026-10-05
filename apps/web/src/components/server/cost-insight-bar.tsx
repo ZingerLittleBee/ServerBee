@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 
 type CostInsightServer = Pick<
   ServerResponse,
-  'billing_cycle' | 'currency' | 'expired_at' | 'price' | 'traffic_limit' | 'traffic_limit_type'
+  'billing_cycle' | 'currency' | 'expired_at' | 'renewal' | 'price' | 'traffic_limit' | 'traffic_limit_type'
 >
 
 interface CostInsightBarProps {
@@ -39,7 +39,7 @@ export function CostInsightBar({ server, serverId }: CostInsightBarProps) {
           currency={insights.currency ?? server.currency}
           price={insights.price ?? server.price}
         />
-        <ExpiryStatus expiredAt={server.expired_at} />
+        <ExpiryStatus expiredAt={server.expired_at} renewal={server.renewal} />
         <span className="text-muted-foreground">{t(getInvalidReasonKey(insights.invalid_reason))}</span>
         {server.traffic_limit != null && <TrafficProgress serverId={serverId} />}
       </div>
@@ -72,7 +72,7 @@ function ConfiguredCostBar({
           currency={currency}
           price={insights.price ?? server.price}
         />
-        <ExpiryStatus expiredAt={server.expired_at} />
+        <ExpiryStatus expiredAt={server.expired_at} renewal={server.renewal} />
         {insights.cost_per_day != null && (
           <span>
             {t('cost_per_day', {
@@ -140,13 +140,13 @@ function FallbackBillingBar({ server, serverId }: CostInsightBarProps) {
     <div className={cn(BAR_CLASS_NAME, 'flex flex-wrap items-center gap-4')}>
       <CreditCard aria-hidden="true" className="size-4 text-muted-foreground" />
       <PriceCycle billingCycle={server.billing_cycle} currency={server.currency} price={server.price} />
-      <ExpiryStatus expiredAt={server.expired_at} />
+      <ExpiryStatus expiredAt={server.expired_at} renewal={server.renewal} />
       {server.traffic_limit != null && <TrafficProgress serverId={serverId} />}
     </div>
   )
 }
 
-function ExpiryStatus({ expiredAt }: { expiredAt?: string | null }) {
+function ExpiryStatus({ expiredAt, renewal }: { expiredAt?: string | null; renewal?: ServerResponse['renewal'] }) {
   const { t } = useTranslation('servers')
 
   if (!expiredAt) {
@@ -154,6 +154,8 @@ function ExpiryStatus({ expiredAt }: { expiredAt?: string | null }) {
   }
 
   const expiryDate = new Date(expiredAt)
+  const selectedDate =
+    renewal?.expiry_date ?? formatDateShort(expiryDate, { timeZone: renewal?.billing_timezone ?? 'UTC' })
   const isExpired = expiryDate < new Date()
   const daysUntilExpiry = Math.ceil((expiryDate.getTime() - Date.now()) / 86_400_000)
 
@@ -168,11 +170,12 @@ function ExpiryStatus({ expiredAt }: { expiredAt?: string | null }) {
   })()
 
   return (
-    <span className={cn(expiryColor)}>
-      {isExpired
-        ? `${t('detail_expired')} ${formatDateShort(expiryDate)}`
-        : `${t('detail_expires')} ${formatDateShort(expiryDate)}`}
-      {!isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
+    <span>
+      <span className={cn(expiryColor)}>
+        {t('renewal_deadline')}: {isExpired ? t('detail_expired') : t('detail_expires')} {selectedDate}
+        {!isExpired && ` (${t('detail_expires_days', { count: daysUntilExpiry })})`}
+      </span>
+      <span className="block text-muted-foreground text-xs">{t('renewal_cost_independent')}</span>
     </span>
   )
 }

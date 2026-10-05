@@ -15,6 +15,7 @@ struct EditServerSheet: View {
     private static let currencies = ["USD", "EUR", "CNY", "JPY", "GBP"]
     private static let cycles = ["monthly", "quarterly", "yearly"]
     private static let trafficTypes = ["sum", "up", "down"]
+    private static let billingTimezones = ["UTC"] + TimeZone.knownTimeZoneIdentifiers.filter { $0 != "UTC" }
 
     var body: some View {
         NavigationStack {
@@ -78,10 +79,21 @@ private extension EditServerSheet {
             }
             TextField(String(localized: "Billing day (1-28)"), text: $viewModel.billingStartDayText)
                 .keyboardType(.numberPad)
+            Picker(String(localized: "Billing timezone"), selection: $viewModel.billingTimezone) {
+                ForEach(Self.billingTimezones, id: \.self) { Text(verbatim: $0).tag($0) }
+            }
             Toggle(String(localized: "Has expiry"), isOn: $viewModel.hasExpiry)
             if viewModel.hasExpiry {
                 DatePicker(String(localized: "Expires"), selection: $viewModel.expiryDate, displayedComponents: .date)
+                    .environment(\.timeZone, viewModel.expiryTimezone)
+                    .environment(\.calendar, viewModel.expiryCalendar)
+                Text(String(localized: "Valid through the selected date in the billing timezone."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
+            Text(String(localized: "The renewal deadline is separate from the cost estimation period."))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             TextField(String(localized: "Traffic limit (GiB)"), text: $viewModel.trafficLimitGiBText)
                 .keyboardType(.decimalPad)
             Picker(String(localized: "Traffic type"), selection: $viewModel.trafficLimitType) {

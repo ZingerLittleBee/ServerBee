@@ -9,15 +9,33 @@ enum Tri<Value: Encodable & Sendable>: Sendable {
     case clear
     case set(Value)
 
-    func encode(
-        into container: inout KeyedEncodingContainer<UpdateServerRequest.CodingKeys>,
-        forKey key: UpdateServerRequest.CodingKeys
+    func encode<Key: CodingKey>(
+        into container: inout KeyedEncodingContainer<Key>,
+        forKey key: Key
     ) throws {
         switch self {
         case .unchanged: break
         case .clear: try container.encodeNil(forKey: key)
         case let .set(value): try container.encode(value, forKey: key)
         }
+    }
+}
+
+/// Date-only renewal edits. Omission preserves the server's current anchor;
+/// clearing is explicit and validation belongs to the server.
+struct UpdateRenewalRequest: Encodable, Sendable {
+    var billingTimezone: Tri<String> = .unchanged
+    var expiryDate: Tri<String> = .unchanged
+
+    enum CodingKeys: String, CodingKey {
+        case billingTimezone = "billing_timezone"
+        case expiryDate = "expiry_date"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try billingTimezone.encode(into: &container, forKey: .billingTimezone)
+        try expiryDate.encode(into: &container, forKey: .expiryDate)
     }
 }
 
@@ -36,6 +54,7 @@ struct UpdateServerRequest: Encodable, Sendable {
     var billingCycle: Tri<String> = .unchanged
     var currency: Tri<String> = .unchanged
     var expiredAt: Tri<String> = .unchanged
+    var renewal: UpdateRenewalRequest?
     var trafficLimit: Tri<Int64> = .unchanged
     var trafficLimitType: Tri<String> = .unchanged
     var billingStartDay: Tri<Int> = .unchanged
@@ -46,6 +65,7 @@ struct UpdateServerRequest: Encodable, Sendable {
         case groupId = "group_id"
         case billingCycle = "billing_cycle"
         case expiredAt = "expired_at"
+        case renewal
         case trafficLimit = "traffic_limit"
         case trafficLimitType = "traffic_limit_type"
         case billingStartDay = "billing_start_day"
@@ -63,6 +83,7 @@ struct UpdateServerRequest: Encodable, Sendable {
         try billingCycle.encode(into: &container, forKey: .billingCycle)
         try currency.encode(into: &container, forKey: .currency)
         try expiredAt.encode(into: &container, forKey: .expiredAt)
+        try container.encodeIfPresent(renewal, forKey: .renewal)
         try trafficLimit.encode(into: &container, forKey: .trafficLimit)
         try trafficLimitType.encode(into: &container, forKey: .trafficLimitType)
         try billingStartDay.encode(into: &container, forKey: .billingStartDay)

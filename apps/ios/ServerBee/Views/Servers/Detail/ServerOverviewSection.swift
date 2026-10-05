@@ -411,12 +411,14 @@ private extension ServerOverviewSection {
 
     @ViewBuilder
     var expiryText: some View {
-        if let expiry = config?.expiredDate {
-            let date = expiry.formatted(date: .abbreviated, time: .omitted)
+        if let expiry = config?.expiredDate, let date = config?.expiryDisplayDate {
             let isPast = expiry < Date()
             Text(isPast ? String(localized: "Expired \(date)") : String(localized: "Expires \(date)"))
                 .font(.footnote.weight(isPast ? .semibold : .regular))
                 .foregroundStyle(isPast ? Color.serverOffline : .secondary)
+            Text(String(localized: "The renewal deadline is separate from the cost estimation period."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

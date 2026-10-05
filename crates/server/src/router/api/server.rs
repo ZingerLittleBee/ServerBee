@@ -125,6 +125,8 @@ pub struct ServerResponse {
     billing_cycle: Option<String>,
     currency: Option<String>,
     expired_at: Option<DateTime<Utc>>,
+    #[schema(required = false)]
+    renewal: crate::service::renewal::RenewalProjection,
     traffic_limit: Option<i64>,
     traffic_limit_type: Option<String>,
     billing_start_day: Option<i32>,
@@ -154,6 +156,7 @@ pub struct ServerResponse {
 
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct CreateServerRequest {
+    pub renewal: Option<crate::service::renewal::RenewalInput>,
     pub onboarding_request_id: String,
     pub name: String,
     #[serde(default)]
@@ -301,7 +304,9 @@ fn build_server_response(
     let has_token = agent_authority.status == AgentAuthorityStatus::Claimed;
     let outstanding_enrollment = agent_authority.outstanding_offer.clone();
 
+    let renewal = crate::service::renewal::RenewalState::from_server(&s).projection(s.expired_at);
     ServerResponse {
+        renewal,
         id: s.id,
         name: s.name,
         cpu_name: s.cpu_name,
@@ -522,6 +527,7 @@ async fn create_server(
                 billing_cycle: body.billing_cycle,
                 billing_start_day: body.billing_start_day,
                 expired_at: body.expired_at,
+                renewal: body.renewal,
                 traffic_limit: body.traffic_limit,
                 traffic_limit_type: body.traffic_limit_type,
             },
@@ -1564,6 +1570,7 @@ mod cleanup_tests {
             billing_cycle: None,
             currency: None,
             expired_at: None,
+            renewal_state: None,
             traffic_limit: None,
             traffic_limit_type: None,
             billing_start_day: None,
@@ -1692,6 +1699,7 @@ mod delete_audit_tests {
             billing_cycle: None,
             currency: None,
             expired_at: None,
+            renewal_state: None,
             traffic_limit: None,
             traffic_limit_type: None,
             billing_start_day: None,
