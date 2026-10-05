@@ -1,5 +1,25 @@
 import Foundation
 
+/// Server-owned renewal projection. Clients display the selected local date;
+/// recurrence and deadline advancement remain on the server.
+struct ServerRenewal: Decodable, Hashable, Sendable {
+    let enabled: Bool
+    let billingTimezone: String
+    let expiryDate: String?
+    let confirmedExpiredAt: String?
+    let deadlineOrigin: String
+    let occurrenceId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case billingTimezone = "billing_timezone"
+        case expiryDate = "expiry_date"
+        case confirmedExpiredAt = "confirmed_expired_at"
+        case deadlineOrigin = "deadline_origin"
+        case occurrenceId = "occurrence_id"
+    }
+}
+
 /// Server group (`/api/server-groups`). Used to resolve `group_id` to a name.
 struct ServerGroup: Decodable, Identifiable, Hashable, Sendable {
     let id: String
@@ -92,6 +112,7 @@ struct ServerConfig: Decodable, Identifiable, Hashable, Sendable {
     var billingCycle: String?
     var currency: String?
     var expiredAt: String?
+    var renewal: ServerRenewal?
     var trafficLimit: Int64?
     var trafficLimitType: String?
     var billingStartDay: Int?
@@ -123,6 +144,7 @@ struct ServerConfig: Decodable, Identifiable, Hashable, Sendable {
         case publicRemark = "public_remark"
         case billingCycle = "billing_cycle"
         case expiredAt = "expired_at"
+        case renewal
         case trafficLimit = "traffic_limit"
         case trafficLimitType = "traffic_limit_type"
         case billingStartDay = "billing_start_day"
@@ -156,5 +178,18 @@ struct ServerConfig: Decodable, Identifiable, Hashable, Sendable {
     var expiredDate: Date? {
         guard let expiredAt else { return nil }
         return ISO8601DateFormatter.shared.date(from: expiredAt)
+    }
+
+    var expiryLocalDate: String? {
+        renewal?.expiryDate ?? expiredDate.flatMap {
+            BillingDate.string(from: $0, timezone: renewal?.billingTimezone ?? "UTC")
+        }
+    }
+
+    var expiryDisplayDate: String? {
+        let timezone = renewal?.billingTimezone ?? "UTC"
+        guard let selectedDate = expiryLocalDate,
+              let date = BillingDate.date(from: selectedDate, timezone: timezone) else { return nil }
+        return BillingDate.display(from: date, timezone: timezone)
     }
 }

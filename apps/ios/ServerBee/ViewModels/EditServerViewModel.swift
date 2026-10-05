@@ -20,6 +20,20 @@ final class EditServerViewModel {
     var billingStartDayText = ""
     var hasExpiry = false
     var expiryDate = Date()
+    var billingTimezone = "UTC" {
+        didSet {
+            guard oldValue != billingTimezone,
+                  let date = BillingDate.string(from: expiryDate, timezone: oldValue),
+                  let converted = BillingDate.date(from: date, timezone: billingTimezone) else { return }
+            expiryDate = converted
+        }
+    }
+    var expiryTimezone: TimeZone { TimeZone(identifier: billingTimezone) ?? .gmt }
+    var expiryCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = expiryTimezone
+        return calendar
+    }
     var trafficLimitGiBText = ""
     var trafficLimitType = "" // "" = none
 
@@ -27,6 +41,8 @@ final class EditServerViewModel {
     var isSaving = false
     var errorMessage: String?
     private var originalTags: [String] = []
+    private var originalExpiryDate: String?
+    private var originalBillingTimezone = "UTC"
 
     static let gibibyte = 1_073_741_824.0
 
@@ -41,8 +57,12 @@ final class EditServerViewModel {
         currency = config.currency ?? ""
         billingCycle = config.billingCycle ?? ""
         billingStartDayText = config.billingStartDay.map(String.init) ?? ""
-        if let expiry = config.expiredDate {
-            hasExpiry = true
+        billingTimezone = config.renewal?.billingTimezone ?? "UTC"
+        originalBillingTimezone = billingTimezone
+        originalExpiryDate = config.renewal?.expiryDate
+            ?? config.expiredDate.flatMap { BillingDate.string(from: $0, timezone: billingTimezone) }
+        hasExpiry = originalExpiryDate != nil
+        if let date = originalExpiryDate, let expiry = BillingDate.date(from: date, timezone: billingTimezone) {
             expiryDate = expiry
         }
         if let limit = config.trafficLimit {
@@ -73,11 +93,11 @@ final class EditServerViewModel {
     }
 }
 
-private extension EditServerViewModel {
+extension EditServerViewModel {
     /// Parse the comma/space-separated tag text, applying the server's rules so
     /// the user gets immediate feedback. Returns nil + sets errorMessage on a
     /// validation failure.
-    func parsedTags() -> [String]? {
+    private func parsedTags() -> [String]? {
         let raw = tagsText
             .split(whereSeparator: { $0 == "," || $0.isWhitespace })
             .map { String($0) }
@@ -112,7 +132,17 @@ private extension EditServerViewModel {
         request.trafficLimitType = trafficLimitType.isEmpty ? .clear : .set(trafficLimitType)
         request.price = tri(from: priceText, Double.init)
         request.billingStartDay = tri(from: billingStartDayText, Int.init)
-        request.expiredAt = hasExpiry ? .set(WireDate.string(from: expiryDate)) : .clear
+        let selectedDate = hasExpiry ? BillingDate.string(from: expiryDate, timezone: billingTimezone) : nil
+        let dateChanged = selectedDate != originalExpiryDate
+        let timezoneChanged = billingTimezone != originalBillingTimezone
+        if dateChanged || timezoneChanged {
+            var renewal = UpdateRenewalRequest()
+            if dateChanged {
+                if let selectedDate { renewal.expiryDate = .set(selectedDate) } else { renewal.expiryDate = .clear }
+            }
+            if timezoneChanged { renewal.billingTimezone = .set(billingTimezone) }
+            request.renewal = renewal
+        }
         if trafficLimitGiBText.trimmingCharacters(in: .whitespaces).isEmpty {
             request.trafficLimit = .clear
         } else if let gib = Double(trafficLimitGiBText) {
@@ -122,7 +152,7 @@ private extension EditServerViewModel {
     }
 
     /// Empty text => clear; parseable => set; unparseable => leave unchanged.
-    func tri<T>(from text: String, _ parse: (String) -> T?) -> Tri<T> {
+    private func tri<T>(from text: String, _ parse: (String) -> T?) -> Tri<T> {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return .clear }
         if let value = parse(trimmed) { return .set(value) }
@@ -136,6 +166,10 @@ extension EditServerViewModel {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty else {
             errorMessage = String(localized: "Name is required.")
+            return false
+        }
+        guard TimeZone(identifier: billingTimezone) != nil else {
+            errorMessage = String(localized: "Choose a valid billing timezone.")
             return false
         }
         errorMessage = nil
