@@ -233,6 +233,8 @@ pub struct UpdateAlertRule {
 
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AlertStateResponse {
+    #[schema(required = false)]
+    pub status: String,
     pub server_id: String,
     pub server_name: String,
     pub first_triggered_at: chrono::DateTime<chrono::Utc>,
@@ -718,6 +720,7 @@ impl AlertService {
                 .unwrap_or_else(|| "Unknown".to_string());
 
             result.push(AlertStateResponse {
+                status: alert_status(&state).into(),
                 server_id: state.server_id,
                 server_name,
                 first_triggered_at: state.first_triggered_at,
@@ -767,7 +770,7 @@ impl AlertService {
         let result = states
             .into_iter()
             .map(|s| {
-                let status = if s.resolved { "resolved" } else { "firing" };
+                let status = alert_status(&s);
                 let event_at = if s.resolved {
                     s.resolved_at
                         .map(|t| t.to_rfc3339())
@@ -1119,6 +1122,17 @@ impl AlertService {
         crate::service::alert_event_intents::replay(db, config, state_manager).await?;
 
         Ok(())
+    }
+}
+
+/// Calendar supersession is retained for detail without claiming recovery.
+pub fn alert_status(state: &alert_state::Model) -> &'static str {
+    if state.resolved && state.resolved_at.is_none() && state.event_key.starts_with("renewal:") {
+        "superseded"
+    } else if state.resolved {
+        "resolved"
+    } else {
+        "firing"
     }
 }
 
