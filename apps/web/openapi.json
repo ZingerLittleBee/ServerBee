@@ -12745,6 +12745,12 @@
               "null"
             ]
           },
+          "enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "expiry_date": {
             "type": [
               "string",
