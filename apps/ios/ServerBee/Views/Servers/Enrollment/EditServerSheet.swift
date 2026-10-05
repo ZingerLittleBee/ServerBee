@@ -91,6 +91,9 @@ private extension EditServerSheet {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            Text(String(localized: "The renewal deadline is separate from the cost estimation period."))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
             TextField(String(localized: "Traffic limit (GiB)"), text: $viewModel.trafficLimitGiBText)
                 .keyboardType(.decimalPad)
             Picker(String(localized: "Traffic type"), selection: $viewModel.trafficLimitType) {

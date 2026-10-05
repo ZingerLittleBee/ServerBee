@@ -179,6 +179,8 @@
   "detail_network_out": "Network out:",
   "detail_network_total": "Total:",
   "detail_expired": "Expired",
+  "renewal_deadline": "Renewal deadline",
+  "renewal_cost_independent": "Renewal deadline is separate from the cost estimation period.",
   "detail_expires": "Expires",
   "detail_expires_days": "{{count}}d",
   "detail_traffic": "Traffic:",

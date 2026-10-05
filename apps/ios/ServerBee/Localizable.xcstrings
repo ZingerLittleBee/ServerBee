@@ -18751,6 +18751,22 @@
           }
         }
       }
+    },
+    "The renewal deadline is separate from the cost estimation period.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The renewal deadline is separate from the cost estimation period."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "续费到期日独立于费用估算周期。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

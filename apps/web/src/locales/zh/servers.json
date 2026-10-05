@@ -179,6 +179,8 @@
   "detail_network_out": "出站流量：",
   "detail_network_total": "总计：",
   "detail_expired": "已过期",
+  "renewal_deadline": "续费到期日",
+  "renewal_cost_independent": "续费到期日独立于费用估算周期。",
   "detail_expires": "到期",
   "detail_expires_days": "{{count}} 天",
   "detail_traffic": "流量：",
