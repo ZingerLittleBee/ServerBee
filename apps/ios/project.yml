@@ -98,6 +98,19 @@ targets:
           - "$(inherited)"
           - "-framework"
           - AppIntents
+  ServerBeeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ServerBeeUITests
+    dependencies:
+      - target: ServerBee
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.serverbee.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: ServerBee
+        SWIFT_STRICT_CONCURRENCY: complete
 schemes:
   ServerBee:
     build:
@@ -108,3 +121,15 @@ schemes:
       targets:
         - ServerBeeTests
       gatherCoverageData: true
+  ServerBeeUI:
+    build:
+      targets:
+        ServerBee: [test]
+        ServerBeeUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - name: ServerBeeUITests
+          parallelizable: false
+          randomExecutionOrder: false
+      deleteScreenshotsWhenEachTestSucceeds: false
