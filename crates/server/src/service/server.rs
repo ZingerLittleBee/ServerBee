@@ -130,7 +130,7 @@ impl ServerService {
             now,
         )?;
         let adopted =
-            super::renewal_reminders::adopt_legacy_once(&tx, &model, &renewal, deadline, now)
+            super::renewal_reminders::adopt_legacy_occurrence(&tx, &model, &renewal, deadline)
                 .await?;
         let mut active: server::ActiveModel = model.into();
         active.renewal_state = Set(Some(

@@ -344,6 +344,9 @@ fn apply_calendar(
         deadline = old_date
             .map(|d| date_boundary(d, &state.billing_timezone))
             .transpose()?;
+        if state.occurrence_id.is_none() {
+            state.occurrence_id = deadline.map(|_| uuid::Uuid::new_v4().to_string());
+        }
     }
     if date_replaced {
         state.deadline_origin = DeadlineOrigin::Confirmed;

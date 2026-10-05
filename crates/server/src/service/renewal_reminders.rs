@@ -17,21 +17,21 @@ use sea_orm::{
 
 /// `None` leaves legacy records without an occurrence on their existing alert path.
 /// The writer reservation protects the selected deadline through queue admission.
-pub(super) enum Outcome {
+#[doc(hidden)]
+pub enum Outcome {
     Silent,
     Triggered,
     Resolved,
     Superseded,
 }
 
-/// Enabling the same future legacy date changes representation, not its once admission.
-/// Only pure expiration once rows are adopted; event-intent dimensions stay untouched.
-pub(super) async fn adopt_legacy_once(
+/// Normalizing the same legacy date changes representation, not its once admission.
+/// Only pure expiration rows are adopted; event-intent dimensions stay untouched.
+pub(super) async fn adopt_legacy_occurrence(
     tx: &sea_orm::DatabaseTransaction,
     model: &crate::entity::server::Model,
     selected: &RenewalState,
     deadline: Option<DateTime<Utc>>,
-    now: DateTime<Utc>,
 ) -> Result<Vec<alert_state::Model>, AppError> {
     let previous = RenewalState::from_server(model);
     let Some(occurrence) = selected.occurrence_id.as_ref() else {
@@ -41,15 +41,8 @@ pub(super) async fn adopt_legacy_once(
     let new_date = renewal::selected_date(deadline, &selected.billing_timezone);
     if previous.occurrence_id.is_some()
         || previous.enabled
-        || !selected.enabled
-        || previous.billing_timezone != selected.billing_timezone
+        || old_date.is_none()
         || old_date != new_date
-        || !new_date
-            .zip(renewal::selected_date(
-                Some(now),
-                &selected.billing_timezone,
-            ))
-            .is_some_and(|(date, today)| date >= today)
     {
         return Ok(Vec::new());
     }
@@ -67,7 +60,7 @@ pub(super) async fn adopt_legacy_once(
             continue;
         };
         let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json).unwrap_or_default();
-        if rule.trigger_mode != "once"
+        if !matches!(rule.trigger_mode.as_str(), "once" | "always")
             || items.is_empty()
             || !items.iter().all(|item| item.rule_type == "expiration")
         {
@@ -80,7 +73,9 @@ pub(super) async fn adopt_legacy_once(
     Ok(adopted)
 }
 
-pub(super) async fn evaluate(
+/// Internal Server admission boundary; public visibility supports real-database integration checks.
+#[doc(hidden)]
+pub async fn evaluate(
     db: &DatabaseConnection,
     manager: &AlertStateManager,
     rule: &alert_rule::Model,
@@ -97,8 +92,13 @@ pub(super) async fn evaluate(
     let Some(rule) = alert_rule::Entity::find_by_id(&rule.id)
         .one(&tx)
         .await?
-        .filter(|rule| {
-            rule.enabled && rule_covers_server(&rule.cover_type, &rule.server_ids_json, server_id)
+        .filter(|current| {
+            current.enabled
+                && rule_covers_server(&current.cover_type, &current.server_ids_json, server_id)
+                // A concurrent rule edit invalidates the caller's condition snapshot.
+                && current.rules_json == rule.rules_json
+                && current.notification_group_id == rule.notification_group_id
+                && current.name == rule.name
         })
     else {
         tx.commit().await?;

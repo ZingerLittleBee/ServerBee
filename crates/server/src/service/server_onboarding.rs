@@ -142,6 +142,9 @@ impl ServerOnboarding {
     }
 
     pub async fn onboard(&self, input: OnboardServer) -> Result<OnboardingResult, OnboardingError> {
+        let typed_calendar = input.profile.renewal.as_ref().is_some_and(|renewal| {
+            renewal.expiry_date.is_some() || renewal.billing_timezone.is_some()
+        });
         let normalized = NormalizedProfile::from_input(input.profile)?;
         let input_hash = normalized.hash(input.offer_ttl)?;
         if input.actor_id.trim().is_empty() {
@@ -203,6 +206,11 @@ impl ServerOnboarding {
         let renewal_state = if let Some(serialized) = normalized.renewal_state.as_ref() {
             let mut renewal: super::renewal::RenewalState =
                 serde_json::from_str(serialized).map_err(|e| AppError::Internal(e.to_string()))?;
+            // Allocate after the canonical request hash and replay lookup, so
+            // a typed manual date owns a local-day occurrence without changing retries.
+            if typed_calendar && deadline.is_some() && renewal.occurrence_id.is_none() {
+                renewal.occurrence_id = Some(Uuid::new_v4().to_string());
+            }
             renewal.advance(&mut deadline, normalized.billing_cycle.as_deref(), now)?;
             Some(serde_json::to_string(&renewal).map_err(|e| AppError::Internal(e.to_string()))?)
         } else {
