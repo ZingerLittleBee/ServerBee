@@ -56,11 +56,21 @@ const server = {
 
 function renderEditor(value: ServerResponse = server) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <ServerEditDialog onClose={vi.fn()} open server={value} />
     </QueryClientProvider>
   )
+  return {
+    ...view,
+    updateServer(updated: ServerResponse) {
+      view.rerender(
+        <QueryClientProvider client={client}>
+          <ServerEditDialog onClose={vi.fn()} open server={updated} />
+        </QueryClientProvider>
+      )
+    }
+  }
 }
 
 beforeEach(() => {
@@ -75,6 +85,75 @@ afterEach(async () => {
 })
 
 describe('server renewal date editing', () => {
+  it('does not confirm the previous deadline when the catalog advances while the editor stays open', async () => {
+    const original = { ...server, renewal: { ...server.renewal, enabled: true } }
+    const editor = renderEditor(original)
+    editor.updateServer({
+      ...original,
+      expired_at: '2026-04-09T03:59:59Z',
+      renewal: { ...original.renewal, expiry_date: '2026-04-08', occurrence_id: 'occurrence-2' }
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Renamed after advancement' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1]).toMatchObject({ name: 'Renamed after advancement' })
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('renewal')
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('expired_at')
+  })
+
+  it('preserves explicit date, timezone and switch edits across a catalog refresh', async () => {
+    const original = { ...server, renewal: { ...server.renewal, enabled: true } }
+    const editor = renderEditor(original)
+    fireEvent.change(screen.getByLabelText('Expiration date'), { target: { value: '2026-03-10' } })
+    fireEvent.change(screen.getByLabelText('Billing timezone'), { target: { value: 'Asia/Tokyo' } })
+    fireEvent.click(screen.getByRole('switch', { name: 'Automatic renewal tracking' }))
+    editor.updateServer({
+      ...original,
+      expired_at: '2026-04-09T03:59:59Z',
+      renewal: { ...original.renewal, expiry_date: '2026-04-08', occurrence_id: 'occurrence-2' }
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1].renewal).toEqual({
+      enabled: false,
+      expiry_date: '2026-03-10',
+      billing_timezone: 'Asia/Tokyo'
+    })
+  })
+
+  it('omits restored renewal fields even when live props now have a different date, timezone and switch', async () => {
+    const original = { ...server, renewal: { ...server.renewal, enabled: true } }
+    const editor = renderEditor(original)
+    const date = screen.getByLabelText('Expiration date')
+    const timezone = screen.getByLabelText('Billing timezone')
+    const automatic = screen.getByRole('switch', { name: 'Automatic renewal tracking' })
+    fireEvent.change(date, { target: { value: '2026-03-10' } })
+    fireEvent.change(date, { target: { value: '2026-03-08' } })
+    fireEvent.change(timezone, { target: { value: 'Asia/Tokyo' } })
+    fireEvent.change(timezone, { target: { value: 'America/New_York' } })
+    fireEvent.click(automatic)
+    fireEvent.click(automatic)
+    editor.updateServer({
+      ...original,
+      expired_at: '2026-04-08T14:59:59Z',
+      renewal: {
+        ...original.renewal,
+        enabled: false,
+        billing_timezone: 'Asia/Tokyo',
+        expiry_date: '2026-04-08',
+        occurrence_id: 'occurrence-2'
+      }
+    })
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Price' }), { target: { value: '15' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => expect(apiBoundary.put).toHaveBeenCalled())
+    expect(apiBoundary.put.mock.calls[0][1]).toMatchObject({ price: 15 })
+    expect(apiBoundary.put.mock.calls[0][1]).not.toHaveProperty('renewal')
+  })
+
   it('does not confirm a clamped projection after restoring its selected date', async () => {
     renderEditor({
       ...server,
