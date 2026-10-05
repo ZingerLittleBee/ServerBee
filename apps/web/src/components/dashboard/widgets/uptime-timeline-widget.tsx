@@ -67,7 +67,7 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
               {t('states.loading')}
             </div>
           ) : (
-            <UptimeTimeline days={uptimeData} rangeDays={days} showLabels showLegend />
+            <UptimeTimeline days={uptimeData} rangeDays={days} showLabels />
           )}
         </div>
       </DashboardCard>
