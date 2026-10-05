@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **IP Quality capability guidance matches Agent-owned permissions** -- The disabled notice explains permanent configuration and temporary host-local grants instead of pointing to a nonexistent server-side toggle. Manual checks use the Agent-reported capability, and an unavailable report is shown separately from a disabled capability
+- **IP Quality capability guidance matches Agent-owned permissions** -- A compact disabled notice opens a dialog explaining permanent configuration and temporary host-local grants instead of pointing to a nonexistent server-side toggle. Each command has a copy button with clipboard feedback. Manual checks use the Agent-reported capability, and an unavailable report is shown separately from a disabled capability
 
 ## [1.0.0-beta.5] - 2026-10-05
 

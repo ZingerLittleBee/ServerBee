@@ -1,10 +1,19 @@
-import { AlertTriangle, RefreshCw, ShieldCheck } from 'lucide-react'
+import { AlertTriangle, Copy, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { IpQualityCard } from '@/components/ip-quality/ip-quality-card'
 import { UnlockMatrix } from '@/components/ip-quality/unlock-matrix'
 import { UnlockStatusBadge } from '@/components/ip-quality/unlock-status-badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger
+} from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCheckNow, useIpQualityEvents, useIpQualityServer, useIpQualityServices } from '@/hooks/use-ip-quality-api'
@@ -149,35 +158,75 @@ function CapDisabledCallout({ state, t }: { state: Exclude<CapState, 'ok'>; t: (
   return (
     <div className="flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-700 dark:text-amber-300">
       <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-      <div className="min-w-0 flex-1 space-y-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-1">
           <p className="font-medium text-sm">{t(state === 'unknown' ? 'cap_unknown_title' : 'cap_off_title')}</p>
-          <p className="text-xs">{t(state === 'unknown' ? 'cap_unknown_hint' : 'cap_agent_owned_hint')}</p>
+          <p className="text-xs">{t(state === 'unknown' ? 'cap_unknown_hint' : 'cap_off_hint')}</p>
         </div>
         {state === 'off' && (
-          <>
-            <div className="space-y-1.5">
-              <p className="font-medium text-xs">{t('cap_enable_permanent_title')}</p>
-              <p className="text-xs">{t('cap_enable_permanent_hint')}</p>
-              <p className="text-xs">{t('cap_restart_hint')}</p>
-              <code className="block whitespace-pre-wrap break-all rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
-                sudo serverbee restart agent
-              </code>
-            </div>
-            <div className="space-y-1.5">
-              <p className="font-medium text-xs">{t('cap_enable_temporary_title')}</p>
-              <p className="text-xs">{t('cap_enable_temporary_hint')}</p>
-              <code className="block whitespace-pre-wrap break-all rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
-                sudo serverbee-agent grant ip_quality --for 30m
-              </code>
-              <p className="text-xs">{t('cap_revoke_hint')}</p>
-              <code className="block whitespace-pre-wrap break-all rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
-                sudo serverbee-agent revoke ip_quality
-              </code>
-            </div>
-          </>
+          <Dialog>
+            <DialogTrigger
+              render={<Button className="self-start sm:shrink-0 sm:self-auto" size="sm" variant="outline" />}
+            >
+              {t('cap_enable_action')}
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-xl">
+              <DialogHeader>
+                <DialogTitle>{t('cap_enable_dialog_title')}</DialogTitle>
+                <DialogDescription>{t('cap_agent_owned_hint')}</DialogDescription>
+              </DialogHeader>
+              <DialogBody className="space-y-5">
+                <section className="space-y-2">
+                  <h3 className="font-medium">{t('cap_enable_permanent_title')}</h3>
+                  <p className="text-muted-foreground">{t('cap_enable_permanent_hint')}</p>
+                  <p className="text-muted-foreground">{t('cap_restart_hint')}</p>
+                  <CommandBlock command="sudo serverbee restart agent" label={t('copy_restart_command')} />
+                </section>
+                <section className="space-y-2">
+                  <h3 className="font-medium">{t('cap_enable_temporary_title')}</h3>
+                  <p className="text-muted-foreground">{t('cap_enable_temporary_hint')}</p>
+                  <CommandBlock
+                    command="sudo serverbee-agent grant ip_quality --for 30m"
+                    label={t('copy_grant_command')}
+                  />
+                  <p className="text-muted-foreground">{t('cap_revoke_hint')}</p>
+                  <CommandBlock command="sudo serverbee-agent revoke ip_quality" label={t('copy_revoke_command')} />
+                </section>
+              </DialogBody>
+            </DialogContent>
+          </Dialog>
         )}
       </div>
+    </div>
+  )
+}
+
+function CommandBlock({ command, label }: { command: string; label: string }) {
+  const { t } = useTranslation('ip-quality')
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(command)
+      toast.success(t('command_copied'))
+    } catch {
+      toast.error(t('command_copy_failed'))
+    }
+  }
+
+  return (
+    <div className="flex items-start gap-2 rounded-md bg-muted p-2">
+      <code className="min-w-0 flex-1 self-center whitespace-pre-wrap break-words px-1 text-xs">{command}</code>
+      <Button
+        aria-label={label}
+        className="shrink-0"
+        onClick={handleCopy}
+        size="icon-sm"
+        title={label}
+        type="button"
+        variant="ghost"
+      >
+        <Copy aria-hidden="true" className="size-4" />
+      </Button>
     </div>
   )
 }
