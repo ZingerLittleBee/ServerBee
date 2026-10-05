@@ -23,6 +23,24 @@ final class RenewalDateTests: XCTestCase {
         XCTAssertEqual(config.renewal?.enabled, false)
     }
 
+    func test_deadlineDisplayUsesServerProvenance() throws {
+        for origin in ["confirmed", "projected", "frozen"] {
+            let config = try JSONDecoder.snakeCase.decode(ServerConfig.self, from: Data("""
+            {"id":"s1","name":"Server","renewal":{"enabled":false,
+            "billing_timezone":"America/Los_Angeles","expiry_date":"2030-01-31",
+            "confirmed_expired_at":"2029-12-01T07:59:59Z","deadline_origin":"\(origin)"}}
+            """.utf8))
+            let renewal = try XCTUnwrap(config.renewal)
+            XCTAssertNil(renewal.occurrenceId)
+            XCTAssertNotNil(renewal.deadlineOriginLabel)
+            XCTAssertNotNil(renewal.deadlineExplanation)
+            XCTAssertEqual(config.expiryLocalDate, "2030-01-31")
+            let confirmed = try XCTUnwrap(renewal.confirmedDisplayDate)
+            let expected = try XCTUnwrap(BillingDate.date(from: "2029-11-30", timezone: "America/Los_Angeles"))
+            XCTAssertEqual(confirmed, BillingDate.display(from: expected, timezone: "America/Los_Angeles"))
+        }
+    }
+
     func test_renewalDateRequestDistinguishesOmitClearAndSet() throws {
         XCTAssertNil(try object(UpdateServerRequest())["renewal"])
         var request = UpdateServerRequest()
@@ -43,6 +61,21 @@ final class RenewalDateTests: XCTestCase {
         XCTAssertTrue(renewal["billing_timezone"] is NSNull)
     }
 
+    func test_enabledRequestOmitsOrEncodesFalse() throws {
+        var request = UpdateServerRequest()
+        request.renewal = UpdateRenewalRequest(enabled: true)
+        var renewal = try XCTUnwrap(try object(request)["renewal"] as? [String: Any])
+        XCTAssertEqual(renewal["enabled"] as? Bool, true)
+        XCTAssertNil(renewal["expiry_date"])
+        request.renewal = UpdateRenewalRequest(enabled: false, expiryDate: .clear)
+        renewal = try XCTUnwrap(try object(request)["renewal"] as? [String: Any])
+        XCTAssertEqual(renewal["enabled"] as? Bool, false)
+        XCTAssertTrue(renewal["expiry_date"] is NSNull)
+        request.renewal = UpdateRenewalRequest(expiryDate: .set("2030-01-31"))
+        renewal = try XCTUnwrap(try object(request)["renewal"] as? [String: Any])
+        XCTAssertNil(renewal["enabled"])
+    }
+
     @MainActor
     func test_unchangedFullFormSavePreservesLegacyInstant() throws {
         let config = try JSONDecoder.snakeCase.decode(ServerConfig.self, from: Data("""
@@ -59,6 +92,84 @@ final class RenewalDateTests: XCTestCase {
         XCTAssertNil(request["expired_at"])
         XCTAssertNil(request["renewal"])
         XCTAssertEqual(request["billing_cycle"] as? String, "quarterly")
+    }
+
+    @MainActor
+    func test_switchAndUnchangedSavesDoNotConfirm() throws {
+        let model = EditServerViewModel()
+        model.prefill(from: try selectedConfig())
+        XCTAssertTrue(model.automaticRenewal)
+        XCTAssertNil(try object(model.buildRequest())["renewal"])
+        model.automaticRenewal = false
+        let request = try object(model.buildRequest())
+        let renewal = try XCTUnwrap(request["renewal"] as? [String: Any])
+        XCTAssertEqual(renewal["enabled"] as? Bool, false)
+        XCTAssertNil(renewal["expiry_date"])
+        XCTAssertNil(renewal["billing_timezone"])
+        XCTAssertNil(request["expired_at"])
+        model.automaticRenewal = true
+        XCTAssertNil(try object(model.buildRequest())["renewal"])
+    }
+
+    @MainActor
+    func test_enablingSendsOnlyChangedSwitchIntent() throws {
+        var config = try selectedConfig()
+        config.renewal = ServerRenewal(
+            enabled: false, billingTimezone: "America/Los_Angeles", expiryDate: "2026-03-08",
+            confirmedExpiredAt: "2026-03-09T06:59:59Z", deadlineOrigin: "confirmed", occurrenceId: "opaque-id"
+        )
+        let model = EditServerViewModel()
+        model.prefill(from: config)
+        XCTAssertFalse(model.automaticRenewal)
+        XCTAssertNil(model.automaticRenewalPrerequisiteMessage)
+        model.automaticRenewal = true
+        XCTAssertNil(model.renewalValidationMessage)
+        let request = try object(model.buildRequest())
+        let renewal = try XCTUnwrap(request["renewal"] as? [String: Any])
+        XCTAssertEqual(renewal["enabled"] as? Bool, true)
+        XCTAssertNil(renewal["expiry_date"])
+        XCTAssertNil(renewal["billing_timezone"])
+        XCTAssertNil(request["expired_at"])
+    }
+
+    @MainActor
+    func test_prerequisitesAndDisableAndClear() throws {
+        let model = EditServerViewModel()
+        model.prefill(from: try selectedConfig())
+        XCTAssertNil(model.renewalValidationMessage)
+        model.hasExpiry = false
+        XCTAssertNotNil(model.renewalValidationMessage)
+        model.hasExpiry = true
+        model.billingCycle = ""
+        XCTAssertNotNil(model.renewalValidationMessage)
+        model.billingCycle = "weekly"
+        XCTAssertNotNil(model.renewalValidationMessage)
+        model.billingCycle = "yearly"
+        model.billingTimezone = "Invalid/Zone"
+        XCTAssertNotNil(model.renewalValidationMessage)
+        model.billingTimezone = "America/Los_Angeles"
+        model.automaticRenewal = false
+        model.hasExpiry = false
+        model.billingCycle = ""
+        XCTAssertNil(model.renewalValidationMessage)
+        let request = try object(model.buildRequest())
+        let renewal = try XCTUnwrap(request["renewal"] as? [String: Any])
+        XCTAssertEqual(renewal["enabled"] as? Bool, false)
+        XCTAssertTrue(renewal["expiry_date"] is NSNull)
+        XCTAssertTrue(request["billing_cycle"] is NSNull)
+    }
+
+    @MainActor
+    func test_oldServerUnchangedSaveHasNoRenewalIntent() throws {
+        let config = try JSONDecoder.snakeCase.decode(ServerConfig.self, from: Data("""
+        {"id":"s1","name":"Server","expired_at":"2030-01-31T00:30:00Z"}
+        """.utf8))
+        let model = EditServerViewModel()
+        model.prefill(from: config)
+        XCTAssertFalse(model.supportsAutomaticRenewal)
+        XCTAssertFalse(model.automaticRenewal)
+        XCTAssertNil(try object(model.buildRequest())["renewal"])
+        XCTAssertNil(try object(model.buildRequest())["expired_at"])
     }
 
     @MainActor
@@ -127,7 +238,7 @@ final class RenewalDateTests: XCTestCase {
 
     private func selectedConfig() throws -> ServerConfig {
         try JSONDecoder.snakeCase.decode(ServerConfig.self, from: Data("""
-        {"id":"s1","name":"Server","expired_at":"2026-03-09T06:59:59Z",
+        {"id":"s1","name":"Server","billing_cycle":"monthly","expired_at":"2026-03-09T06:59:59Z",
         "renewal":{"enabled":true,"billing_timezone":"America/Los_Angeles","expiry_date":"2026-03-08",
         "confirmed_expired_at":"2026-02-09T07:59:59Z","deadline_origin":"projected","occurrence_id":"o2"}}
         """.utf8))

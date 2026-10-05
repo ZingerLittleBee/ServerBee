@@ -387,6 +387,20 @@ private extension ServerOverviewSection {
             } else {
                 expiryText
             }
+            if let renewal = config?.renewal {
+                if let label = renewal.deadlineOriginLabel {
+                    Text(label).font(.footnote.weight(.semibold))
+                        .accessibilityIdentifier("renewal.detail.origin")
+                }
+                if let explanation = renewal.deadlineExplanation {
+                    Text(explanation).font(.caption).foregroundStyle(.secondary)
+                }
+                if let date = renewal.confirmedDisplayDate {
+                    LabeledContent(String(localized: "Last confirmed expiry"), value: date)
+                        .font(.footnote)
+                }
+                Text(verbatim: renewal.billingTimezone).font(.caption).foregroundStyle(.secondary)
+            }
             ForEach(billingRows) { row in
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(row.label)
