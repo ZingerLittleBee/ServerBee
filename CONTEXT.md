@@ -5,6 +5,7 @@
 - **Projected expiry** — an estimated future service-validity deadline based on an expected renewal schedule. It does not confirm that a renewal or payment has occurred. _Avoid_: confirmed expiry, paid-through date.
 - **Billing timezone** — the operator-selected timezone whose local calendar defines a server's renewal dates and end-of-date expiry boundaries. _Avoid_: browser timezone, Agent timezone.
 - **Renewal deadline** — the date used for a server's current renewal reminders. It may come from an operator-confirmed expiry, an active projection, or a frozen projection, without implying that payment occurred. _Avoid_: payment status, provider-confirmed expiry.
+- **Renewal occurrence** — one scheduled renewal deadline within a server's expected renewal schedule, distinct from other deadlines in that schedule and from a cost-estimation period. It does not represent a payment transaction.
 
 - **Mobile notification** — an alert transition, security rule match, or final task outcome delivered to a user's ServerBee mobile app. _Avoid_: live update, browser event.
 - **Mobile notification subscription** — a user's choice of notification categories for one ServerBee mobile installation. Subscribing does not grant access to otherwise restricted events or task results.
