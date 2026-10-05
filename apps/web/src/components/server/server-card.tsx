@@ -27,6 +27,7 @@ import { TagChips } from './tag-chips'
 import { UpgradeJobBadge } from './upgrade-job-badge'
 
 interface ServerCardProps {
+  className?: string
   costEntry?: ServerCostOverview
   networkBucketSeconds?: number
   networkSummary?: NetworkServerSummary
@@ -75,6 +76,7 @@ function formatLoad(load: number): string {
 }
 
 const ServerCardInner = ({
+  className,
   server,
   trafficEntry,
   costEntry,
@@ -121,7 +123,8 @@ const ServerCardInner = ({
         // card is scannable next to online tiles. Keep the StatusBadge (and
         // title) outside any grayscale filter so the red offline pill stays
         // saturated — that is the primary status cue.
-        isOffline && 'bg-muted/70 ring-destructive/35 dark:bg-muted/55 dark:ring-destructive/45'
+        isOffline && 'bg-muted/70 ring-destructive/35 dark:bg-muted/55 dark:ring-destructive/45',
+        className
       )}
     >
       <div className="flex items-center justify-between">
@@ -338,6 +341,7 @@ function tagsEqual(a: readonly string[] | undefined, b: readonly string[] | unde
 
 export const ServerCard = memo(ServerCardInner, (prev, next) => {
   if (
+    prev.className !== next.className ||
     prev.trafficEntry !== next.trafficEntry ||
     prev.costEntry !== next.costEntry ||
     prev.networkSummary !== next.networkSummary ||

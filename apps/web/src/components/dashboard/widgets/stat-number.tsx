@@ -1,5 +1,6 @@
 import { Activity, Cpu, MemoryStick, Server, Wifi } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn, formatBytes } from '@/lib/utils'
 import type { StatNumberConfig } from '@/lib/widget-types'
@@ -114,11 +115,8 @@ export function StatNumberWidget({ config, servers, title }: StatNumberWidgetPro
   const label = title ?? config.label ?? t(METRIC_LABELS[metric] ?? metric)
 
   return (
-    <div
-      className={cn(
-        'flex h-full min-w-0 items-center gap-3 overflow-hidden rounded-xl border px-3.5 shadow-sm',
-        metricStyles.surface
-      )}
+    <DashboardCard
+      className={cn('flex h-full items-center gap-3 overflow-hidden px-3.5', metricStyles.surface)}
       data-metric={metric}
       data-testid="stat-number-widget"
     >
@@ -149,6 +147,6 @@ export function StatNumberWidget({ config, servers, title }: StatNumberWidgetPro
           {result.supporting}
         </p>
       </div>
-    </div>
+    </DashboardCard>
   )
 }

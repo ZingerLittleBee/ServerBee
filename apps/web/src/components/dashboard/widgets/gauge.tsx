@@ -1,6 +1,7 @@
 import { Activity, Cpu, Gauge as GaugeIcon, HardDrive, MemoryStick, Network } from 'lucide-react'
 import { useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { getUtilizationRingColor } from '@/lib/utilization-colors'
 import { normalizeWidgetColor } from '@/lib/widget-color'
@@ -99,9 +100,9 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
 
   if (!server) {
     return (
-      <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
+      <DashboardCard className="flex h-full items-center justify-center bg-card text-muted-foreground text-sm">
         {t('widgets.common.empty.serverNotFound')}
-      </div>
+      </DashboardCard>
     )
   }
 
@@ -195,8 +196,8 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
   // empty space on one side that's transparent.
   return (
     <div className="grid h-full w-full place-items-center" style={{ containerType: 'size' }}>
-      <div
-        className="@container/gauge relative aspect-square overflow-hidden rounded-lg border bg-card"
+      <DashboardCard
+        className="@container/gauge relative aspect-square overflow-hidden bg-card"
         style={{ width: 'min(100cqi, 100cqb)', height: 'min(100cqi, 100cqb)' }}
       >
         <div className="absolute inset-3">{svg}</div>
@@ -204,7 +205,7 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
           {mainText}
         </div>
         {subtitle}
-      </div>
+      </DashboardCard>
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { Component, memo, type ReactNode, useMemo } from 'react'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { parseConfig } from '@/lib/widget-helpers'
 import type {
@@ -76,9 +77,9 @@ class WidgetErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 
 function ErrorFallback() {
   return (
-    <div className="flex h-full items-center justify-center rounded-lg border border-destructive/30 bg-card p-4 text-destructive text-sm">
+    <DashboardCard className="flex h-full items-center justify-center border-destructive/30 bg-card p-4 text-destructive text-sm">
       Widget failed to render
-    </div>
+    </DashboardCard>
   )
 }
 
@@ -126,9 +127,9 @@ function WidgetContent({ widget, servers }: WidgetRendererProps) {
       return <NetworkOverviewWidget config={config as unknown as NetworkOverviewConfig} servers={servers} />
     default:
       return (
-        <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
+        <DashboardCard className="flex h-full items-center justify-center bg-card text-muted-foreground text-sm">
           Unknown widget type: {widget.widget_type}
-        </div>
+        </DashboardCard>
       )
   }
 }

@@ -1,6 +1,7 @@
 import type { ActionsHelper } from '@serverbee/widget-sdk'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { parseConfig } from '@/lib/widget-helpers'
@@ -18,9 +19,9 @@ const NOOP_ACTIONS: ActionsHelper = {
 
 function Placeholder({ message }: { message: string }) {
   return (
-    <div className="flex h-full items-center justify-center rounded-lg border border-dashed bg-card p-4 text-center text-muted-foreground text-sm">
+    <DashboardCard className="flex h-full items-center justify-center border-dashed bg-card p-4 text-center text-muted-foreground text-sm">
       {message}
-    </div>
+    </DashboardCard>
   )
 }
 
@@ -62,7 +63,7 @@ export function ModuleWidgetHost({ widget, servers: _servers }: ModuleWidgetHost
   const Component = entry.module.component
   const title = widget.title || entry.manifest.name
   return (
-    <div className="flex h-full min-w-0 flex-col rounded-lg border bg-card p-4 shadow-sm">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <div className="mb-3 min-w-0 truncate font-semibold text-sm">{title}</div>
       <ScrollArea className="min-h-0 flex-1">
         <Component
@@ -72,6 +73,6 @@ export function ModuleWidgetHost({ widget, servers: _servers }: ModuleWidgetHost
           size={{ w: widget.grid_w, h: widget.grid_h }}
         />
       </ScrollArea>
-    </div>
+    </DashboardCard>
   )
 }

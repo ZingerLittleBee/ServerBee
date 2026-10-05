@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { LatencyChart } from '@/components/network/latency-chart'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNetworkServerSummary } from '@/hooks/use-network-api'
@@ -37,26 +38,26 @@ export function NetworkLatencyWidget({ config }: NetworkLatencyWidgetProps) {
   // we render a skeleton instead of flashing the empty state or an axis-only chart.
   if (recordsLoading || summaryLoading) {
     return (
-      <div className="flex h-full flex-col gap-2 rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col gap-2 bg-card p-4">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="flex-1" />
-      </div>
+      </DashboardCard>
     )
   }
 
   if (records.length === 0) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <h3 className="mb-1 font-semibold text-sm">{t('widgets.networkLatency.title', 'Network Latency')}</h3>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
           {t('widgets.networkLatency.empty.noData', 'No network probe data available')}
         </div>
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <div className="mb-2">
         <h3 className="font-semibold text-sm">{t('widgets.networkLatency.title', 'Network Latency')}</h3>
         <p className="text-muted-foreground text-xs">{summary?.server_name}</p>
@@ -70,6 +71,6 @@ export function NetworkLatencyWidget({ config }: NetworkLatencyWidgetProps) {
           targets={chartTargets}
         />
       </div>
-    </div>
+    </DashboardCard>
   )
 }

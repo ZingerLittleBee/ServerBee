@@ -1,6 +1,7 @@
 import { useQueries } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import { api } from '@/lib/api-client'
@@ -44,20 +45,20 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
 
   if (serverIds.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center rounded-lg border bg-card text-muted-foreground text-sm">
+      <DashboardCard className="flex h-full items-center justify-center bg-card text-muted-foreground text-sm">
         {t('widgets.common.empty.noServers')}
-      </div>
+      </DashboardCard>
     )
   }
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
           {t('states.loading')}
         </div>
-      </div>
+      </DashboardCard>
     )
   }
 
@@ -66,7 +67,7 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
     const pct = computeAggregateUptime(uptimeData)
     const name = serverNameMap.get(serverIds[0]) ?? serverIds[0]
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="font-semibold text-sm">{name}</h3>
           <span className="font-medium text-sm">{pct !== null ? `${pct.toFixed(2)}%` : '\u2014'}</span>
@@ -74,12 +75,12 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
         <div className="flex flex-1 items-end">
           <UptimeTimeline days={uptimeData} rangeDays={days} showLabels showLegend />
         </div>
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
       <ScrollArea className="flex-1" contentClassName="space-y-3">
         {serverIds.map((id, i) => {
@@ -97,6 +98,6 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
           )
         })}
       </ScrollArea>
-    </div>
+    </DashboardCard>
   )
 }

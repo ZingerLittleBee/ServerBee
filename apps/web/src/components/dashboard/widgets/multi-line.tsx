@@ -1,6 +1,7 @@
 import { useQueries } from '@tanstack/react-query'
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { ServerMetricRecord } from '@/lib/api-schema'
@@ -168,15 +169,15 @@ export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <Skeleton className="mb-2 h-4 w-40" />
         <Skeleton className="flex-1" />
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{title ?? t('widgets.multiLine.title', { metric: label })}</h3>
       <div className="min-h-0 min-w-0 flex-1">
         <Suspense fallback={<Skeleton className="h-full min-h-0 w-full" />}>
@@ -194,6 +195,6 @@ export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps
           />
         </Suspense>
       </div>
-    </div>
+    </DashboardCard>
   )
 }

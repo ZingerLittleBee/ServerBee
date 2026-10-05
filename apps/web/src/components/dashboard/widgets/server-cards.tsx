@@ -2,11 +2,14 @@ import { getCoreRowModel, getSortedRowModel, type SortingState, useReactTable } 
 import { Loader2 } from 'lucide-react'
 import { type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DASHBOARD_CARD_CLASS_NAME, DashboardCard } from '@/components/dashboard/dashboard-card'
 import { DataTable } from '@/components/data-table/data-table'
 import { ServerCard } from '@/components/server/server-card'
+import { deriveServerStatus } from '@/components/server/status-dot-utils'
 import { useCostOverview } from '@/hooks/use-cost'
 import { useTrafficOverview } from '@/hooks/use-traffic-overview'
 import type { ServerMetrics } from '@/lib/server-catalog'
+import { cn } from '@/lib/utils'
 import { filterByIds } from '@/lib/widget-helpers'
 import type { ServerCardsConfig } from '@/lib/widget-types'
 import { buildServerColumns } from '@/routes/_authed/servers/components/server-columns'
@@ -125,9 +128,9 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
     return (
       // data-measure: empty-state height is measured the same as the populated
       // layouts so the grid cell shrinks to fit instead of leaving dead space.
-      <div className="flex items-center justify-center py-8 text-muted-foreground text-sm" data-measure>
+      <DashboardCard className="flex items-center justify-center py-8 text-muted-foreground text-sm" data-measure>
         No servers to display
-      </div>
+      </DashboardCard>
     )
   }
 
@@ -135,10 +138,10 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
     return (
       // data-measure: natural content height (grows with the revealed rows),
       // measured by the grid to size the cell — never height-capped or scrolled.
-      <div data-measure>
+      <DashboardCard data-measure>
         <ServerListTable servers={visible} />
         {hasMore && <LoadMoreSentinel sentinelRef={sentinelRef} />}
-      </div>
+      </DashboardCard>
     )
   }
 
@@ -159,7 +162,14 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
           // card shadow. flex stretches ServerCard to the row height so online /
           // offline tiles match even when body sections differ.
           <div className="-m-1 flex p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
-            <ServerCard server={server} />
+            <ServerCard
+              className={cn(
+                DASHBOARD_CARD_CLASS_NAME,
+                'ring-0',
+                deriveServerStatus(server) === 'offline' && 'border-destructive/35 dark:border-destructive/45'
+              )}
+              server={server}
+            />
           </div>
         ))}
       </div>

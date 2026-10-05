@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/lib/server-catalog'
@@ -52,15 +53,15 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <Skeleton className="mb-2 h-4 w-32" />
         <Skeleton className="flex-1" />
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <div className="mb-3">
         <h3 className="font-semibold text-sm">{title ?? label}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
@@ -81,6 +82,6 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
           />
         </Suspense>
       </div>
-    </div>
+    </DashboardCard>
   )
 }

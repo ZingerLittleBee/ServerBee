@@ -1,5 +1,6 @@
 import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
 import { buildMergedDiskIoSeries } from '@/lib/disk-io'
@@ -63,27 +64,27 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <Skeleton className="mb-2 h-4 w-32" />
         <Skeleton className="flex-1" />
-      </div>
+      </DashboardCard>
     )
   }
 
   if (chartData.length === 0) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <h3 className="mb-3 font-semibold text-sm">{t('widgets.diskIo.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
           {t('widgets.diskIo.empty.noData')}
         </div>
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <div className="mb-3">
         <h3 className="font-semibold text-sm">{t('widgets.diskIo.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
@@ -103,6 +104,6 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
           />
         </Suspense>
       </div>
-    </div>
+    </DashboardCard>
   )
 }

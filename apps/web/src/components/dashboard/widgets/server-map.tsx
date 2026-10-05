@@ -8,6 +8,7 @@ import { ChoroplethChart } from '@/components/charts/choropleth/choropleth-chart
 import { type ChoroplethFeature, useChoropleth } from '@/components/charts/choropleth/choropleth-context'
 import { ChoroplethFeature as ChoroplethFeatureComponent } from '@/components/charts/choropleth/choropleth-feature'
 import { ChoroplethTooltip } from '@/components/charts/choropleth/choropleth-tooltip'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
@@ -110,7 +111,7 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
   const displayLabel = hovered ? getLocalizedName(hovered.alpha3, hovered.name) : t('widgets.serverMap.total')
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-3">
+    <DashboardCard className="flex h-full flex-col bg-card p-3">
       <div className="mb-2 flex items-start justify-between gap-2">
         <h3 className="font-semibold text-sm">{t('widgets.serverMap.title')}</h3>
         <div className="flex flex-col items-end text-right">
@@ -197,6 +198,6 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
             {t('widgets.serverMap.empty.noLocationData')}
           </p>
         ))}
-    </div>
+    </DashboardCard>
   )
 }

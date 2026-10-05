@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { api } from '@/lib/api-client'
 import type { ServerMetrics } from '@/lib/server-catalog'
@@ -46,17 +47,17 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
 
   if (!events) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <h3 className="mb-3 font-semibold text-sm">{t('widgets.alertList.title')}</h3>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
           {t('states.loading')}
         </div>
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <h3 className="mb-3 font-semibold text-sm">{t('widgets.alertList.title')}</h3>
       {filtered.length === 0 ? (
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
@@ -87,6 +88,6 @@ export function AlertListWidget({ config, servers }: AlertListWidgetProps) {
           })}
         </ScrollArea>
       )}
-    </div>
+    </DashboardCard>
   )
 }

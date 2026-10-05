@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { useServerRecords } from '@/hooks/use-api'
 import { useMetricSeries } from '@/hooks/use-metric-series'
 import type { ServerMetrics } from '@/lib/server-catalog'
@@ -37,23 +38,23 @@ export function MetricCardWidget({ config, servers }: MetricCardWidgetProps) {
 
   if (!spec) {
     return (
-      <div
-        className="flex h-full items-center justify-center rounded-xl border bg-card text-muted-foreground text-sm"
+      <DashboardCard
+        className="flex h-full items-center justify-center bg-card text-muted-foreground text-sm"
         data-testid="metric-card-missing-metric"
       >
         {t('metricCard.unknownMetric')}
-      </div>
+      </DashboardCard>
     )
   }
 
   if (!server) {
     return (
-      <div
-        className="flex h-full items-center justify-center rounded-xl border bg-card text-muted-foreground text-sm"
+      <DashboardCard
+        className="flex h-full items-center justify-center bg-card text-muted-foreground text-sm"
         data-testid="metric-card-missing-server"
       >
         {t('metricCard.unknownServer')}
-      </div>
+      </DashboardCard>
     )
   }
 
@@ -67,11 +68,8 @@ export function MetricCardWidget({ config, servers }: MetricCardWidgetProps) {
   const accent = customColor ?? `var(${spec.accent})`
 
   return (
-    <div
-      className={cn(
-        'flex h-full min-w-0 flex-col gap-3 overflow-hidden rounded-xl border bg-card p-3 shadow-sm',
-        dimmed && 'opacity-70'
-      )}
+    <DashboardCard
+      className={cn('flex h-full flex-col gap-3 overflow-hidden bg-card p-3', dimmed && 'opacity-70')}
       data-metric={config.metric}
       data-testid="metric-card-widget"
     >
@@ -92,6 +90,6 @@ export function MetricCardWidget({ config, servers }: MetricCardWidgetProps) {
         peak={formattedPeak}
         peakCaption={t('metricCard.peak')}
       />
-    </div>
+    </DashboardCard>
   )
 }

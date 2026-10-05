@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
@@ -81,17 +82,17 @@ export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
 
   if (!monitors) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <h3 className="mb-3 font-semibold text-sm">{t('widgets.serviceStatus.title')}</h3>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
           {t('states.loading')}
         </div>
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="font-semibold text-sm">{t('widgets.serviceStatus.title')}</h3>
         {filtered.length > 0 && (
@@ -151,6 +152,6 @@ export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
           </ul>
         </ScrollArea>
       )}
-    </div>
+    </DashboardCard>
   )
 }

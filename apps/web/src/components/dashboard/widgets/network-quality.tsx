@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNetworkServerSummary } from '@/hooks/use-network-api'
@@ -20,10 +21,10 @@ export function NetworkQualityWidget({ config }: NetworkQualityWidgetProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col gap-2 rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col gap-2 bg-card p-4">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="flex-1" />
-      </div>
+      </DashboardCard>
     )
   }
 
@@ -31,17 +32,17 @@ export function NetworkQualityWidget({ config }: NetworkQualityWidgetProps) {
 
   if (targets.length === 0) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <h3 className="mb-1 font-semibold text-sm">{t('widgets.networkQuality.title', 'Network Quality')}</h3>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
           {t('widgets.networkQuality.empty.noData', 'No network probe data available')}
         </div>
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <div className="mb-2">
         <h3 className="font-semibold text-sm">{t('widgets.networkQuality.title', 'Network Quality')}</h3>
         <p className="text-muted-foreground text-xs">{summary?.server_name}</p>
@@ -64,6 +65,6 @@ export function NetworkQualityWidget({ config }: NetworkQualityWidgetProps) {
           ))}
         </ul>
       </ScrollArea>
-    </div>
+    </DashboardCard>
   )
 }

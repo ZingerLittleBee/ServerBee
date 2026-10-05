@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { StackedBarPlot, type StackedBarSeries } from '@/components/charts/stacked-bar-plot'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { ServerMetrics } from '@/lib/server-catalog'
@@ -96,27 +97,27 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <Skeleton className="mb-2 h-4 w-32" />
         <Skeleton className="flex-1" />
-      </div>
+      </DashboardCard>
     )
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+      <DashboardCard className="flex h-full flex-col bg-card p-4">
         <h3 className="mb-3 font-semibold text-sm">{t('widgets.trafficBar.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
         <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
           {t('widgets.trafficBar.empty.noData')}
         </div>
-      </div>
+      </DashboardCard>
     )
   }
 
   return (
-    <div className="flex h-full flex-col rounded-lg border bg-card p-4">
+    <DashboardCard className="flex h-full flex-col bg-card p-4">
       <div className="mb-3">
         <h3 className="font-semibold text-sm">{t('widgets.trafficBar.title')}</h3>
         <p className="text-muted-foreground text-xs">{serverName}</p>
@@ -134,6 +135,6 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
           series={trafficSeries}
         />
       </div>
-    </div>
+    </DashboardCard>
   )
 }

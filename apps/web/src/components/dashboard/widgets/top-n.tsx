@@ -8,6 +8,7 @@ import { useChart, useChartStable } from '@/components/charts/chart-context'
 import { Grid } from '@/components/charts/grid'
 import { ChartTooltip } from '@/components/charts/tooltip/chart-tooltip'
 import { TooltipContent, type TooltipRow } from '@/components/charts/tooltip/tooltip-content'
+import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn, formatBytes } from '@/lib/utils'
 import {
@@ -244,7 +245,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
   )
 
   return (
-    <div className="flex h-full flex-col justify-center rounded-lg border bg-card">
+    <DashboardCard className="flex h-full flex-col justify-center bg-card">
       {/* data-measure: natural content height (incl. padding), measured by the
           grid to size the cell. Independent of the (h-full) card height. */}
       <div className="flex flex-col gap-3 p-4" data-measure>
@@ -298,6 +299,6 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
           </figure>
         )}
       </div>
-    </div>
+    </DashboardCard>
   )
 }
