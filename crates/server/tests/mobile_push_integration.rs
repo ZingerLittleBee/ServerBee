@@ -3050,16 +3050,66 @@ async fn alert_subscriptions_fan_out_trigger_recovery_without_group_and_open_exa
     assert_eq!(alert_jobs(&restarted).await.len(), 6);
     set_alert_expiration(&client, &base, admin, &server, true).await;
     evaluate_alerts(&restarted).await;
+    let previous = client
+        .get(format!("{base}/api/alert-events/{key}"))
+        .bearer_auth(admin)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(
-        client
-            .get(format!("{base}/api/alert-events/{key}"))
-            .bearer_auth(admin)
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        404,
-        "Old cycle cannot open the new cycle"
+        previous.status(),
+        200,
+        "An admitted renewal occurrence retains its own durable detail"
+    );
+    let previous = previous.json::<serde_json::Value>().await.unwrap()["data"].clone();
+    assert_eq!(previous["alert_key"], key);
+    assert_eq!(
+        previous["first_triggered_at"], detail["data"]["first_triggered_at"],
+        "The old key preserves its original trigger cycle"
+    );
+    assert_eq!(
+        previous["status"], "resolved",
+        "An old key cannot open the new firing occurrence"
+    );
+    assert!(!previous["resolved_at"].is_null());
+    assert_eq!(
+        alert_jobs(&restarted).await.len(),
+        9,
+        "Each new occurrence reaches the same three subscribed recipients"
+    );
+    let current = client
+        .get(format!("{base}/api/alert-events"))
+        .bearer_auth(admin)
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    let current = current["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|event| event["status"] == "firing")
+        .unwrap();
+    assert_ne!(
+        current["alert_key"], key,
+        "Each occurrence binds a distinct complete-cycle key"
+    );
+    let current_key = current["alert_key"].as_str().unwrap().to_string();
+    let current_detail = client
+        .get(format!("{base}/api/alert-events/{current_key}"))
+        .bearer_auth(admin)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(current_detail.status(), 200);
+    let current_detail = current_detail.json::<serde_json::Value>().await.unwrap()["data"].clone();
+    assert_eq!(current_detail["alert_key"], current_key);
+    assert_eq!(current_detail["status"], "firing");
+    assert_ne!(
+        current_detail["first_triggered_at"],
+        previous["first_triggered_at"]
     );
     assert_eq!(
         client
@@ -3074,6 +3124,16 @@ async fn alert_subscriptions_fan_out_trigger_recovery_without_group_and_open_exa
     assert_eq!(
         client
             .get(format!("{base}/api/alert-events/{key}"))
+            .bearer_auth(admin)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        404
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/api/alert-events/{current_key}"))
             .bearer_auth(admin)
             .send()
             .await

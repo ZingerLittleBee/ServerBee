@@ -824,7 +824,9 @@ impl AlertService {
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
     ) -> Result<(), AppError> {
-        Self::evaluate_all_at(db, config, agent_manager, state_manager, Utc::now()).await
+        Self::evaluate_all_at(db, config, agent_manager, state_manager, Utc::now())
+            .await
+            .map(|_| ())
     }
 
     pub async fn evaluate_all_at(
@@ -833,7 +835,7 @@ impl AlertService {
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
         now: chrono::DateTime<Utc>,
-    ) -> Result<(), AppError> {
+    ) -> Result<Vec<String>, AppError> {
         // Event-driven conditions cannot be re-polled. Replay captured intents
         // before ordinary rules, including the first tick after Server restart.
         crate::service::alert_event_intents::replay(db, config, state_manager).await?;
@@ -842,6 +844,7 @@ impl AlertService {
             .all(db)
             .await?;
 
+        let mut changed = Vec::new();
         for rule in rules {
             // A failed event admission reserves the dimension/cycle. Do not
             // overwrite it with a later periodic evaluation of a mixed rule.
@@ -865,13 +868,13 @@ impl AlertService {
                 continue;
             }
 
-            if let Err(e) =
-                Self::evaluate_rule_at(db, config, agent_manager, state_manager, &rule, now).await
+            match Self::evaluate_rule_at(db, config, agent_manager, state_manager, &rule, now).await
             {
-                tracing::error!("Error evaluating alert rule '{}': {e}", rule.name);
+                Ok(mut servers) => changed.append(&mut servers),
+                Err(e) => tracing::error!("Error evaluating alert rule '{}': {e}", rule.name),
             }
         }
-        Ok(())
+        Ok(changed)
     }
 
     #[cfg(test)]
@@ -882,7 +885,9 @@ impl AlertService {
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
     ) -> Result<(), AppError> {
-        Self::evaluate_rule_at(db, config, agent_manager, state_manager, rule, Utc::now()).await
+        Self::evaluate_rule_at(db, config, agent_manager, state_manager, rule, Utc::now())
+            .await
+            .map(|_| ())
     }
 
     async fn evaluate_rule_at(
@@ -892,14 +897,15 @@ impl AlertService {
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
         now: chrono::DateTime<Utc>,
-    ) -> Result<(), AppError> {
+    ) -> Result<Vec<String>, AppError> {
         let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json).unwrap_or_default();
         if items.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let servers = resolve_servers(db, &rule.cover_type, &rule.server_ids_json).await?;
 
+        let mut changed = Vec::new();
         for srv in &servers {
             if items.iter().any(|item| item.rule_type == "expiration")
                 && !items
@@ -912,7 +918,7 @@ impl AlertService {
                     .cloned()
                     .collect();
                 let matched = Self::check_server_at(db, agent_manager, &other, &srv.id, now).await;
-                if let Some(notify) = crate::service::renewal_reminders::evaluate(
+                if let Some(outcome) = crate::service::renewal_reminders::evaluate(
                     db,
                     state_manager,
                     rule,
@@ -923,8 +929,18 @@ impl AlertService {
                 )
                 .await?
                 {
-                    if notify {
-                        Self::notify_triggered(db, config, rule, &srv.id, &srv.name, now).await;
+                    if !matches!(outcome, crate::service::renewal_reminders::Outcome::Silent) {
+                        changed.push(srv.id.clone());
+                    }
+                    match outcome {
+                        crate::service::renewal_reminders::Outcome::Triggered => {
+                            Self::notify_triggered(db, config, rule, &srv.id, &srv.name, now).await
+                        }
+                        crate::service::renewal_reminders::Outcome::Resolved => {
+                            Self::handle_resolved(db, config, rule, &srv.id, &srv.name).await
+                        }
+                        crate::service::renewal_reminders::Outcome::Silent
+                        | crate::service::renewal_reminders::Outcome::Superseded => {}
                     }
                     continue;
                 }
@@ -954,7 +970,7 @@ impl AlertService {
             }
         }
 
-        Ok(())
+        Ok(changed)
     }
 
     #[cfg(test)]

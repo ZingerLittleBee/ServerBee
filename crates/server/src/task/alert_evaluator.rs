@@ -27,15 +27,28 @@ pub async fn run(state: Arc<AppState>) {
 /// One production scheduler iteration, also used with a controlled renewal clock.
 pub async fn evaluate_once(state: &AppState) -> Result<(), crate::error::AppError> {
     let now = state.renewal_clock.now();
-    crate::service::renewal::advance_all(&state.db, now).await?;
-    AlertService::evaluate_all_at(
+    let mut changed = crate::service::renewal::advance_all(&state.db, now).await?;
+    let evaluated = AlertService::evaluate_all_at(
         &state.db,
         &state.config,
         &state.agent_manager,
         &state.alert_state_manager,
         now,
     )
-    .await
+    .await;
+    if let Ok(servers) = &evaluated {
+        changed.extend(servers.iter().cloned());
+    }
+    changed.sort();
+    changed.dedup();
+    if !changed.is_empty() {
+        let _ = state.browser_tx.send(
+            serverbee_common::protocol::BrowserMessage::ServerCatalogChanged {
+                server_ids: changed,
+            },
+        );
+    }
+    evaluated.map(|_| ())
 }
 
 /// Performs the per-tick work of the alert evaluator: evaluate all enabled

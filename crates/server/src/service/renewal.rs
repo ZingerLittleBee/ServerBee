@@ -408,8 +408,12 @@ pub(super) async fn advance_locked(
     Ok((active.update(tx).await?, true))
 }
 
-pub async fn advance_all(db: &DatabaseConnection, now: DateTime<Utc>) -> Result<(), AppError> {
+pub async fn advance_all(
+    db: &DatabaseConnection,
+    now: DateTime<Utc>,
+) -> Result<Vec<String>, AppError> {
     let servers = server::Entity::find().all(db).await?;
+    let mut changed = Vec::new();
     for candidate in servers {
         if !RenewalState::from_server(&candidate).enabled {
             continue;
@@ -423,8 +427,8 @@ pub async fn advance_all(db: &DatabaseConnection, now: DateTime<Utc>) -> Result<
             }
             Err(error) => return Err(error),
         };
-        match advance_locked(&tx, model, now).await {
-            Ok(_) => {}
+        let advanced = match advance_locked(&tx, model, now).await {
+            Ok((_, advanced)) => advanced,
             Err(AppError::Validation(reason)) => {
                 // A damaged calendar configuration cannot stop healthy schedules.
                 // Database/transaction errors still propagate to the caller.
@@ -433,8 +437,11 @@ pub async fn advance_all(db: &DatabaseConnection, now: DateTime<Utc>) -> Result<
                 continue;
             }
             Err(error) => return Err(error),
-        }
+        };
         tx.commit().await?;
+        if advanced {
+            changed.push(candidate.id);
+        }
     }
-    Ok(())
+    Ok(changed)
 }
