@@ -56,3 +56,5 @@ pub mod mobile_recovery_grant;
 pub(crate) mod task_notification;
 
 pub(crate) mod alert_event_intents;
+
+pub mod renewal;

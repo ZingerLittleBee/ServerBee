@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Billing-calendar renewal dates** -- Web and native iOS administrators can edit a local expiry date in its stored IANA billing timezone. The Server preserves historical expiry instants on unchanged saves and applies the complete local expiry day to explicit date changes
+
 ### Fixed
 
 - **IP Quality capability guidance matches Agent-owned permissions** -- A compact disabled notice opens a dialog explaining permanent configuration and temporary host-local grants instead of pointing to a nonexistent server-side toggle. Each command has a copy button with clipboard feedback. Manual checks use the Agent-reported capability, and an unavailable report is shown separately from a disabled capability

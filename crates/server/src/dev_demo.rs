@@ -560,6 +560,7 @@ async fn seed_servers(db: &DatabaseConnection, now: chrono::DateTime<Utc>) -> Re
             price: Set(Some(spec.price)),
             billing_cycle: Set(Some("monthly".to_string())),
             currency: Set(Some("USD".to_string())),
+            renewal_state: Set(None),
             expired_at: Set(None),
             traffic_limit: Set(Some((spec.mem_gib + spec.disk_gib / 10) * 100 * GIB)),
             traffic_limit_type: Set(Some("monthly".to_string())),

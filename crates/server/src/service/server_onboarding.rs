@@ -42,6 +42,7 @@ impl OnboardingRequestId {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ServerProfile {
+    pub renewal: Option<super::renewal::RenewalInput>,
     pub name: String,
     pub group_id: Option<String>,
     pub tags: Vec<String>,
@@ -210,6 +211,7 @@ impl ServerOnboarding {
             price: Set(normalized.price),
             billing_cycle: Set(normalized.billing_cycle.clone()),
             currency: Set(normalized.currency.clone()),
+            renewal_state: Set(normalized.renewal_state.clone()),
             expired_at: Set(normalized.expired_at),
             traffic_limit: Set(normalized.traffic_limit),
             traffic_limit_type: Set(normalized.traffic_limit_type.clone()),
@@ -279,6 +281,8 @@ impl ServerOnboarding {
 
 #[derive(Serialize)]
 struct NormalizedProfile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    renewal_state: Option<String>,
     name: String,
     group_id: Option<String>,
     tags: Vec<String>,
@@ -334,7 +338,28 @@ impl NormalizedProfile {
             ));
         }
 
+        if profile
+            .renewal
+            .as_ref()
+            .is_some_and(|input| input.expiry_date.is_some())
+            && profile.expired_at.is_some()
+        {
+            return Err(OnboardingError::Validation(
+                "expiry_date and expired_at cannot be submitted together".into(),
+            ));
+        }
+        let (renewal, expired_at) =
+            super::renewal::apply_initial(profile.renewal.as_ref(), profile.expired_at)
+                .map_err(|e| OnboardingError::Validation(e.to_string()))?;
+        // Preserve the predecessor canonical hash for legacy onboarding retries.
+        let renewal_state = profile
+            .renewal
+            .as_ref()
+            .map(|_| serde_json::to_string(&renewal))
+            .transpose()
+            .map_err(|e| OnboardingError::Validation(e.to_string()))?;
         Ok(Self {
+            renewal_state,
             name,
             group_id: normalize_optional(profile.group_id),
             tags: server_tag_service::validate_tags(&profile.tags)
@@ -345,7 +370,7 @@ impl NormalizedProfile {
             currency: normalize_optional(profile.currency),
             billing_cycle: normalize_optional(profile.billing_cycle),
             billing_start_day: profile.billing_start_day,
-            expired_at: profile.expired_at,
+            expired_at,
             traffic_limit: profile.traffic_limit,
             traffic_limit_type: normalize_optional(profile.traffic_limit_type),
         })
@@ -433,6 +458,7 @@ mod tests {
                 billing_cycle: None,
                 billing_start_day: None,
                 expired_at: None,
+                renewal: None,
                 traffic_limit: None,
                 traffic_limit_type: None,
             },
