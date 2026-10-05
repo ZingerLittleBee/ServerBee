@@ -32,6 +32,7 @@ vi.mock('@/components/ui/dialog', () => ({
 }))
 
 const SERVER_ID = 'srv-pending'
+const ISSUED_COMMAND = /--enrollment-code 'code-1'/
 
 function offerResponse(n: number): EnrollmentOfferResponse {
   return {
@@ -114,7 +115,7 @@ describe('EnrollmentOfferDialog', () => {
         <CatalogBackedDialog />
       </QueryClientProvider>
     )
-    await screen.findByText('code-1')
+    await screen.findByText(ISSUED_COMMAND)
     // Give any remount-driven re-issue loop time to fire.
     await new Promise((resolve) => setTimeout(resolve, 200))
   }
@@ -124,7 +125,7 @@ describe('EnrollmentOfferDialog', () => {
 
     expect(mockPost).toHaveBeenCalledTimes(1)
     expect(mockPost).toHaveBeenCalledWith(`/api/servers/${SERVER_ID}/agent-authority/offers/offer-0/replace`, {})
-    await waitFor(() => expect(screen.getByText('code-1')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(ISSUED_COMMAND)).toBeTruthy())
   })
 
   it('issues exactly one offer per open when the server had none', async () => {
@@ -132,6 +133,6 @@ describe('EnrollmentOfferDialog', () => {
 
     expect(mockPost).toHaveBeenCalledTimes(1)
     expect(mockPost).toHaveBeenCalledWith(`/api/servers/${SERVER_ID}/agent-authority/offers`, {})
-    await waitFor(() => expect(screen.getByText('code-1')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText(ISSUED_COMMAND)).toBeTruthy())
   })
 })

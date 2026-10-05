@@ -125,24 +125,6 @@ function EnrollmentOfferDialogContent({
           <div className="space-y-4 rounded-md border border-amber-500/40 bg-amber-500/5 p-4">
             <p className="text-amber-600 text-sm dark:text-amber-500">{t('servers:add_server.shown_once_warning')}</p>
             <div>
-              <p className="mb-1 font-medium text-muted-foreground text-xs">{t('servers:add_server.code_label')}</p>
-              <div className="flex min-w-0 items-start gap-2">
-                <code className="min-w-0 flex-1 break-all rounded-md border bg-muted/50 px-3 py-2 font-mono text-sm">
-                  {issued.enrollment.code}
-                </code>
-                <Button
-                  aria-label={t('servers:add_server.copy')}
-                  onClick={() => copy(issued.enrollment.code)}
-                  size="icon"
-                  type="button"
-                  variant="outline"
-                >
-                  <Copy className="size-4" />
-                </Button>
-              </div>
-            </div>
-
-            <div>
               <p className="mb-1 font-medium text-muted-foreground text-xs">
                 {t('servers:add_server.install_command')}
               </p>
