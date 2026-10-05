@@ -92,7 +92,7 @@ function AdminBody({ overview, services, servers, isLoading }: AdminProps) {
               <ShieldCheck aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
               <p className="font-medium text-sm">{t('no_data')}</p>
               <p className="max-w-xs text-muted-foreground text-xs">
-                {t('no_data_overview_hint', { cap: 'ip_quality', flag: '--allow-cap ip_quality' })}
+                {t('no_data_overview_hint', { cap: 'ip_quality' })}
               </p>
             </div>
           </div>

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **IP Quality capability guidance matches Agent-owned permissions** -- The disabled notice explains permanent configuration and temporary host-local grants instead of pointing to a nonexistent server-side toggle. Manual checks use the Agent-reported capability, and an unavailable report is shown separately from a disabled capability
+
 ## [1.0.0-beta.5] - 2026-10-05
 
 ### Added

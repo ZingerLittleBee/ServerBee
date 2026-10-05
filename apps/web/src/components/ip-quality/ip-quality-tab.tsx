@@ -15,33 +15,20 @@ import type { UnlockStatus } from '@/lib/ip-quality-types'
 interface Props {
   /** Bitmap allowed by the running agent process (null when agent has not reported yet). */
   agentLocalCapabilities?: number | null
-  /** Server-side configured capability bitmap. */
-  capabilities?: number | null
   serverId: string
   serverName: string
 }
 
-type CapState = 'ok' | 'server_off' | 'agent_off' | 'both_off'
+type CapState = 'ok' | 'off' | 'unknown'
 
-function deriveCapState(capabilities?: number | null, agentLocalCapabilities?: number | null): CapState {
-  const serverHas = capabilities != null && hasCap(capabilities, CAP_IP_QUALITY)
-  // A null agent bitmap means the agent has not reported its local policy
-  // yet (either offline or pre-protocol-v2). Either way `Check now` would
-  // fail server-side validation, so treat it as the agent side being off.
-  const agentHas = agentLocalCapabilities != null && hasCap(agentLocalCapabilities, CAP_IP_QUALITY)
-  if (serverHas && agentHas) {
-    return 'ok'
+function deriveCapState(agentLocalCapabilities?: number | null): CapState {
+  if (agentLocalCapabilities == null) {
+    return 'unknown'
   }
-  if (!(serverHas || agentHas)) {
-    return 'both_off'
-  }
-  if (!serverHas) {
-    return 'server_off'
-  }
-  return 'agent_off'
+  return hasCap(agentLocalCapabilities, CAP_IP_QUALITY) ? 'ok' : 'off'
 }
 
-export function IpQualityTab({ serverId, serverName, capabilities, agentLocalCapabilities }: Props) {
+export function IpQualityTab({ serverId, serverName, agentLocalCapabilities }: Props) {
   const { t } = useTranslation('ip-quality')
 
   const { data: serverData, isLoading: serverLoading } = useIpQualityServer(serverId)
@@ -50,7 +37,7 @@ export function IpQualityTab({ serverId, serverName, capabilities, agentLocalCap
   const checkNow = useCheckNow()
 
   const isLoading = serverLoading || servicesLoading || eventsLoading
-  const capState = deriveCapState(capabilities, agentLocalCapabilities)
+  const capState = deriveCapState(agentLocalCapabilities)
   const canCheck = capState === 'ok'
 
   const enabledServices = services.filter((s) => s.enabled)
@@ -159,14 +146,37 @@ export function IpQualityTab({ serverId, serverName, capabilities, agentLocalCap
 }
 
 function CapDisabledCallout({ state, t }: { state: Exclude<CapState, 'ok'>; t: (key: string) => string }) {
-  const titleKey = `cap_off_${state}_title`
-  const hintKey = `cap_off_${state}_hint`
   return (
     <div className="flex gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-amber-700 dark:text-amber-300">
       <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-      <div className="space-y-1">
-        <p className="font-medium text-sm">{t(titleKey)}</p>
-        <p className="text-xs">{t(hintKey)}</p>
+      <div className="min-w-0 flex-1 space-y-3">
+        <div className="space-y-1">
+          <p className="font-medium text-sm">{t(state === 'unknown' ? 'cap_unknown_title' : 'cap_off_title')}</p>
+          <p className="text-xs">{t(state === 'unknown' ? 'cap_unknown_hint' : 'cap_agent_owned_hint')}</p>
+        </div>
+        {state === 'off' && (
+          <>
+            <div className="space-y-1.5">
+              <p className="font-medium text-xs">{t('cap_enable_permanent_title')}</p>
+              <p className="text-xs">{t('cap_enable_permanent_hint')}</p>
+              <p className="text-xs">{t('cap_restart_hint')}</p>
+              <code className="block whitespace-pre-wrap break-all rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
+                sudo serverbee restart agent
+              </code>
+            </div>
+            <div className="space-y-1.5">
+              <p className="font-medium text-xs">{t('cap_enable_temporary_title')}</p>
+              <p className="text-xs">{t('cap_enable_temporary_hint')}</p>
+              <code className="block whitespace-pre-wrap break-all rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
+                sudo serverbee-agent grant ip_quality --for 30m
+              </code>
+              <p className="text-xs">{t('cap_revoke_hint')}</p>
+              <code className="block whitespace-pre-wrap break-all rounded-md bg-amber-500/10 px-2 py-1.5 text-xs">
+                sudo serverbee-agent revoke ip_quality
+              </code>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )

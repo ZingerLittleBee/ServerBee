@@ -307,7 +307,6 @@ function DetailTabs({
         <TabsContent value="ip-quality">
           <IpQualityTab
             agentLocalCapabilities={adminServer.agent_local_capabilities}
-            capabilities={adminServer.capabilities}
             serverId={serverId}
             serverName={adminServer.name}
           />
