@@ -163,6 +163,10 @@ final class ServersViewModel {
             if let existing = byID[cfg.id] {
                 var refreshed = cfg
                 refreshed.mergeLiveMetrics(from: existing)
+                // These catalog fields are supplied by full sync/legacy payloads,
+                // and are absent from the authenticated ServerResponse DTO.
+                if cfg.tags == nil { refreshed.tags = existing.tags }
+                if cfg.groupName == nil { refreshed.groupName = existing.groupName }
                 byID[cfg.id] = refreshed
             } else {
                 byID[cfg.id] = cfg
