@@ -26,4 +26,14 @@ Changing the billing timezone preserves the selected local expiry date and recal
 
 The feature includes the Server, web dashboard, and native iOS client. Both clients must use the stored billing timezone for renewal entry and display rather than independently interpreting dates in the browser or device timezone.
 
-This records the agreed design boundary, not a shipped implementation. Historical-record handling, manual renewal entry, and the relationship to cost and traffic periods remain to be decided.
+Existing servers start with projection disabled and UTC as their billing timezone. Migration preserves existing expiry instants rather than silently correcting dates or extending service validity. The next explicit save of billing settings applies the selected local date, billing timezone, and end-of-date boundary rules. Existing operator-entered expiry values do not gain a new claim that the provider verified payment merely because the schema changed.
+
+When projection is disabled, operators maintain the renewal deadline through the existing server billing-settings editor. This feature adds neither a dedicated manual-renewal button nor a per-period confirmation dialog. An explicit operator edit replaces the renewal deadline and its date anchor rather than requiring the operator to reconstruct the missed schedule.
+
+Automatic advancement changes renewal dates and reminder targets, not price, currency, billing interval, traffic allowance, or traffic-reset rules. Existing cost and traffic period calculations remain unchanged, including their calendar-based quarterly and yearly boundaries. The interface distinguishes the renewal deadline from the cost-estimation period instead of presenting those independent calculations as the same provider-confirmed billing period.
+
+## Delivery boundary
+
+The agreed feature includes per-server opt-in projection, billing timezone selection, calendar-aware advancement and catch-up, freeze-on-disable behavior, and consistent renewal deadlines across Server responses, cost expiry advisories, existing expiration alerts, web views, and native iOS entry and display. Reminders continue to use the configured channels and rules; automatic advancement retargets them to the next projected deadline. Public status responses retain their existing exclusion of private billing information.
+
+This is the finalized feature design, not a shipped implementation. Implementation must validate local date and UTC conversions, month-end and leap-year anchors, missed-period catch-up, enable/disable transitions, legacy-record preservation, reminder deadline changes, and cross-client consistency. Existing unrelated notification-scheduling defects and a redesign of cost or traffic periods are outside this feature's scope.
