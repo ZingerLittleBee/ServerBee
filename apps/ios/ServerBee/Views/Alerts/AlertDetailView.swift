@@ -4,6 +4,7 @@ struct AlertDetailView: View {
     let alertKey: String
     @State private var viewModel = AlertDetailViewModel()
     @Environment(\.apiClient) private var apiClient
+    @Environment(ServersViewModel.self) private var serversViewModel
     @Environment(\.dismiss) private var dismiss
     @ScaledMetric(relativeTo: .headline) private var buttonHeight: CGFloat = 50
 
@@ -40,7 +41,7 @@ struct AlertDetailView: View {
         .background(Color(.systemGroupedBackground))
         .navigationTitle(String(localized: "Alert Detail"))
         .navigationBarTitleDisplayMode(.inline)
-        .task {
+        .task(id: serversViewModel.catalogRevision) {
             await viewModel.fetchDetail(alertKey: alertKey, apiClient: apiClient)
         }
     }
@@ -84,6 +85,8 @@ private extension AlertDetailView {
             if let resolvedAt = detail.resolvedAt {
                 parts.append(String(localized: "resolved \(Formatters.formatRelativeTime(resolvedAt))"))
             }
+        case .superseded:
+            parts.append(String(localized: "A newer renewal deadline superseded this reminder."))
         }
         return parts.joined(separator: " \u{00B7} ")
     }
@@ -100,8 +103,10 @@ private extension AlertDetailView {
             .buttonStyle(.plain)
             rowDivider
             AlertInfoRow(label: String(localized: "First triggered"), value: AlertAbsoluteTime.string(from: detail.firstTriggeredAt))
-            rowDivider
-            AlertInfoRow(label: String(localized: "Resolved at"), value: detail.resolvedAt.map(AlertAbsoluteTime.string(from:)))
+            if detail.status != .superseded {
+                rowDivider
+                AlertInfoRow(label: String(localized: "Resolved at"), value: detail.resolvedAt.map(AlertAbsoluteTime.string(from:)))
+            }
             rowDivider
             AlertInfoRow(label: String(localized: "Trigger count"), value: "\(detail.triggerCount)")
             rowDivider

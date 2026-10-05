@@ -7,6 +7,7 @@ struct ServerTrafficSection: View {
     let config: ServerConfig?
 
     @Environment(\.apiClient) private var apiClient
+    @Environment(ServersViewModel.self) private var serversViewModel
     @State private var viewModel = ServerTrafficViewModel()
 
     var body: some View {
@@ -19,8 +20,8 @@ struct ServerTrafficSection: View {
         .refreshable {
             await viewModel.reload(serverId: serverId, apiClient: apiClient)
         }
-        .task {
-            await viewModel.loadIfNeeded(serverId: serverId, apiClient: apiClient)
+        .task(id: serversViewModel.catalogRevision(for: serverId)) {
+            await viewModel.loadForCatalogRevision(serverId: serverId, apiClient: apiClient)
         }
     }
 

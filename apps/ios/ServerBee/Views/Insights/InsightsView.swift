@@ -34,8 +34,12 @@ struct InsightsView: View {
         .navigationTitle(String(localized: "Insights"))
         .navigationBarTitleDisplayMode(.large)
         .refreshable { await viewModel.load(apiClient: apiClient) }
-        .task {
-            if !viewModel.hasLoaded { await viewModel.load(apiClient: apiClient) }
+        .task(id: serversViewModel.catalogRevision) {
+            if !viewModel.hasLoaded {
+                await viewModel.load(apiClient: apiClient)
+            } else {
+                await viewModel.refreshCost(apiClient: apiClient)
+            }
             #if DEBUG
             // Both the incident and maintenance sheets live on IncidentsView.
             if let token = UITestSupport.autoPresent,

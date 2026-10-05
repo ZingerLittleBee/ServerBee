@@ -13,8 +13,11 @@ final class AlertDetailViewModel {
         detail = nil
         errorMessage = nil
         do {
-            detail = try await apiClient.get("/api/alert-events/\(alertKey)")
+            let refreshed: MobileAlertDetail = try await apiClient.get("/api/alert-events/\(alertKey)")
+            guard !Task.isCancelled else { return }
+            detail = refreshed
         } catch {
+            guard !Task.isCancelled else { return }
             errorMessage = String(localized: "Alert not found")
         }
     }

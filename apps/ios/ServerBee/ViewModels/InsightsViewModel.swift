@@ -17,6 +17,12 @@ final class InsightsViewModel {
     var isLoading = false
     var hasLoaded = false
 
+    func refreshCost(apiClient: APIClient) async {
+        let refreshed: CostOverviewResponse? = try? await apiClient.get("/api/cost/overview")
+        guard !Task.isCancelled else { return }
+        costOverview = refreshed
+    }
+
     func load(apiClient: APIClient) async {
         isLoading = true
         defer { isLoading = false; hasLoaded = true }
@@ -26,11 +32,13 @@ final class InsightsViewModel {
         async let maints: [Maintenance]? = try? apiClient.get("/api/maintenances")
         async let securityStats: [StatsBucket]? = try? apiClient.get("/api/security/stats?group_by=event_type")
 
-        costOverview = await cost
-        monitors = (await mons ?? []).sorted { $0.name < $1.name }
-        incidents = (await incs ?? []).sorted { $0.createdAt > $1.createdAt }
-        maintenances = (await maints ?? []).sorted { $0.startAt > $1.startAt }
-        securityEventCount = (await securityStats).map { buckets in buckets.reduce(0) { $0 + $1.count } }
+        let (overview, loadedMonitors, loadedIncidents, loadedMaintenances, stats) = await (cost, mons, incs, maints, securityStats)
+        guard !Task.isCancelled else { return }
+        costOverview = overview
+        monitors = (loadedMonitors ?? []).sorted { $0.name < $1.name }
+        incidents = (loadedIncidents ?? []).sorted { $0.createdAt > $1.createdAt }
+        maintenances = (loadedMaintenances ?? []).sorted { $0.startAt > $1.startAt }
+        securityEventCount = stats.map { buckets in buckets.reduce(0) { $0 + $1.count } }
     }
 
     // MARK: - Derived
