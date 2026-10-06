@@ -32,11 +32,13 @@ struct EditServerSheet: View {
             .navigationTitle(String(localized: "Edit Server"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbarContent }
-            .task {
-                viewModel.prefill(from: config)
-                await viewModel.loadGroups(apiClient: apiClient)
-                await viewModel.loadTags(serverId: serverId, apiClient: apiClient)
-            }
+        }
+        // Returning from timezone selection must preserve unsaved edits;
+        // initialization belongs to the editor presentation, not its form.
+        .task {
+            viewModel.prefill(from: config)
+            await viewModel.loadGroups(apiClient: apiClient)
+            await viewModel.loadTags(serverId: serverId, apiClient: apiClient)
         }
     }
 }
@@ -99,8 +101,14 @@ private extension EditServerSheet {
                     .accessibilityIdentifier("renewal.deviceTimezone")
             }
             #endif
-            Picker(String(localized: "Billing timezone"), selection: $viewModel.billingTimezone) {
-                ForEach(Self.billingTimezones, id: \.self) { Text(verbatim: $0).tag($0) }
+            NavigationLink {
+                BillingTimezoneSelector(selection: $viewModel.billingTimezone, timezones: Self.billingTimezones)
+            } label: {
+                HStack {
+                    Text(String(localized: "Billing timezone"))
+                    Spacer()
+                    Text(verbatim: viewModel.billingTimezone).foregroundStyle(.secondary)
+                }
             }
             .accessibilityIdentifier("renewal.timezone")
             Toggle(String(localized: "Has expiry"), isOn: $viewModel.hasExpiry)
