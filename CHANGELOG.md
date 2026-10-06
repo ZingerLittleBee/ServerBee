@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.6] - 2026-10-06
+
 ### Added
 
 - **Renewal reminders follow each current occurrence** -- Expiration rules in once mode admit one durable reminder per rule, server and renewal occurrence, including consecutive monthly deadlines inside the same reminder window. Automatic calendar advancement silently supersedes old targets, and authenticated Web and native iOS views refresh deadlines, alert history and cost advisories
