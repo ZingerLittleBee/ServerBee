@@ -14690,6 +14690,23 @@
         }
       }
     },
+    "Search billing timezones": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search billing timezones"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索账单时区"
+          }
+        }
+      }
+    },
     "Search name, IP, tag": {
       "extractionState": "manual",
       "localizations": {

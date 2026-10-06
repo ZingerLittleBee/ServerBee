@@ -23,32 +23,18 @@ final class RenewalBillingUITests: XCTestCase {
         screenshot("stored-january-date")
 
         reveal("renewal.timezone").tap()
+        XCTAssertTrue(app.navigationBars["Billing timezone"].waitForExistence(timeout: 5), app.debugDescription)
+        let search = app.searchFields.matching(NSPredicate(format: "placeholderValue == %@", "Search billing timezones")).firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(search.isHittable, search.debugDescription)
+        search.tap()
+        search.typeText("UTC")
         let utc = app.buttons["UTC"].firstMatch
-        // The native menu scrolls to the current selection, so UTC at the
-        // beginning of the IANA list is initially outside its lazy viewport.
-        // Retain the menu's indexed element before scrolling moves that
-        // selection out of view; swiping the app would hit a different layer.
-        let menu = try XCTUnwrap(app.collectionViews.allElementsBoundByIndex.last(where: {
-            $0.buttons["America/New_York"].exists
-        }), app.debugDescription)
-        for _ in 0..<14 {
-            if utc.exists && utc.isHittable { break }
-            // The menu's accessibility frame extends beyond the window.
-            // Drag across its visible viewport instead of using XCTest's
-            // shorter default swipe, which stopped among the Africa entries.
-            let frame = menu.frame
-            let viewport = frame.intersection(app.windows.firstMatch.frame)
-            XCTAssertFalse(viewport.isEmpty, menu.debugDescription)
-            let origin = menu.coordinate(withNormalizedOffset: .zero)
-            let start = origin.withOffset(CGVector(dx: viewport.midX - frame.minX,
-                                                   dy: viewport.minY + viewport.height * 0.1 - frame.minY))
-            let end = origin.withOffset(CGVector(dx: viewport.midX - frame.minX,
-                                                 dy: viewport.minY + viewport.height * 0.9 - frame.minY))
-            start.press(forDuration: 0.05, thenDragTo: end)
-        }
         XCTAssertTrue(utc.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(utc.isHittable, app.debugDescription)
+        screenshot("timezone-search-utc")
         utc.tap()
+        XCTAssertTrue(app.navigationBars["Edit Server"].waitForExistence(timeout: 5), app.debugDescription)
         assertText("renewal.timezone", contains: "UTC")
         assertDate("Jan 31, 2026")
         screenshot("utc-picker-selected-date-preserved")
