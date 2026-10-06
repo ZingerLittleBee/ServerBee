@@ -14,7 +14,7 @@
     "@types/node": "catalog:",
     "esbuild": "0.28.2",
     "miniflare": "4.20260730.0",
-    "vitest": "4.1.7",
+    "vitest": "4.1.11",
     "wrangler": "4.116.0",
     "@cloudflare/vitest-pool-workers": "0.19.1",
     "typescript": "5.9.3"

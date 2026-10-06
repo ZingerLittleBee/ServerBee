@@ -33,7 +33,7 @@ x509-parser = "0.16"
 webpki-roots = "1"
 dashmap = "6"
 libc = "0.2"
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
 nvml-wrapper = { version = "0.10", optional = true }
 bollard = "0.18"
 regex = "1"
