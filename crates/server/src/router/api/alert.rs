@@ -251,12 +251,10 @@ pub async fn get_alert_event_detail(
         .map(|s| s.name)
         .unwrap_or_else(|| "Unknown".to_string());
 
-    let status = if alert_state.resolved {
-        "resolved"
-    } else {
-        "firing"
-    };
-    let message = if alert_state.resolved {
+    let status = crate::service::alert::alert_status(&alert_state);
+    let message = if status == "superseded" {
+        "Reminder target superseded by the current renewal deadline".to_string()
+    } else if alert_state.resolved {
         format!("Alert resolved after {} trigger(s)", alert_state.count)
     } else {
         format!("Alert firing — triggered {} time(s)", alert_state.count)

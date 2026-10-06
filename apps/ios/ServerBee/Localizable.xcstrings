@@ -1,6 +1,166 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Superseded": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已被替代"
+          }
+        }
+      }
+    },
+    "A newer renewal deadline superseded this reminder.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新的续费截止日期已替代此提醒。"
+          }
+        }
+      }
+    },
+    "Renewal": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "续费"
+          }
+        }
+      }
+    },
+    "Automatic renewal": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动续费"
+          }
+        }
+      }
+    },
+    "Automatic renewal requires an expiry date.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动续费需要到期日期。"
+          }
+        }
+      }
+    },
+    "Automatic renewal requires a monthly, quarterly, or yearly cycle.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动续费需要按月、季度或年计费。"
+          }
+        }
+      }
+    },
+    "Advance the forecast after each renewal date. Turning this off freezes the current deadline.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个续费日期结束后推进预测日期。关闭此项将冻结当前期限。"
+          }
+        }
+      }
+    },
+    "Automatic renewal advances a forecast after the expiry day ends. Provider renewal and payment remain your responsibility.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动续费在到期日结束后推进预测日期。服务商的续费和付款仍需您自行处理。"
+          }
+        }
+      }
+    },
+    "Saved renewal deadline": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存的续费期限"
+          }
+        }
+      }
+    },
+    "Last confirmed expiry": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次确认的到期日期"
+          }
+        }
+      }
+    },
+    "Confirmed renewal deadline": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已确认的续费期限"
+          }
+        }
+      }
+    },
+    "Projected renewal deadline": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预测的续费期限"
+          }
+        }
+      }
+    },
+    "Frozen renewal deadline": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已冻结的续费期限"
+          }
+        }
+      }
+    },
+    "This deadline was recorded by an operator from provider information.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此期限由管理员根据服务商信息记录。"
+          }
+        }
+      }
+    },
+    "This deadline is a forecast. It does not confirm provider renewal or payment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此期限为预测日期，并不确认服务商已续费或收款。"
+          }
+        }
+      }
+    },
+    "Automatic renewal is off. This forecast is frozen; it does not confirm provider renewal or payment.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动续费已关闭。此预测日期已冻结，并不确认服务商已续费或收款。"
+          }
+        }
+      }
+    },
     "Selected session": {
       "localizations": {
         "zh-Hans": {
@@ -14530,6 +14690,23 @@
         }
       }
     },
+    "Search billing timezones": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search billing timezones"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索账单时区"
+          }
+        }
+      }
+    },
     "Search name, IP, tag": {
       "extractionState": "manual",
       "localizations": {
@@ -18718,6 +18895,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "会话详情"
+          }
+        }
+      }
+    },
+    "Billing timezone": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "账单时区"
+          }
+        }
+      }
+    },
+    "Choose a valid billing timezone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择有效的账单时区。"
+          }
+        }
+      }
+    },
+    "Valid through the selected date in the billing timezone.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在账单时区内，有效期持续至所选日期结束。"
+          }
+        }
+      }
+    },
+    "The renewal deadline is separate from the cost estimation period.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The renewal deadline is separate from the cost estimation period."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "续费到期日独立于费用估算周期。"
           }
         }
       }

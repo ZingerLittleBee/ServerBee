@@ -290,6 +290,9 @@ impl Modify for SecurityAddon {
             crate::service::upgrade_release::LatestAgentVersionResponse,
             crate::router::api::agent::RegisterRequest,
             crate::router::api::agent::RegisterResponse,
+            crate::service::renewal::DeadlineOrigin,
+            crate::service::renewal::RenewalProjection,
+            crate::service::renewal::RenewalInput,
             // servers
             crate::router::api::server::ServerResponse,
             crate::router::api::server::TemporaryGrantDto,

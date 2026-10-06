@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Renewal reminders follow each current occurrence** -- Expiration rules in once mode admit one durable reminder per rule, server and renewal occurrence, including consecutive monthly deadlines inside the same reminder window. Automatic calendar advancement silently supersedes old targets, and authenticated Web and native iOS views refresh deadlines, alert history and cost advisories
+
+- **Opt-in automatic renewal tracking** -- Web and native iOS administrators can enable anchored monthly, quarterly or yearly expiry forecasts. The Server catches up after downtime while the Agent is offline, preserves confirmed expiry history and freezes the same projected deadline when tracking is disabled. Forecasts do not confirm provider renewal or payment
+
+- **Billing-calendar renewal dates** -- Web and native iOS administrators can edit a local expiry date in its stored IANA billing timezone. The Server preserves historical expiry instants on unchanged saves and applies the complete local expiry day to explicit date changes
+
 ### Fixed
 
 - **IP Quality capability guidance matches Agent-owned permissions** -- A compact disabled notice opens a dialog explaining permanent configuration and temporary host-local grants instead of pointing to a nonexistent server-side toggle. Each command has a copy button with clipboard feedback. Manual checks use the Agent-reported capability, and an unavailable report is shown separately from a disabled capability

@@ -26,7 +26,12 @@ pub fn read_router() -> Router<Arc<AppState>> {
 pub async fn get_cost_overview(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<CostOverviewResponse>>, AppError> {
-    ok(CostService::overview(&state.db, &state.agent_manager).await?)
+    ok(CostService::overview_with_expiry_time(
+        &state.db,
+        &state.agent_manager,
+        state.renewal_clock.now(),
+    )
+    .await?)
 }
 
 #[utoipa::path(
@@ -46,5 +51,11 @@ pub async fn get_server_cost_insights(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<ServerCostInsights>>, AppError> {
-    ok(CostService::server_insights(&state.db, &state.agent_manager, &id).await?)
+    ok(CostService::server_insights_with_expiry_time(
+        &state.db,
+        &state.agent_manager,
+        &id,
+        state.renewal_clock.now(),
+    )
+    .await?)
 }

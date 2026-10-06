@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TFunction } from 'i18next'
-import { CalendarIcon, Check, ChevronsUpDown } from 'lucide-react'
-import { type FormEvent, useMemo, useReducer, useState } from 'react'
+import { Check, ChevronsUpDown } from 'lucide-react'
+import { type FormEvent, useId, useMemo, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { RenewalDeadlineInfo } from '@/components/server/renewal-deadline-info'
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Command,
@@ -20,22 +20,17 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { useServerTags, useUpdateServerTags } from '@/hooks/use-server-tags'
 import { api } from '@/lib/api-client'
 import type { ServerGroup, ServerResponse, UpdateServerInput } from '@/lib/api-schema'
 import { buildCountryOptions, type CountryOption } from '@/lib/country-codes'
 import { projectServerCatalog } from '@/lib/server-catalog'
+import { invalidateServerCosts } from '@/lib/server-cost-cache'
 import { cn, countryCodeToFlag } from '@/lib/utils'
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
-
-function formatIsoDate(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
 
 function parseTagsInput(raw: string): { tags: string[]; error: string | null } {
   const parts = raw.split(TAG_SPLIT_RE).flatMap((t) => {
@@ -85,8 +80,10 @@ export function ServerEditDialog({ server, open, onClose }: ServerEditDialogProp
 }
 
 interface ServerEditState {
+  automaticRenewal: boolean
   billingCycle: string
   billingStartDay: string
+  billingTimezone: string
   countryCode: string
   currency: string
   expiredAt: string
@@ -109,11 +106,13 @@ interface ServerEditAction {
 
 function serverEditStateFromServer(server: ServerResponse): ServerEditState {
   return {
+    automaticRenewal: server.renewal?.enabled ?? false,
     billingCycle: server.billing_cycle ?? '',
     billingStartDay: server.billing_start_day?.toString() ?? '',
+    billingTimezone: server.renewal?.billing_timezone ?? 'UTC',
     countryCode: server.geo_manual ? (server.country_code ?? '') : '',
     currency: server.currency ?? 'USD',
-    expiredAt: server.expired_at?.slice(0, 10) ?? '',
+    expiredAt: server.renewal ? (server.renewal.expiry_date ?? '') : (server.expired_at?.slice(0, 10) ?? ''),
     groupId: server.group_id ?? '',
     hidden: server.hidden,
     name: server.name,
@@ -254,13 +253,22 @@ function ServerEditBasicFields({
 
 function ServerEditBillingFields({
   dispatch,
+  server,
   state,
   t
 }: {
   dispatch: (action: ServerEditAction) => void
+  server: ServerResponse
   state: ServerEditState
   t: TFunction
 }) {
+  const timezoneListId = useId()
+  const prerequisitesId = useId()
+  const hasPrerequisites = hasAutomaticRenewalPrerequisites(state)
+  const timezones = useMemo(
+    () => ['UTC', ...(typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [])],
+    []
+  )
   return (
     <fieldset className="space-y-3">
       <legend className="mb-1 font-medium text-muted-foreground text-xs uppercase tracking-wider">
@@ -326,12 +334,55 @@ function ServerEditBillingFields({
         </Field>
       </div>
       <Field label={t('edit_expiration')}>
-        <DatePickerField
+        <ExpiryDateField
           ariaLabel={t('edit_expiration')}
           onChange={(expiredAt) => dispatch({ type: 'patch', value: { expiredAt } })}
           value={state.expiredAt}
         />
       </Field>
+      <Field label={t('edit_billing_timezone')}>
+        <Input
+          aria-label={t('edit_billing_timezone')}
+          autoComplete="off"
+          list={timezoneListId}
+          name="billing_timezone"
+          onChange={(e) => dispatch({ type: 'patch', value: { billingTimezone: e.target.value } })}
+          placeholder="America/New_York"
+          type="text"
+          value={state.billingTimezone}
+        />
+        <datalist id={timezoneListId}>
+          {timezones.map((timezone) => (
+            <option key={timezone} value={timezone} />
+          ))}
+        </datalist>
+        <p className="mt-1 text-[11px] text-muted-foreground">{t('edit_billing_timezone_hint')}</p>
+      </Field>
+      {server.renewal && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <span className="font-medium text-sm">{t('edit_automatic_renewal')}</span>
+            <Switch
+              aria-describedby={prerequisitesId}
+              aria-invalid={state.automaticRenewal && !hasPrerequisites}
+              aria-label={t('edit_automatic_renewal')}
+              checked={state.automaticRenewal}
+              disabled={!(state.automaticRenewal || hasPrerequisites)}
+              onCheckedChange={(automaticRenewal) => dispatch({ type: 'patch', value: { automaticRenewal } })}
+            />
+          </div>
+          <p
+            className="text-muted-foreground text-xs"
+            id={prerequisitesId}
+            role={state.automaticRenewal && !hasPrerequisites ? 'alert' : undefined}
+          >
+            {t('edit_renewal_prerequisites')}
+          </p>
+          <p className="text-muted-foreground text-xs">{t('renewal_forecast_explanation')}</p>
+          <RenewalDeadlineInfo renewal={server.renewal} />
+          <p className="text-muted-foreground text-xs">{t('renewal_cost_independent')}</p>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label={t('edit_traffic_limit')}>
           <Input
@@ -393,7 +444,16 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
   // override; otherwise we leave it blank and surface the auto-detected value as
   // a hint, so saving an untouched form never accidentally pins GeoIP.
   const initialCountryCode = server.geo_manual ? (server.country_code ?? '') : ''
+  // The draft belongs to the snapshot opened in this dialog. Catalog refreshes
+  // may advance the deadline while it stays open; they must not turn untouched
+  // draft fields into explicit renewal edits.
+  const [initialRenewal] = useState(() => ({
+    expiryDate: serverEditStateFromServer(server).expiredAt,
+    billingTimezone: server.renewal?.billing_timezone ?? 'UTC',
+    enabled: server.renewal?.enabled ?? false
+  }))
   const [state, dispatch] = useReducer(serverEditReducer, server, serverEditStateFromServer)
+  const invalidAutomaticRenewal = state.automaticRenewal && !hasAutomaticRenewalPrerequisites(state)
 
   const { data: groups } = useQuery<ServerGroup[]>({
     queryKey: ['server-groups'],
@@ -410,10 +470,18 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
     mutationFn: (payload: UpdateServerInput) => api.put<ServerResponse>(`/api/servers/${server.id}`, payload),
     onSuccess: (data) => {
       projectServerCatalog(queryClient, { kind: 'server_saved', server: data })
+      invalidateServerCosts(queryClient, [data.id])
     }
   })
 
   const buildPayload = (): UpdateServerInput => {
+    const renewal = {
+      ...(state.automaticRenewal !== initialRenewal.enabled && { enabled: state.automaticRenewal }),
+      ...(state.expiredAt !== initialRenewal.expiryDate && { expiry_date: state.expiredAt || null }),
+      ...(state.billingTimezone !== initialRenewal.billingTimezone && {
+        billing_timezone: state.billingTimezone || null
+      })
+    }
     const payload: UpdateServerInput = {
       name: state.name,
       weight: state.weight,
@@ -424,10 +492,10 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
       price: state.price ? Number.parseFloat(state.price) : null,
       billing_cycle: state.billingCycle || null,
       currency: state.currency || null,
-      expired_at: state.expiredAt ? `${state.expiredAt}T00:00:00Z` : null,
       traffic_limit: state.trafficLimit ? Math.round(Number.parseFloat(state.trafficLimit) * 1024 ** 3) : null,
       traffic_limit_type: state.trafficLimitType || null,
       billing_start_day: state.billingStartDay ? Number.parseInt(state.billingStartDay, 10) : null,
+      ...(Object.keys(renewal).length > 0 && { renewal }),
       ...countryCodePatch(state.countryCode, initialCountryCode)
     }
     return payload
@@ -448,6 +516,9 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    if (invalidAutomaticRenewal) {
+      return
+    }
     const parsed = parseTagsInput(tagsInput)
     if (parsed.error) {
       toast.error(t(parsed.error))
@@ -482,7 +553,7 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
             t={t}
             tagsInput={tagsInput}
           />
-          <ServerEditBillingFields dispatch={dispatch} state={state} t={t} />
+          <ServerEditBillingFields dispatch={dispatch} server={server} state={state} t={t} />
 
           {mutation.error && (
             <div className="rounded-md bg-destructive/10 px-3 py-2 text-destructive text-sm">
@@ -495,13 +566,29 @@ function ServerEditDialogContent({ server, onClose }: { onClose: () => void; ser
           <Button onClick={onClose} type="button" variant="outline">
             {t('common:cancel')}
           </Button>
-          <Button disabled={mutation.isPending || tagsMutation.isPending} type="submit">
+          <Button disabled={mutation.isPending || tagsMutation.isPending || invalidAutomaticRenewal} type="submit">
             {mutation.isPending || tagsMutation.isPending ? t('common:saving') : t('common:save')}
           </Button>
         </DialogFooter>
       </form>
     </DialogContent>
   )
+}
+
+function hasAutomaticRenewalPrerequisites(state: ServerEditState): boolean {
+  if (!(state.expiredAt && ['monthly', 'quarterly', 'yearly'].includes(state.billingCycle) && state.billingTimezone)) {
+    return false
+  }
+  try {
+    // Numeric UTC offsets are not IANA timezone identifiers.
+    if (state.billingTimezone.startsWith('+') || state.billingTimezone.startsWith('-')) {
+      return false
+    }
+    new Intl.DateTimeFormat('en', { timeZone: state.billingTimezone }).format()
+    return true
+  } catch {
+    return false
+  }
 }
 
 function Field({ label, children }: { children: React.ReactNode; label: string }) {
@@ -635,42 +722,28 @@ function CountryOverrideField({
   )
 }
 
-interface DatePickerFieldProps {
+interface ExpiryDateFieldProps {
   ariaLabel: string
   onChange: (value: string) => void
   value: string
 }
 
-function DatePickerField({ ariaLabel, onChange, value }: DatePickerFieldProps) {
+function ExpiryDateField({ ariaLabel, onChange, value }: ExpiryDateFieldProps) {
   const { t } = useTranslation('servers')
-  const selected = value ? new Date(`${value}T00:00:00`) : undefined
   return (
     <div>
-      <Popover>
-        <PopoverTrigger
-          render={
-            <Button
-              aria-label={ariaLabel}
-              className="w-full justify-start font-normal"
-              type="button"
-              variant="outline"
-            />
-          }
-        >
-          <CalendarIcon className="size-4 text-muted-foreground" />
-          <span className={value ? '' : 'text-muted-foreground'}>
-            {value || t('edit_expiration_placeholder', { defaultValue: 'YYYY-MM-DD' })}
-          </span>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-0">
-          <Calendar
-            captionLayout="dropdown"
-            mode="single"
-            onSelect={(date) => onChange(date ? formatIsoDate(date) : '')}
-            selected={selected}
-          />
-        </PopoverContent>
-      </Popover>
+      <Input
+        aria-label={ariaLabel}
+        name="expiry_date"
+        onChange={(e) => onChange(e.target.value)}
+        type="date"
+        value={value}
+      />
+      {value && (
+        <Button className="mt-1" onClick={() => onChange('')} size="sm" type="button" variant="ghost">
+          {t('edit_expiration_clear')}
+        </Button>
+      )}
     </div>
   )
 }

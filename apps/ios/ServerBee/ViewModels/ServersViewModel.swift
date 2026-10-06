@@ -27,6 +27,28 @@ final class ServersViewModel {
     var isLoading = false
     var isRefreshing = false
     var errorMessage: String?
+    /// Drives authenticated detail and cost readers independently of live updates.
+    private(set) var catalogRevision = 0
+    private var fullCatalogRevision = 0
+    private var serverCatalogRevisions: [String: Int] = [:]
+    private var fetchGeneration = 0
+
+    func catalogRevision(for serverId: String) -> Int {
+        max(fullCatalogRevision, serverCatalogRevisions[serverId] ?? 0)
+    }
+
+    /// Used for both server invalidations and successful local edits. A reconnect
+    /// passes nil because changes may have happened while the socket was closed.
+    func refreshCatalog(serverIds: [String]? = nil, apiClient: APIClient) async {
+        catalogRevision += 1
+        if let serverIds {
+            for id in serverIds { serverCatalogRevisions[id] = catalogRevision }
+        } else {
+            fullCatalogRevision = catalogRevision
+            serverCatalogRevisions = [:]
+        }
+        await fetchServers(apiClient: apiClient)
+    }
 
     var filteredServers: [ServerStatus] {
         var result = servers
@@ -102,16 +124,20 @@ final class ServersViewModel {
     }
 
     func fetchServers(apiClient: APIClient) async {
+        fetchGeneration += 1
+        let generation = fetchGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer { if generation == fetchGeneration { isLoading = false } }
         do {
             async let serversReq: [ServerStatus] = apiClient.get("/api/servers")
             async let groupsReq: [ServerGroup] = apiClient.get("/api/server-groups")
             let (config, groups) = try await (serversReq, groupsReq)
+            guard generation == fetchGeneration, !Task.isCancelled else { return }
             groupsByID = Dictionary(groups.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
             applyConfig(config)
             errorMessage = nil
         } catch {
+            guard generation == fetchGeneration, !Task.isCancelled else { return }
             AppLog.viewModel.error("Servers fetch failed: \(String(describing: error), privacy: .public)")
             errorMessage = String(
                 format: String(localized: "Failed to load servers: %@"),
@@ -134,9 +160,14 @@ final class ServersViewModel {
         var byID = Dictionary(servers.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         var order = servers.map(\.id)
         for cfg in config {
-            if var existing = byID[cfg.id] {
-                existing.merge(from: cfg)
-                byID[cfg.id] = existing
+            if let existing = byID[cfg.id] {
+                var refreshed = cfg
+                refreshed.mergeLiveMetrics(from: existing)
+                // These catalog fields are supplied by full sync/legacy payloads,
+                // and are absent from the authenticated ServerResponse DTO.
+                if cfg.tags == nil { refreshed.tags = existing.tags }
+                if cfg.groupName == nil { refreshed.groupName = existing.groupName }
+                byID[cfg.id] = refreshed
             } else {
                 byID[cfg.id] = cfg
                 order.append(cfg.id)

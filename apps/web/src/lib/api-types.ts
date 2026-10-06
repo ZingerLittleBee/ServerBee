@@ -2442,6 +2442,7 @@ export interface components {
             resolved_at?: string | null;
             server_id: string;
             server_name: string;
+            status?: string;
         };
         ApiKeyResponse: {
             created_at: string;
@@ -2769,6 +2770,7 @@ export interface components {
             price?: number | null;
             public_remark?: string | null;
             remark?: string | null;
+            renewal?: null | components["schemas"]["RenewalInput"];
             tags?: string[];
             /** Format: int64 */
             traffic_limit?: number | null;
@@ -2851,6 +2853,8 @@ export interface components {
         DashboardWithWidgets: components["schemas"]["Model"] & {
             widgets: components["schemas"]["Model"][];
         };
+        /** @enum {string} */
+        DeadlineOrigin: "confirmed" | "projected" | "frozen";
         DeleteRequest: {
             path: string;
             recursive?: boolean;
@@ -3563,6 +3567,20 @@ export interface components {
         RegisterResponse: {
             server_id: string;
         };
+        RenewalInput: {
+            billing_timezone?: string | null;
+            enabled?: boolean | null;
+            expiry_date?: string | null;
+        };
+        RenewalProjection: {
+            billing_timezone: string;
+            /** Format: date-time */
+            confirmed_expired_at?: string | null;
+            deadline_origin: components["schemas"]["DeadlineOrigin"];
+            enabled: boolean;
+            expiry_date?: string | null;
+            occurrence_id?: string | null;
+        };
         ResourceValue: {
             /** Format: double */
             cost_per_cpu_core?: number | null;
@@ -3845,6 +3863,7 @@ export interface components {
             public_remark?: string | null;
             region?: string | null;
             remark?: string | null;
+            renewal?: components["schemas"]["RenewalProjection"];
             /** Format: int64 */
             swap_total?: number | null;
             /**
@@ -4316,6 +4335,7 @@ export interface components {
             price?: number | null;
             public_remark?: string | null;
             remark?: string | null;
+            renewal?: null | components["schemas"]["RenewalInput"];
             /** Format: int64 */
             traffic_limit?: number | null;
             traffic_limit_type?: string | null;

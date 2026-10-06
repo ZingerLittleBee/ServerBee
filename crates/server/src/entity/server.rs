@@ -38,6 +38,8 @@ pub struct Model {
     pub billing_cycle: Option<String>,
     pub currency: Option<String>,
     pub expired_at: Option<DateTimeUtc>,
+    /// Internal renewal state; public projections never serialize this column.
+    pub renewal_state: Option<String>,
     pub traffic_limit: Option<i64>,
     pub traffic_limit_type: Option<String>,
     pub billing_start_day: Option<i32>,

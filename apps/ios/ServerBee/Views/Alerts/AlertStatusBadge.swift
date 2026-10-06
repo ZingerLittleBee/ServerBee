@@ -1,18 +1,19 @@
 import SwiftUI
 
-/// Tinted "Firing" / "Resolved" capsule. Firing uses the alert colour; green is
-/// reserved for the resolved (healthy) state.
+/// Superseded renewal targets use a neutral color because advancement is no recovery.
 struct AlertStatusBadge: View {
     let status: AlertStatus
 
     private var label: String {
-        status == .firing
-            ? String(localized: "Firing")
-            : String(localized: "Resolved")
+        status.label
     }
 
     private var color: Color {
-        status == .firing ? .alertFiring : .serverOnline
+        switch status {
+        case .firing: .alertFiring
+        case .resolved: .serverOnline
+        case .superseded: .secondary
+        }
     }
 
     var body: some View {

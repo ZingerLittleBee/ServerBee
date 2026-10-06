@@ -3,11 +3,20 @@ import Foundation
 enum AlertStatus: String, Codable, Sendable {
     case firing
     case resolved
+    case superseded
+
+    var label: String {
+        switch self {
+        case .firing: String(localized: "Firing")
+        case .resolved: String(localized: "Resolved")
+        case .superseded: String(localized: "Superseded")
+        }
+    }
 }
 
 /// One row of the alert-events list (`GET /api/alert-events`). Mirrors the
 /// server's `AlertEventResponse`. The list carries a complete alert key,
-/// rule/server labels, a firing/resolved status, the relevant timestamp
+/// rule/server labels, its current status, the relevant timestamp
 /// (`event_at`) and the trigger `count`. The richer fields (message, first/last
 /// timestamps, rule mode) live on the per-event detail DTO (`MobileAlertDetail`).
 struct MobileAlertEvent: Codable, Identifiable, Sendable {
@@ -16,7 +25,7 @@ struct MobileAlertEvent: Codable, Identifiable, Sendable {
     let serverId: String
     let serverName: String
     let status: AlertStatus
-    /// `first_triggered_at` for firing, `resolved_at` for resolved.
+    /// `first_triggered_at` for firing/superseded, `resolved_at` for resolved.
     let eventAt: String
     let resolvedAt: String?
     let count: Int

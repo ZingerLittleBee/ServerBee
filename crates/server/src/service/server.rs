@@ -9,7 +9,9 @@ use serverbee_common::types::SystemInfo;
 
 /// Deserialize a field that distinguishes between absent (None), explicit null (Some(None)),
 /// and a present value (Some(Some(v))).
-fn deserialize_optional_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+pub(super) fn deserialize_optional_nullable<'de, D, T>(
+    deserializer: D,
+) -> Result<Option<Option<T>>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
@@ -21,6 +23,7 @@ where
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateServerInput {
+    pub renewal: Option<super::renewal::RenewalInput>,
     pub name: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_nullable")]
     pub group_id: Option<Option<String>>,
@@ -78,10 +81,62 @@ impl ServerService {
         id: &str,
         input: UpdateServerInput,
     ) -> Result<server::Model, AppError> {
-        let model = Self::get_server(db, id).await?;
-        Self::validate_update_input(&input)?;
+        Self::update_server_at(db, id, input, Utc::now()).await
+    }
 
+    pub async fn update_server_at(
+        db: &DatabaseConnection,
+        id: &str,
+        input: UpdateServerInput,
+        now: chrono::DateTime<Utc>,
+    ) -> Result<server::Model, AppError> {
+        Self::update_server_inner(db, id, input, now, None).await
+    }
+
+    pub async fn update_server_at_with_alerts(
+        db: &DatabaseConnection,
+        id: &str,
+        input: UpdateServerInput,
+        now: chrono::DateTime<Utc>,
+        manager: &super::alert::AlertStateManager,
+    ) -> Result<server::Model, AppError> {
+        Self::update_server_inner(db, id, input, now, Some(manager)).await
+    }
+
+    async fn update_server_inner(
+        db: &DatabaseConnection,
+        id: &str,
+        input: UpdateServerInput,
+        now: chrono::DateTime<Utc>,
+        manager: Option<&super::alert::AlertStateManager>,
+    ) -> Result<server::Model, AppError> {
+        let _admission = match manager {
+            Some(manager) => Some(manager.admission_lock.lock().await),
+            None => None,
+        };
+        Self::validate_update_input(&input)?;
+        let tx = db.begin().await?;
+        let model = super::renewal::load_for_update(&tx, id).await?;
+
+        let (renewal, deadline) = super::renewal::apply_edit(
+            &model,
+            input.renewal.as_ref(),
+            input.expired_at,
+            input
+                .billing_cycle
+                .as_ref()
+                .map(|c| c.as_deref())
+                .unwrap_or(model.billing_cycle.as_deref()),
+            now,
+        )?;
+        let adopted =
+            super::renewal_reminders::adopt_legacy_occurrence(&tx, &model, &renewal, deadline)
+                .await?;
         let mut active: server::ActiveModel = model.into();
+        active.renewal_state = Set(Some(
+            serde_json::to_string(&renewal).map_err(|e| AppError::Validation(e.to_string()))?,
+        ));
+        active.expired_at = Set(deadline);
 
         if let Some(name) = input.name {
             active.name = Set(name);
@@ -125,9 +180,6 @@ impl ServerService {
         if let Some(currency) = input.currency {
             active.currency = Set(currency);
         }
-        if let Some(expired_at) = input.expired_at {
-            active.expired_at = Set(expired_at);
-        }
         if let Some(traffic_limit) = input.traffic_limit {
             active.traffic_limit = Set(traffic_limit);
         }
@@ -141,8 +193,14 @@ impl ServerService {
         // owned by the agent host (its config file) and the server only
         // mirrors what the agent reports — see `update_capabilities_mirror`.
 
-        active.updated_at = Set(Utc::now());
-        let updated = active.update(db).await?;
+        active.updated_at = Set(now);
+        let updated = active.update(&tx).await?;
+        tx.commit().await?;
+        if let Some(manager) = manager {
+            for row in &adopted {
+                manager.publish_adopted_renewal(row);
+            }
+        }
         Ok(updated)
     }
 
@@ -390,6 +448,7 @@ mod tests {
             billing_cycle: None,
             currency: None,
             expired_at: None,
+            renewal: None,
             traffic_limit: None,
             traffic_limit_type: None,
             billing_start_day: None,
@@ -758,7 +817,10 @@ mod tests {
         .expect("clear should update");
         assert_eq!(cleared.country_code, None);
         assert_eq!(cleared.region, None);
-        assert!(!cleared.geo_manual, "manual override flag should be cleared");
+        assert!(
+            !cleared.geo_manual,
+            "manual override flag should be cleared"
+        );
     }
 
     #[tokio::test]

@@ -56,6 +56,8 @@ mod m20261003_000083_task_runs;
 mod m20261003_000084_alert_event_intents;
 mod m20261003_000085_security_event_admission;
 
+mod m20261005_000086_renewal_dates;
+
 pub struct Migrator;
 
 impl MigratorTrait for Migrator {
@@ -115,6 +117,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261003_000083_task_runs::Migration),
             Box::new(m20261003_000084_alert_event_intents::Migration),
             Box::new(m20261003_000085_security_event_admission::Migration),
+            Box::new(m20261005_000086_renewal_dates::Migration),
         ]
     }
 }

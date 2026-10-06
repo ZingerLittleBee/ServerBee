@@ -236,6 +236,10 @@ jobs:
               --test router_monitoring
               --test router_probes_extra
               --test router_security_rate
+              --test renewal_dates
+              --test renewal_edits
+              --test renewal_projection
+              --test renewal_reminders
               --test router_server_crud
               --test router_server_extra
               --test router_server_extra2

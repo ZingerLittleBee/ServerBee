@@ -125,6 +125,8 @@ pub struct ServerResponse {
     billing_cycle: Option<String>,
     currency: Option<String>,
     expired_at: Option<DateTime<Utc>>,
+    #[schema(required = false)]
+    renewal: crate::service::renewal::RenewalProjection,
     traffic_limit: Option<i64>,
     traffic_limit_type: Option<String>,
     billing_start_day: Option<i32>,
@@ -154,6 +156,7 @@ pub struct ServerResponse {
 
 #[derive(Debug, Clone, Deserialize, utoipa::ToSchema)]
 pub struct CreateServerRequest {
+    pub renewal: Option<crate::service::renewal::RenewalInput>,
     pub onboarding_request_id: String,
     pub name: String,
     #[serde(default)]
@@ -301,7 +304,9 @@ fn build_server_response(
     let has_token = agent_authority.status == AgentAuthorityStatus::Claimed;
     let outstanding_enrollment = agent_authority.outstanding_offer.clone();
 
+    let renewal = crate::service::renewal::RenewalState::from_server(&s).projection(s.expired_at);
     ServerResponse {
+        renewal,
         id: s.id,
         name: s.name,
         cpu_name: s.cpu_name,
@@ -522,6 +527,7 @@ async fn create_server(
                 billing_cycle: body.billing_cycle,
                 billing_start_day: body.billing_start_day,
                 expired_at: body.expired_at,
+                renewal: body.renewal,
                 traffic_limit: body.traffic_limit,
                 traffic_limit_type: body.traffic_limit_type,
             },
@@ -1046,7 +1052,19 @@ async fn update_server(
     // Capabilities are agent-owned and not writable here (the `capabilities`
     // field was removed from `UpdateServerInput`), so updating a server can no
     // longer change what the agent is allowed to do.
-    let server = ServerService::update_server(&state.db, &id, input).await?;
+    let server = ServerService::update_server_at_with_alerts(
+        &state.db,
+        &id,
+        input,
+        state.renewal_clock.now(),
+        &state.alert_state_manager,
+    )
+    .await?;
+    let _ = state.browser_tx.send(
+        serverbee_common::protocol::BrowserMessage::ServerCatalogChanged {
+            server_ids: vec![id.clone()],
+        },
+    );
 
     let authority = state
         .agent_authority
@@ -1564,6 +1582,7 @@ mod cleanup_tests {
             billing_cycle: None,
             currency: None,
             expired_at: None,
+            renewal_state: None,
             traffic_limit: None,
             traffic_limit_type: None,
             billing_start_day: None,
@@ -1692,6 +1711,7 @@ mod delete_audit_tests {
             billing_cycle: None,
             currency: None,
             expired_at: None,
+            renewal_state: None,
             traffic_limit: None,
             traffic_limit_type: None,
             billing_start_day: None,
@@ -1709,7 +1729,9 @@ mod delete_audit_tests {
     async fn delete_server_writes_audit_log() {
         let (db, _tmp) = setup_test_db().await;
         insert_server(&db, "srv-del", "Doomed").await;
-        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
 
         let res = delete_server(
             State(state.clone()),
@@ -1725,8 +1747,7 @@ mod delete_audit_tests {
         assert!(
             logs.iter().any(|l| l.action == "server_deleted"
                 && l.user_id == "admin-1"
-                && l
-                    .detail
+                && l.detail
                     .as_deref()
                     .is_some_and(|d| d.contains("srv-del") && d.contains("Doomed"))),
             "expected a server_deleted audit row, got: {logs:?}"
@@ -1738,7 +1759,9 @@ mod delete_audit_tests {
         let (db, _tmp) = setup_test_db().await;
         insert_server(&db, "srv-a", "A").await;
         insert_server(&db, "srv-b", "B").await;
-        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
 
         let res = batch_delete(
             State(state.clone()),

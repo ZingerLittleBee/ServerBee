@@ -1,11 +1,13 @@
 import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api-client'
 import type { AgentAuthorityStateSummary, OutstandingEnrollmentSummary, ServerResponse } from '@/lib/api-schema'
+import { invalidateServerCosts } from '@/lib/server-cost-cache'
 
 const LIVE_SERVERS_KEY = ['server-catalog', 'live'] as const
 const SERVER_LIST_KEY = ['server-catalog', 'list'] as const
 const SERVER_DETAIL_PREFIX = ['server-catalog', 'detail'] as const
 const listRequestGenerations = new WeakMap<QueryClient, number>()
+const catalogRefreshGenerations = new WeakMap<QueryClient, number>()
 
 type TemporaryGrant = NonNullable<ServerResponse['temporary']>[number]
 
@@ -71,6 +73,7 @@ export type ServerCatalogEvent =
   | { kind: 'rest_snapshot'; servers: ServerResponse[] }
   | { kind: 'servers_removed'; serverIds: readonly string[] }
   | { kind: 'server_saved'; server: ServerResponse }
+  | { kind: 'catalog_changed'; serverIds: readonly string[] }
   | { authority: AgentAuthorityStateSummary; kind: 'agent_authority_changed'; serverId: string }
   | { kind: 'tags_changed'; serverId: string; tags: string[] }
   | { kind: 'ws_full_sync'; servers: ServerMetrics[] }
@@ -326,9 +329,22 @@ function ensureLiveProjectionLifetime(queryClient: QueryClient): void {
   })
 }
 
+function invalidateAlertOccurrences(queryClient: QueryClient): void {
+  queryClient.invalidateQueries({ queryKey: ['alert-events'] }).catch(() => undefined)
+  queryClient.invalidateQueries({ queryKey: ['alert-rule-states'] }).catch(() => undefined)
+}
+
 export function projectServerCatalog(queryClient: QueryClient, event: ServerCatalogEvent): void {
   ensureLiveProjectionLifetime(queryClient)
   switch (event.kind) {
+    case 'catalog_changed': {
+      // Billing metadata is REST-owned. Fetch even when only the live dashboard
+      // is mounted, so static catalog data does not depend on an active list query.
+      refreshServerCatalog(queryClient).catch(() => undefined)
+      invalidateServerCosts(queryClient, event.serverIds)
+      invalidateAlertOccurrences(queryClient)
+      return
+    }
     case 'rest_snapshot': {
       const serverIds = new Set(event.servers.map((server) => server.id))
       queryClient.setQueryData<ServerMetrics[]>(LIVE_SERVERS_KEY, (current) =>
@@ -401,9 +417,6 @@ export function projectServerCatalog(queryClient: QueryClient, event: ServerCata
     case 'ws_full_sync': {
       const serverIds = new Set(event.servers.map((server) => server.id))
       const fullSyncById = new Map(event.servers.map((server) => [server.id, server]))
-      const currentList = queryClient.getQueryData<ServerResponse[]>(SERVER_LIST_KEY)
-      const hasUnlistedServer =
-        currentList !== undefined && event.servers.some((server) => !currentList.some((row) => row.id === server.id))
       queryClient.setQueryData<ServerMetrics[]>(LIVE_SERVERS_KEY, (current) => mergeWsFullSync(current, event.servers))
       queryClient.setQueryData<ServerResponse[]>(SERVER_LIST_KEY, (current) =>
         current
@@ -417,9 +430,11 @@ export function projectServerCatalog(queryClient: QueryClient, event: ServerCata
       for (const server of event.servers) {
         updateExistingDetail(queryClient, server.id, (current) => projectFullSyncServerToRest(current, server))
       }
-      if (hasUnlistedServer) {
-        queryClient.invalidateQueries({ exact: true, queryKey: SERVER_LIST_KEY }).catch(() => undefined)
-      }
+      // Full sync omits private billing fields. Recover catalog changes missed
+      // while disconnected and the separately cached cost expiry advisories.
+      refreshServerCatalog(queryClient).catch(() => undefined)
+      invalidateServerCosts(queryClient)
+      invalidateAlertOccurrences(queryClient)
       return
     }
     case 'ws_update': {
@@ -546,16 +561,23 @@ export function useServerDetail(serverId: string, options: CatalogQueryOptions =
 
 export async function refreshServerCatalog(queryClient: QueryClient): Promise<void> {
   const generation = nextListRequestGeneration(queryClient)
-  await queryClient.cancelQueries({ exact: true, queryKey: SERVER_LIST_KEY })
+  catalogRefreshGenerations.set(queryClient, (catalogRefreshGenerations.get(queryClient) ?? 0) + 1)
+  await Promise.all([
+    queryClient.cancelQueries({ exact: true, queryKey: SERVER_LIST_KEY }),
+    queryClient.cancelQueries({ queryKey: SERVER_DETAIL_PREFIX })
+  ])
   if (!isCurrentListRequest(queryClient, generation)) {
     return
   }
   try {
-    await queryClient.fetchQuery({
-      queryFn: () => fetchAndProjectRestSnapshot(queryClient, generation),
-      queryKey: SERVER_LIST_KEY,
-      staleTime: 0
-    })
+    await Promise.all([
+      queryClient.fetchQuery({
+        queryFn: () => fetchAndProjectRestSnapshot(queryClient, generation),
+        queryKey: SERVER_LIST_KEY,
+        staleTime: 0
+      }),
+      queryClient.invalidateQueries({ queryKey: SERVER_DETAIL_PREFIX })
+    ])
   } catch (error) {
     if (isCurrentListRequest(queryClient, generation)) {
       throw error
@@ -585,8 +607,13 @@ async function fetchAndProjectRestSnapshot(
 }
 
 async function fetchAndProjectServerDetail(queryClient: QueryClient, serverId: string): Promise<ServerResponse> {
+  const generation = catalogRefreshGenerations.get(queryClient)
   const server = await api.get<ServerResponse>(`/api/servers/${serverId}`)
-  projectServerCatalog(queryClient, { kind: 'server_saved', server })
+  // Cancellation stops React Query from accepting an obsolete request, but the
+  // HTTP boundary may still finish. Its catalog projection must also be fenced.
+  if (catalogRefreshGenerations.get(queryClient) === generation) {
+    projectServerCatalog(queryClient, { kind: 'server_saved', server })
+  }
   return server
 }
 

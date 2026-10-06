@@ -2,12 +2,16 @@ name: CI iOS
 
 on:
   push:
-    branches: [main]
+    # Validate native changes on the renewal integration branch before its PR.
+    branches: [main, feat/renewal-tracking-integration]
     paths:
       - 'apps/ios/**'
       - 'tests/fixtures/push*-envelope-v1.json'
       - 'tests/check-push-secret-boundaries.py'
       - 'scripts/ios-install.sh'
+      - 'scripts/ios-renewal-ui-check.sh'
+      - 'tests/fixtures/ios-renewal-http.py'
+      - 'tests/check-ios-renewal-*.py'
       - 'crates/server/**'
       - 'apps/push-relay/**'
       - 'bun.lock'
@@ -20,6 +24,9 @@ on:
       - 'tests/fixtures/push*-envelope-v1.json'
       - 'tests/check-push-secret-boundaries.py'
       - 'scripts/ios-install.sh'
+      - 'scripts/ios-renewal-ui-check.sh'
+      - 'tests/fixtures/ios-renewal-http.py'
+      - 'tests/check-ios-renewal-*.py'
       - 'crates/server/**'
       - 'apps/push-relay/**'
       - 'bun.lock'
@@ -38,6 +45,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check official app identity and Keychain group configuration
         run: python3 tests/check-push-secret-boundaries.py --static-only
+      - name: Validate renewal fixture startup and native result gates
+        run: python3 tests/check-ios-renewal-harness.py
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -65,7 +74,6 @@ jobs:
           path: ${{ runner.temp }}/push-traces
           if-no-files-found: error
           retention-days: 1
-
   test:
     name: iOS Test
     needs: push-trace
@@ -99,3 +107,31 @@ jobs:
           action: test
           working-directory: apps/ios
           trust-plugins: true
+          verbosity: verbose
+
+      - name: Preserve native test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-native-tests-${{ github.sha }}
+          path: apps/ios/test.xcresult
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Validate native units and run renewal controls on installed Simulator
+        if: ${{ !cancelled() }}
+        timeout-minutes: 25
+        env:
+          SERVERBEE_RENEWAL_EVIDENCE_DIR: ${{ runner.temp }}/serverbee-renewal-ui
+          RENEWAL_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RENEWAL_PR_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: bash ../../scripts/ios-renewal-ui-check.sh
+
+      - name: Preserve renewal Simulator acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-renewal-ui-${{ github.sha }}
+          path: ${{ runner.temp }}/serverbee-renewal-ui
+          if-no-files-found: error
+          retention-days: 7

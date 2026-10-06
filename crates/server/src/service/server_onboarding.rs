@@ -42,6 +42,7 @@ impl OnboardingRequestId {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ServerProfile {
+    pub renewal: Option<super::renewal::RenewalInput>,
     pub name: String,
     pub group_id: Option<String>,
     pub tags: Vec<String>,
@@ -96,6 +97,7 @@ pub struct ServerOnboarding {
     db: DatabaseConnection,
     authority: Arc<AgentAuthority>,
     max_servers: u32,
+    renewal_clock: Arc<dyn super::renewal_clock::RenewalClock>,
     request_locks: Arc<DashMap<String, Arc<Mutex<()>>>>,
 }
 
@@ -116,8 +118,23 @@ impl Drop for RequestLockCleanup {
 
 impl ServerOnboarding {
     pub fn new(db: DatabaseConnection, authority: Arc<AgentAuthority>, max_servers: u32) -> Self {
+        Self::new_with_renewal_clock(
+            db,
+            authority,
+            max_servers,
+            Arc::new(super::renewal_clock::SystemRenewalClock),
+        )
+    }
+
+    pub fn new_with_renewal_clock(
+        db: DatabaseConnection,
+        authority: Arc<AgentAuthority>,
+        max_servers: u32,
+        renewal_clock: Arc<dyn super::renewal_clock::RenewalClock>,
+    ) -> Self {
         Self {
             db,
+            renewal_clock,
             authority,
             max_servers,
             request_locks: Arc::new(DashMap::new()),
@@ -125,6 +142,9 @@ impl ServerOnboarding {
     }
 
     pub async fn onboard(&self, input: OnboardServer) -> Result<OnboardingResult, OnboardingError> {
+        let typed_calendar = input.profile.renewal.as_ref().is_some_and(|renewal| {
+            renewal.expiry_date.is_some() || renewal.billing_timezone.is_some()
+        });
         let normalized = NormalizedProfile::from_input(input.profile)?;
         let input_hash = normalized.hash(input.offer_ttl)?;
         if input.actor_id.trim().is_empty() {
@@ -181,7 +201,21 @@ impl ServerOnboarding {
 
         let server_id = ServerId::parse(Uuid::new_v4().to_string())
             .map_err(|error| AppError::Internal(format!("generated invalid server id: {error}")))?;
-        let now = Utc::now();
+        let now = self.renewal_clock.now();
+        let mut deadline = normalized.expired_at;
+        let renewal_state = if let Some(serialized) = normalized.renewal_state.as_ref() {
+            let mut renewal: super::renewal::RenewalState =
+                serde_json::from_str(serialized).map_err(|e| AppError::Internal(e.to_string()))?;
+            // Allocate after the canonical request hash and replay lookup, so
+            // a typed manual date owns a local-day occurrence without changing retries.
+            if typed_calendar && deadline.is_some() && renewal.occurrence_id.is_none() {
+                renewal.occurrence_id = Some(Uuid::new_v4().to_string());
+            }
+            renewal.advance(&mut deadline, normalized.billing_cycle.as_deref(), now)?;
+            Some(serde_json::to_string(&renewal).map_err(|e| AppError::Internal(e.to_string()))?)
+        } else {
+            None
+        };
         let row = server::ActiveModel {
             id: Set(server_id.as_str().to_string()),
             token_hash: Set(None),
@@ -210,7 +244,8 @@ impl ServerOnboarding {
             price: Set(normalized.price),
             billing_cycle: Set(normalized.billing_cycle.clone()),
             currency: Set(normalized.currency.clone()),
-            expired_at: Set(normalized.expired_at),
+            renewal_state: Set(renewal_state),
+            expired_at: Set(deadline),
             traffic_limit: Set(normalized.traffic_limit),
             traffic_limit_type: Set(normalized.traffic_limit_type.clone()),
             billing_start_day: Set(normalized.billing_start_day),
@@ -279,6 +314,8 @@ impl ServerOnboarding {
 
 #[derive(Serialize)]
 struct NormalizedProfile {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    renewal_state: Option<String>,
     name: String,
     group_id: Option<String>,
     tags: Vec<String>,
@@ -334,7 +371,21 @@ impl NormalizedProfile {
             ));
         }
 
+        let (renewal, expired_at) = super::renewal::apply_initial(
+            profile.renewal.as_ref(),
+            profile.expired_at,
+            profile.billing_cycle.as_deref(),
+        )
+        .map_err(|e| OnboardingError::Validation(e.to_string()))?;
+        // Preserve the predecessor canonical hash for legacy onboarding retries.
+        let renewal_state = profile
+            .renewal
+            .as_ref()
+            .map(|_| serde_json::to_string(&renewal))
+            .transpose()
+            .map_err(|e| OnboardingError::Validation(e.to_string()))?;
         Ok(Self {
+            renewal_state,
             name,
             group_id: normalize_optional(profile.group_id),
             tags: server_tag_service::validate_tags(&profile.tags)
@@ -345,7 +396,7 @@ impl NormalizedProfile {
             currency: normalize_optional(profile.currency),
             billing_cycle: normalize_optional(profile.billing_cycle),
             billing_start_day: profile.billing_start_day,
-            expired_at: profile.expired_at,
+            expired_at,
             traffic_limit: profile.traffic_limit,
             traffic_limit_type: normalize_optional(profile.traffic_limit_type),
         })
@@ -433,6 +484,7 @@ mod tests {
                 billing_cycle: None,
                 billing_start_day: None,
                 expired_at: None,
+                renewal: None,
                 traffic_limit: None,
                 traffic_limit_type: None,
             },

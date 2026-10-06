@@ -387,6 +387,20 @@ private extension ServerOverviewSection {
             } else {
                 expiryText
             }
+            if let renewal = config?.renewal {
+                if let label = renewal.deadlineOriginLabel {
+                    Text(label).font(.footnote.weight(.semibold))
+                        .accessibilityIdentifier("renewal.detail.origin")
+                }
+                if let explanation = renewal.deadlineExplanation {
+                    Text(explanation).font(.caption).foregroundStyle(.secondary)
+                }
+                if let date = renewal.confirmedDisplayDate {
+                    LabeledContent(String(localized: "Last confirmed expiry"), value: date)
+                        .font(.footnote)
+                }
+                Text(verbatim: renewal.billingTimezone).font(.caption).foregroundStyle(.secondary)
+            }
             ForEach(billingRows) { row in
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(row.label)
@@ -411,12 +425,14 @@ private extension ServerOverviewSection {
 
     @ViewBuilder
     var expiryText: some View {
-        if let expiry = config?.expiredDate {
-            let date = expiry.formatted(date: .abbreviated, time: .omitted)
+        if let expiry = config?.expiredDate, let date = config?.expiryDisplayDate {
             let isPast = expiry < Date()
             Text(isPast ? String(localized: "Expired \(date)") : String(localized: "Expires \(date)"))
                 .font(.footnote.weight(isPast ? .semibold : .regular))
                 .foregroundStyle(isPast ? Color.serverOffline : .secondary)
+            Text(String(localized: "The renewal deadline is separate from the cost estimation period."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

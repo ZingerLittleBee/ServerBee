@@ -34,9 +34,7 @@ struct AlertEventCardView: View {
     }
 
     private var accessibilityLabelText: String {
-        let status = event.status == .firing
-            ? String(localized: "Firing")
-            : String(localized: "Resolved")
+        let status = event.status.label
         let relative = Formatters.formatRelativeTime(event.eventAt)
         var parts = [status, event.ruleName, event.serverName, relative]
         if event.count > 1 {

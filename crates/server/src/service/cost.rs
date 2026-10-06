@@ -166,8 +166,17 @@ impl CostService {
         db: &DatabaseConnection,
         agent_manager: &crate::service::agent_manager::AgentManager,
     ) -> Result<CostOverviewResponse, AppError> {
+        Self::overview_with_expiry_time(db, agent_manager, Utc::now()).await
+    }
+
+    /// Only expiry advisories use renewal time; independent cost periods retain their clock.
+    pub async fn overview_with_expiry_time(
+        db: &DatabaseConnection,
+        agent_manager: &crate::service::agent_manager::AgentManager,
+        expiry_now: DateTime<Utc>,
+    ) -> Result<CostOverviewResponse, AppError> {
         let servers = server::Entity::find().all(db).await?;
-        let computed = compute_costs(db, agent_manager, servers).await?;
+        let computed = compute_costs(db, agent_manager, servers, expiry_now).await?;
 
         Ok(CostOverviewResponse {
             currencies: currency_summaries(&computed),
@@ -180,12 +189,21 @@ impl CostService {
         agent_manager: &crate::service::agent_manager::AgentManager,
         server_id: &str,
     ) -> Result<ServerCostInsights, AppError> {
+        Self::server_insights_with_expiry_time(db, agent_manager, server_id, Utc::now()).await
+    }
+
+    pub async fn server_insights_with_expiry_time(
+        db: &DatabaseConnection,
+        agent_manager: &crate::service::agent_manager::AgentManager,
+        server_id: &str,
+        expiry_now: DateTime<Utc>,
+    ) -> Result<ServerCostInsights, AppError> {
         let servers = server::Entity::find().all(db).await?;
         if !servers.iter().any(|server| server.id == server_id) {
             return Err(AppError::NotFound("Server not found".to_string()));
         }
 
-        let computed = compute_costs(db, agent_manager, servers).await?;
+        let computed = compute_costs(db, agent_manager, servers, expiry_now).await?;
         computed
             .iter()
             .find(|entry| entry.server.id == server_id)
@@ -330,6 +348,7 @@ async fn compute_costs(
     db: &DatabaseConnection,
     agent_manager: &crate::service::agent_manager::AgentManager,
     servers: Vec<server::Model>,
+    expiry_now: DateTime<Utc>,
 ) -> Result<Vec<ComputedCost>, AppError> {
     let now = Utc::now();
     let today = now.date_naive();
@@ -397,7 +416,7 @@ async fn compute_costs(
         .collect::<Vec<_>>();
 
     for entry in &mut computed {
-        entry.advisories = compute_advisories(entry, now);
+        entry.advisories = compute_advisories(entry, expiry_now);
     }
 
     computed.sort_by(|left, right| {
@@ -835,6 +854,7 @@ mod tests {
             price: Set(price),
             billing_cycle: Set(billing_cycle.map(str::to_string)),
             currency: Set(currency.map(str::to_string)),
+            renewal_state: Set(None),
             expired_at: Set(expired_at),
             traffic_limit: Set(Some(1024_i64.pow(4))),
             traffic_limit_type: Set(Some("sum".to_string())),

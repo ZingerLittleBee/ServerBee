@@ -8,6 +8,20 @@ struct WebSocketRouter {
     let alerts: (BrowserMessage) -> Void
     var security: (SecurityEventBroadcast) -> Void = { _ in }
     var upgrades: (BrowserMessage) -> Void = { _ in }
+    var catalogRefresh: ([String]?) async -> Void = { _ in }
+
+    /// Reconnects may miss catalog events, so a full sync also reloads REST data.
+    func dispatchAndRefresh(_ message: BrowserMessage) async {
+        dispatch(message)
+        switch message {
+        case .fullSync:
+            await catalogRefresh(nil)
+        case .serverCatalogChanged(let serverIds):
+            await catalogRefresh(serverIds)
+        default:
+            break
+        }
+    }
 
     func dispatch(_ message: BrowserMessage) {
         switch message {
@@ -16,7 +30,7 @@ struct WebSocketRouter {
             servers(message)
             upgrades(message)
         case .update, .serverOnline, .serverOffline, .agentAuthorityChanged,
-             .capabilitiesChanged, .agentInfoUpdated:
+             .capabilitiesChanged, .agentInfoUpdated, .serverCatalogChanged:
             servers(message)
         case .alertEvent:
             alerts(message)

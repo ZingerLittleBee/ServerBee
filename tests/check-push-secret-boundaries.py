@@ -26,7 +26,7 @@ def check_entitlements():
     bundle_id = "app.serverbee"
     project = (IOS / "project.yml").read_text()
     assert re.findall(r"PRODUCT_BUNDLE_IDENTIFIER: (\S+)", project) == [
-        bundle_id, bundle_id + ".notifications", bundle_id + ".tests"
+        bundle_id, bundle_id + ".notifications", bundle_id + ".tests", bundle_id + ".uitests"
     ]
     worker = (ROOT / "apps/push-relay/wrangler.jsonc").read_text()
     assert re.search(r'"APNS_TOPIC":\s*"([^"\n]+)"', worker)[1] == bundle_id

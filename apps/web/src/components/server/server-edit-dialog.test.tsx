@@ -59,10 +59,6 @@ vi.mock('@/components/ui/button', () => ({
   )
 }))
 
-vi.mock('@/components/ui/calendar', () => ({
-  Calendar: () => <div data-testid="calendar" />
-}))
-
 vi.mock('@/components/ui/checkbox', () => ({
   Checkbox: ({ checked, onCheckedChange }: { checked?: boolean; onCheckedChange?: (checked: boolean) => void }) => (
     <input checked={checked} onChange={(event) => onCheckedChange?.(event.target.checked)} type="checkbox" />

@@ -595,6 +595,10 @@ pub enum BrowserMessage {
     Update {
         servers: Vec<crate::types::LiveMetrics>,
     },
+    /// Authenticated REST catalog invalidation; private billing stays off metric frames.
+    ServerCatalogChanged {
+        server_ids: Vec<String>,
+    },
     ServerOnline {
         server_id: String,
     },

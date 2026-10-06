@@ -23,6 +23,9 @@ struct ServerDetailView: View {
     @State private var showEdit = false
     /// Section content is created one tick after the screen appears; see `body`.
     @State private var isContentReady = false
+    #if DEBUG
+    @State private var hasAutoPresentedEdit = false
+    #endif
 
     /// Allow constructing from a known live status (list navigation) or just an
     /// id (deep link / push).
@@ -120,6 +123,7 @@ struct ServerDetailView: View {
                     Button { showEdit = true } label: {
                         Label(String(localized: "Edit server"), systemImage: "pencil")
                     }
+                    .accessibilityIdentifier("server.edit")
                 }
             }
         }
@@ -128,7 +132,7 @@ struct ServerDetailView: View {
                 EditServerSheet(serverId: serverId, config: config, onSaved: reloadConfig)
             }
         }
-        .task {
+        .task(id: serversViewModel.catalogRevision(for: serverId)) {
             await viewModel.fetchConfig(serverId: serverId, apiClient: apiClient)
             #if DEBUG
             if let raw = UITestSupport.detailSection,
@@ -153,12 +157,15 @@ struct ServerDetailView: View {
 
     #if DEBUG
     private func debugPresentEditIfReady() {
-        if UITestSupport.autoPresent == "edit-server", viewModel.config != nil { showEdit = true }
+        if !hasAutoPresentedEdit, UITestSupport.autoPresent == "edit-server", viewModel.config != nil {
+            hasAutoPresentedEdit = true
+            showEdit = true
+        }
     }
     #endif
 
     private func reloadConfig() {
-        Task { await viewModel.fetchConfig(serverId: serverId, apiClient: apiClient) }
+        Task { await serversViewModel.refreshCatalog(serverIds: [serverId], apiClient: apiClient) }
     }
 
     @ViewBuilder
