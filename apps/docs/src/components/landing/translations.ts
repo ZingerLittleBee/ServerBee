@@ -5,7 +5,7 @@ import { gitConfig } from '@/lib/layout.shared'
 export type LandingLang = 'en' | 'zh'
 
 /** The release the landing page announces. check-contracts keeps it equal to the workspace version. */
-export const LANDING_VERSION = '1.0.0-beta.5'
+export const LANDING_VERSION = '1.0.0-beta.6'
 
 /** Both follow the docs' git config, so renaming the repository or its branch is one edit there. */
 const REPOSITORY: `https://${string}` = `https://github.com/${gitConfig.user}/${gitConfig.repo}`

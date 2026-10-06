@@ -1,4 +1,4 @@
-ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.5
+ARG SERVERBEE_IMAGE_TAG=1.0.0-beta.6
 # Uses the official cargo-zigbuild release artifact, not the root source-build Dockerfile.
 # See .github/workflows/release.yml and tests/manual/server-memory-soak.md.
 FROM ghcr.io/zingerlittlebee/serverbee-server:${SERVERBEE_IMAGE_TAG}
