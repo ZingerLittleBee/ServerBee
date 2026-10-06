@@ -212,9 +212,7 @@ fn fixture_transport(pem: &str, fixture: &AppleFixture) -> ApnsHttpTransport {
     let ca = reqwest::Certificate::from_der(include_bytes!("testdata/ca.der")).unwrap();
     let mut transport = ApnsHttpTransport::with_client(
         &config(pem, false),
-        ApnsHttpTransport::client_builder()
-            .no_proxy()
-            .add_root_certificate(ca),
+        ApnsHttpTransport::client_builder().add_root_certificate(ca),
     )
     .unwrap();
     transport.endpoint = fixture.endpoint.clone();
@@ -356,7 +354,7 @@ async fn untrusted_tls_and_cleartext_fail_without_disclosing_device_token() {
     ] {
         let mut transport = ApnsHttpTransport::with_client(
             &config(&pem, false),
-            ApnsHttpTransport::client_builder().no_proxy(),
+            ApnsHttpTransport::client_builder(),
         )
         .unwrap();
         transport.endpoint = endpoint;
@@ -389,4 +387,34 @@ async fn oversized_payload_is_rejected_before_entering_the_network() {
         .unwrap();
     assert!(err.to_string().contains("payload exceeds"));
     assert!(fixture.requests.try_recv().is_err());
+}
+
+#[test]
+fn environment_proxy_cannot_reroute_legacy_apns_delivery() {
+    // Isolate environment changes in a child process so parallel tests cannot
+    // inherit the deliberately unusable proxy. Exercise real TLS/HTTP2 dispatch.
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "service::apns::transport::tests::real_tls_http2_dispatch_preserves_alert_headers_payload_and_authentication",
+            "--nocapture",
+        ])
+        .env("HTTPS_PROXY", "http://127.0.0.1:1")
+        .env("https_proxy", "http://127.0.0.1:1")
+        .env("ALL_PROXY", "http://127.0.0.1:1")
+        .env("all_proxy", "http://127.0.0.1:1")
+        .env("NO_PROXY", "")
+        .env("no_proxy", "")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "APNs must connect directly despite proxy environment variables:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("test result: ok. 1 passed;"),
+        "the child process must execute the TLS/HTTP2 dispatch test",
+    );
 }

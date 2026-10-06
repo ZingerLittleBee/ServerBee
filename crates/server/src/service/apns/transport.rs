@@ -96,8 +96,11 @@ impl ApnsHttpTransport {
             .https_only(true)
             .http2_prior_knowledge()
             .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
+            // The legacy client connected directly and used a single 20-second
+            // request deadline. Keep those deployment/network semantics.
+            .no_proxy()
+            .timeout(Duration::from_secs(20))
+            .pool_idle_timeout(Duration::from_secs(600))
     }
 
     pub(super) fn new(config: &ApnsConfig<'_>) -> Result<Self, AppError> {
