@@ -1,5 +1,7 @@
 <div align="center">
 
+[![Deploy to Railyard](https://app.railyard.run/deploy/badge)](https://app.railyard.run/deploy?repo=https://github.com/ZingerLittleBee/ServerBee)
+
 <img src="assets/logo/logo.svg" width="96" alt="ServerBee logo" />
 
 # ServerBee
