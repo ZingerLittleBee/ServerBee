@@ -1583,8 +1583,11 @@ struct HeldLegacyApple {
 impl serverbee_server::service::apns::LegacyApnsTransport for HeldLegacyApple {
     async fn send(
         &self,
-        payload: a2::request::payload::Payload<'_>,
-    ) -> Result<a2::Response, a2::Error> {
+        payload: serverbee_server::service::apns::LegacyApnsRequest<'_>,
+    ) -> Result<
+        serverbee_server::service::apns::LegacyApnsResponse,
+        serverbee_server::error::AppError,
+    > {
         let first = {
             let mut tokens = self.tokens.lock().await;
             tokens.push(payload.device_token.to_owned());
@@ -1594,10 +1597,9 @@ impl serverbee_server::service::apns::LegacyApnsTransport for HeldLegacyApple {
             self.started.notify_one();
             self.release.notified().await;
         }
-        Ok(a2::Response {
-            code: 200,
-            error: None,
-            apns_id: None,
+        Ok(serverbee_server::service::apns::LegacyApnsResponse {
+            status: 200,
+            reason: None,
         })
     }
 }

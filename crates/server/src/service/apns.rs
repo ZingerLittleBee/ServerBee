@@ -1,8 +1,9 @@
-use a2::{
-    ClientConfig, DefaultNotificationBuilder, Endpoint, NotificationBuilder, NotificationOptions,
-    Priority,
-};
 use sea_orm::*;
+use serde_json::json;
+
+mod transport;
+use transport::ApnsHttpTransport;
+pub use transport::{LegacyApnsRequest, LegacyApnsResponse, LegacyApnsTransport};
 
 use crate::entity::device_token;
 use crate::error::AppError;
@@ -14,26 +15,6 @@ pub struct ApnsConfig<'a> {
     pub private_key: &'a str,
     pub bundle_id: &'a str,
     pub sandbox: bool,
-}
-
-/// Only the external Apple transport is replaceable. Recipient selection,
-/// pre-send migration checks, payload construction and cleanup stay real.
-#[async_trait::async_trait]
-pub trait LegacyApnsTransport: Send + Sync {
-    async fn send(
-        &self,
-        payload: a2::request::payload::Payload<'_>,
-    ) -> Result<a2::Response, a2::Error>;
-}
-
-#[async_trait::async_trait]
-impl LegacyApnsTransport for a2::Client {
-    async fn send(
-        &self,
-        payload: a2::request::payload::Payload<'_>,
-    ) -> Result<a2::Response, a2::Error> {
-        a2::Client::send(self, payload).await
-    }
 }
 
 struct LegacyNotification<'a> {
@@ -75,20 +56,7 @@ impl ApnsService {
             return Ok(());
         }
 
-        let endpoint = if config.sandbox {
-            Endpoint::Sandbox
-        } else {
-            Endpoint::Production
-        };
-
-        let key_reader = std::io::Cursor::new(config.private_key.as_bytes());
-        let client = a2::Client::token(
-            key_reader,
-            config.key_id,
-            config.team_id,
-            ClientConfig::new(endpoint),
-        )
-        .map_err(|e| AppError::Internal(format!("Failed to create APNs client: {e}")))?;
+        let client = ApnsHttpTransport::new(config)?;
 
         Self::dispatch(
             db,
@@ -153,44 +121,41 @@ impl ApnsService {
                 continue;
             }
 
-            let builder = DefaultNotificationBuilder::new()
-                .set_title(notification.title)
-                .set_body(notification.body)
-                .set_sound("default")
-                .set_badge(1);
-
-            let mut payload = builder.build(
-                &dt.token,
-                NotificationOptions {
-                    apns_topic: Some(config.bundle_id),
-                    apns_priority: Some(Priority::High),
-                    ..Default::default()
-                },
-            );
+            let mut payload = json!({
+                "aps": {
+                    "alert": { "title": notification.title, "body": notification.body },
+                    "sound": "default",
+                    "badge": 1,
+                    "mutable-content": 0,
+                }
+            });
 
             // Add custom data for deep linking on iOS
             if let Some(sid) = notification.server_id {
-                let _ = payload.add_custom_data("server_id", &sid);
+                payload["server_id"] = json!(sid);
             }
             if let Some(rid) = notification.rule_id {
-                let _ = payload.add_custom_data("rule_id", &rid);
+                payload["rule_id"] = json!(rid);
             }
 
-            match transport.send(payload).await {
-                Ok(_response) => {
+            match transport
+                .send(LegacyApnsRequest {
+                    device_token: &dt.token,
+                    topic: config.bundle_id,
+                    payload,
+                })
+                .await
+            {
+                Ok(response) if response.status == 200 => {
                     sent += 1;
                 }
-                Err(a2::Error::ResponseError(response)) => {
-                    if response.code == 410
-                        && response
-                            .error
-                            .as_ref()
-                            .is_some_and(|e| e.reason == a2::ErrorReason::Unregistered)
+                Ok(response) => {
+                    if response.status == 410 && response.reason.as_deref() == Some("Unregistered")
                     {
                         tracing::warn!(
                             "APNs token invalid for device {} (HTTP {}), removing",
                             dt.installation_id,
-                            response.code
+                            response.status
                         );
                         let _ = device_token::Entity::delete_many()
                             .filter(device_token::Column::Id.eq(&dt.id))
@@ -202,8 +167,8 @@ impl ApnsService {
                         tracing::error!(
                             "APNs rejected push for device {} (HTTP {}): {:?}",
                             dt.installation_id,
-                            response.code,
-                            response.error
+                            response.status,
+                            response.reason
                         );
                     }
                 }
@@ -223,6 +188,7 @@ mod tests {
     use super::*;
     use crate::test_utils::setup_test_db;
     use chrono::{TimeZone, Utc};
+    use sea_orm::prelude::Expr;
 
     /// Build a config that always fails client creation (garbage PEM key).
     fn garbage_config(sandbox: bool) -> ApnsConfig<'static> {
@@ -238,7 +204,7 @@ mod tests {
     /// Seed one device token row with fixed timestamps. `device_tokens` has
     /// NOT NULL FKs to `users` and `mobile_sessions` (which itself FKs `users`),
     /// so the parent rows are seeded first via idempotent inserts.
-    async fn seed_token(db: &DatabaseConnection, id: &str) {
+    pub(super) async fn seed_token(db: &DatabaseConnection, id: &str) {
         db.execute_unprepared(
             "INSERT OR IGNORE INTO users (id, username, password_hash, role, must_change_password, created_at, updated_at) \
              VALUES ('user-1', 'apns-user', 'x', 'admin', 0, '2026-01-02 03:04:05', '2026-01-02 03:04:05')",
@@ -299,7 +265,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_push_garbage_key_production_errors() {
-        // A seeded token forces client creation; a garbage key makes a2::Client::token fail (Production endpoint).
+        // A seeded token forces client creation; a garbage key must fail before sending.
         let (db, _tmp) = setup_test_db().await;
         seed_token(&db, "t1").await;
         let config = garbage_config(false);
@@ -321,7 +287,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_send_push_garbage_key_sandbox_errors() {
-        // Same failure path but with sandbox=true exercises the Endpoint::Sandbox branch.
+        // The same credential failure must hold in the sandbox environment.
         let (db, _tmp) = setup_test_db().await;
         seed_token(&db, "t2").await;
         let config = garbage_config(true);
@@ -351,5 +317,74 @@ mod tests {
             1,
             "token must remain since the failure happens before the send/delete loop"
         );
+    }
+
+    struct RefreshingTransport {
+        db: DatabaseConnection,
+        rotate_token: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl LegacyApnsTransport for RefreshingTransport {
+        async fn send(
+            &self,
+            request: LegacyApnsRequest<'_>,
+        ) -> Result<LegacyApnsResponse, AppError> {
+            // Refresh/rotation completes while the old request is in flight.
+            device_token::Entity::update_many()
+                .col_expr(
+                    device_token::Column::Token,
+                    Expr::value(if self.rotate_token {
+                        "replacement-token"
+                    } else {
+                        request.device_token
+                    }),
+                )
+                .col_expr(device_token::Column::UpdatedAt, Expr::value(Utc::now()))
+                .filter(device_token::Column::Token.eq(request.device_token))
+                .exec(&self.db)
+                .await?;
+            Ok(LegacyApnsResponse {
+                status: 410,
+                reason: Some("Unregistered".into()),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn late_unregistered_cannot_delete_a_refreshed_or_rotated_legacy_token() {
+        for rotate_token in [false, true] {
+            let (db, _tmp) = setup_test_db().await;
+            seed_token(&db, "late").await;
+            let transport = RefreshingTransport {
+                db: db.clone(),
+                rotate_token,
+            };
+            ApnsService::send_push_with_transport(
+                &db,
+                &garbage_config(false),
+                "T",
+                "B",
+                None,
+                None,
+                &transport,
+            )
+            .await
+            .unwrap();
+            let remaining = device_token::Entity::find().all(&db).await.unwrap();
+            assert_eq!(remaining.len(), 1);
+            assert_eq!(
+                remaining[0].token,
+                if rotate_token {
+                    "replacement-token"
+                } else {
+                    "token-late"
+                }
+            );
+            assert_ne!(
+                remaining[0].updated_at,
+                Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap()
+            );
+        }
     }
 }
