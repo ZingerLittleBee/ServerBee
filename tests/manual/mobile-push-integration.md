@@ -99,4 +99,97 @@ API DTO changes require the official API generator. Inspect generated OpenAPI an
 
 For each gate record candidate full SHA, command/toolchain, boundary, exit code, executed/passed/failed/skipped counts, named new cases and log/artifact paths. Do not copy earlier-SHA counts into the candidate record. A zero-test success supplies no coverage, and assertions passing with a failed process exit are still a failed check. Mark requested-but-unrun gates PENDING.
 
-Live APNs provider acceptance, foreground/background/terminated presentation and actual taps are NOT RUN until the explicitly authorized environment and signed devices exist. Missing prerequisites are the isolated HTTPS Server/Worker, publisher APNs inputs, matching signed provisioning/entitlements, physical device and both development/distribution builds. The bilingual operations matrix records these independently. No publication, secret installation, deployment, Apple-account or Heeler mutation is authorized by this checklist.
+Mark live APNs provider acceptance, foreground/background/terminated presentation and actual taps independently as NOT RUN until observed in an explicitly authorized environment. Prerequisites include the HTTPS Server/Worker, publisher APNs inputs, matching signing/entitlements, and the intended device/build. A supported Simulator can establish real APNs sandbox evidence, but cannot establish production or physical-device acceptance. The bilingual operations matrix records these independently. No publication, secret installation, deployment, Apple-account or Heeler mutation is authorized by this checklist.
+
+## Acceptance checkpoint: 2026-10-16
+
+Candidate: [303f9e7380a75b032950c6de6d0b372b04b3067c](https://github.com/ZingerLittleBee/ServerBee/commit/303f9e7380a75b032950c6de6d0b372b04b3067c).
+This checkpoint records observations, not completion of #196 or #205. No product
+defect was established and no product code was changed during acceptance.
+
+### Reused automation and supplementary checks
+
+- [Candidate Server CI](https://github.com/ZingerLittleBee/ServerBee/actions/runs/38852218363):
+  `mobile_push_integration` 90/90 and `router_mobile` 95/95 passed.
+- [Candidate iOS CI](https://github.com/ZingerLittleBee/ServerBee/actions/runs/38852218419):
+  473/473 passed, zero skipped, including all three actual Rust ciphertext
+  consumers. These are substituted-provider-boundary tests, not live APNs proof.
+- [Worker CI](https://github.com/ZingerLittleBee/ServerBee/actions/runs/37414030100)
+  at `b892c1d876110e4df275e2b1e5520263d4e11d5e`: 73 workerd tests and one native
+  ingress-cancellation test passed. Worker sources are unchanged at the candidate.
+  [Documentation CI](https://github.com/ZingerLittleBee/ServerBee/actions/runs/37414030193)
+  passed for the unchanged bilingual operations pages. These runs were reused,
+  not rerun or attributed to the candidate SHA.
+- Local targeted zh-Hans native check: 64/64 passed, zero skipped, exit 0,
+  including a disposable runtime-language probe. Stitched consumers were
+  excluded from this locale-only run; their evidence is the candidate CI above.
+  `python3 tests/check-push-secret-boundaries.py` passed static checks and all six
+  native redirect cases; redirect targets received no connections.
+
+### One real sandbox notification
+
+The authorized test used one dedicated iPhone 17 Simulator, iOS 27.0, Xcode 27.0
+(CI uses Xcode 16.4), English, and the candidate App/NSE, version 2.0.0 (1).
+Apple's [Xcode 14 release notes](https://developer.apple.com/documentation/xcode-release-notes/xcode-14-release-notes)
+document real APNs sandbox support on compatible Simulator hosts.
+No `simctl push` or synthetic APNs injection was used.
+
+The HTTPS Server was `demo.serverbee.app`, with its active deployment labelled
+as the PR #217 merge; no runtime binary digest was captured. The dedicated
+ServerBee Worker was deployed, version `d6ed7c40-3af9-40c6-9409-b096d74abb30`,
+with topic `app.serverbee` and both environments configured. Earlier claims
+that the Worker was undeployed are stale. Configuration alone did not establish
+delivery or production acceptance.
+
+Browser pairing and a DEBUG authentication seed bypassed QR/login UI only.
+OS permission, APNs registration, content-key generation, Server registration,
+and the in-app send action used the real stack. Business-category subscriptions
+stayed disabled; existing users, rules and tasks were not changed.
+
+| Boundary | Observed result (UTC) | Limitation |
+| --- | --- | --- |
+| Registration | Server reported registered=true, revision=2, test_available=true | Simulator sandbox only |
+| Server admission | One native test-send action at 05:45:03; the persisted event was later readable through authenticated GET | Initial POST pending/Queued response was not independently captured |
+| Relay/APNs verdict | At 05:51:22, GET returned accepted/Accepted for event `ed25c28e-b8ed-4466-a8e3-50774481028a` | Worker maps APNs 200 to accepted; no separate raw APNs response was captured |
+| Presentation/decryption | At 05:45:06, Springboard showed the expected decrypted synthetic test content while the app was background suspended; the native delivered-notification query later found exactly one matching notification | Not foreground presentation or arrival while terminated |
+| Cold notification open | At 05:52:13, opening that existing notification after terminating the app foregrounded the app and reached Settings | The system required right swipe to open; no second send or cold-launch auth seed |
+| Cleanup | At 05:53:17, scoped revoke returned HTTP 200/ok; the dedicated session/installation was absent from the authenticated device list | Verifies scoped revocation, not the native logout UI or offline recovery |
+
+The Server receipt correctly retained `presentation=unobserved`; the native
+observation above is separate evidence. Final `xcodebuild` receipt and cold-open
+probes each passed 1/1, zero skipped, exit 0. Earlier harness failures are not
+counted as passes: setup used an incorrect combined-label selector, the send
+test rejected normal background suspension, and three tap-only attempts did
+not open the app. Springboard explicitly logged that it was hinting side swipe
+instead of executing the action; the final side-swipe run passed. One invocation
+also selected the wrong scheme and exited 70 without running tests.
+
+Sanitized local evidence is retained under the ignored
+`.amp/in/artifacts/mobile-push-acceptance/` and
+`.amp/in/artifacts/mobile-push-live/` directories: CI logs, locale results,
+registration/receipt/cleanup JSON, XCTest summaries including failures, and
+inspected notification/navigation screenshots. These artifacts are not included
+in the repository. Temporary credentials, test harnesses and the dedicated
+Simulator were removed. No deployment or Apple configuration was changed.
+
+### Remaining acceptance gates
+
+| Issue | Established boundary | Still pending live evidence |
+| --- | --- | --- |
+| #197 | Session refresh, revocation and account-isolation automation; scoped live revocation | Physical login lifecycle and signed-upgrade continuity |
+| #198 | Setup/permission/ownership automation; live sandbox registration | Physical permission recovery and production registration |
+| #199 | Encrypted tracer automation; live sandbox acceptance, decryption and cold open | Production, physical devices and other app states |
+| #200 | Durable retry, restart, expiry and revision automation | Authorized isolated outage/recovery observation |
+| #201 | Alert trigger/recovery, suppression, subscription and target automation | Actual alert presentation and navigation |
+| #202 | Rule admission, administrator restriction and role-change automation | Actual administrator delivery and member silence |
+| #203 | Final failure, ownership, retry silence and exact-run automation | Actual failure notification and task navigation |
+| #204 | Success opt-in/default silence and ownership automation | Actual success subscription and opt-out behavior |
+| #205 | Combined automation and this sandbox checkpoint | Full physical sandbox/production matrix and signed upgrade |
+
+The remaining work includes foreground banner count, arrival while terminated,
+account replacement and old-notification navigation rejection, subscription
+changes, offline logout, and in-place upgrade preserving registration and keys.
+Do not uninstall the existing physical app before recording its upgrade baseline.
+#197-#204 can be assessed against their written implementation/test boundaries,
+but closing them must not discard their pending live gates from #205. Neither
+#196 nor #205 is ready to close on this evidence.
