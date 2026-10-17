@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -10,7 +9,6 @@ use serverbee_common::types::{FileEntry, FileType};
 use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, mpsc};
 
-use crate::capability_grants::CapabilityAuthority;
 use crate::config::FileConfig;
 
 /// Events produced by background file transfer tasks, sent to the reporter loop.
@@ -75,8 +73,6 @@ pub struct FileManager {
     config: FileConfig,
     /// Pre-canonicalized root paths, computed once at construction time.
     canonical_roots: Vec<PathBuf>,
-    #[allow(dead_code)] // stored for future per-method capability checks
-    capabilities: Arc<CapabilityAuthority>,
     active_downloads: DashMap<String, DownloadState>,
     active_uploads: DashMap<String, UploadState>,
     active_upload_targets: DashMap<PathBuf, String>,
@@ -84,7 +80,7 @@ pub struct FileManager {
 }
 
 impl FileManager {
-    pub fn new(config: FileConfig, capabilities: Arc<CapabilityAuthority>) -> Self {
+    pub fn new(config: FileConfig) -> Self {
         let canonical_roots: Vec<PathBuf> = config
             .root_paths
             .iter()
@@ -93,7 +89,6 @@ impl FileManager {
         Self {
             config,
             canonical_roots,
-            capabilities,
             active_downloads: DashMap::new(),
             active_uploads: DashMap::new(),
             active_upload_targets: DashMap::new(),
@@ -101,7 +96,7 @@ impl FileManager {
         }
     }
 
-    /// Check if file management is enabled via both config and capability.
+    /// Check local file configuration. The Reporter owns capability admission.
     pub fn is_enabled(&self) -> bool {
         self.config.enabled
     }
@@ -815,7 +810,6 @@ async fn download_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serverbee_common::constants::CAP_FILE;
     use tempfile::TempDir;
 
     fn make_config(root: &str) -> FileConfig {
@@ -834,17 +828,12 @@ mod tests {
         }
     }
 
-    fn make_manager(config: FileConfig) -> FileManager {
-        let caps = CapabilityAuthority::fixed(CAP_FILE);
-        FileManager::new(config, caps)
-    }
-
     #[test]
     fn test_validate_path_within_root() {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Create a file inside root
         let file_path = tmp.path().join("hello.txt");
@@ -861,7 +850,7 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
 
         let config = make_config(root.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // A path outside the allowed root
         let outside = tmp.path().join("outside.txt");
@@ -884,7 +873,7 @@ mod tests {
         std::fs::create_dir_all(&allowed).unwrap();
 
         let config = make_config(allowed.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Attempt traversal: allowed/../outside.txt
         let outside = tmp.path().join("outside.txt");
@@ -906,7 +895,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Create files matching deny patterns
         let key_file = tmp.path().join("server.key");
@@ -955,7 +944,7 @@ mod tests {
             max_file_size: 1_073_741_824,
             deny_patterns: vec![],
         };
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let result = mgr.validate_path("/tmp/anything");
         assert!(result.is_err());
@@ -972,7 +961,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Create files and directories
         std::fs::write(tmp.path().join("banana.txt"), "b").unwrap();
@@ -1023,7 +1012,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Write a file
         let file_path = tmp.path().join("test.txt");
@@ -1047,7 +1036,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let file_path = tmp.path().join("big.txt");
         std::fs::write(&file_path, "x".repeat(1000)).unwrap();
@@ -1063,7 +1052,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let file_path = tmp.path().join("to_delete.txt");
         std::fs::write(&file_path, "gone").unwrap();
@@ -1080,7 +1069,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let dir_path = tmp.path().join("mydir");
         std::fs::create_dir(&dir_path).unwrap();
@@ -1095,7 +1084,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let dir_path = tmp.path().join("new_dir").join("nested");
         assert!(!dir_path.exists());
@@ -1110,7 +1099,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let from = tmp.path().join("original.txt");
         let to = tmp.path().join("renamed.txt");
@@ -1129,7 +1118,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let file_path = tmp.path().join("stat_test.txt");
         std::fs::write(&file_path, "hello").unwrap();
@@ -1145,7 +1134,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let file_path = tmp.path().join("upload.txt");
         // Touch the parent (root) — it's already there from TempDir.
@@ -1170,7 +1159,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         for name in &[".env", ".env.local", ".env.production"] {
             let path = tmp.path().join(name);
@@ -1187,7 +1176,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         for name in &["id_rsa", "id_rsa.pub", "id_rsa_backup"] {
             let path = tmp.path().join(name);
@@ -1204,7 +1193,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         for name in &["config.yaml", "app.log", "start.sh", "README.md"] {
             let path = tmp.path().join(name);
@@ -1236,8 +1225,7 @@ mod tests {
                 "passwd".into(),
             ],
         };
-        let caps = CapabilityAuthority::fixed(u32::MAX);
-        let mgr = FileManager::new(config, caps);
+        let mgr = FileManager::new(config);
 
         let f1 = tmp1.path().join("a.txt");
         let f2 = tmp2.path().join("b.txt");
@@ -1253,7 +1241,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
         let path = tmp.path().join("test.txt");
         std::fs::write(&path, "hello world").unwrap();
 
@@ -1267,7 +1255,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
         let path = tmp.path().join("output.txt");
         // Create the file first so validate_path can canonicalize it
         std::fs::write(&path, "").unwrap();
@@ -1288,7 +1276,7 @@ mod tests {
         std::fs::create_dir(&subdir).unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let entries = mgr.list_dir(subdir.to_str().unwrap()).await.unwrap();
         assert!(entries.is_empty());
@@ -1299,7 +1287,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
         std::fs::write(tmp.path().join("hello.txt"), "12345").unwrap();
 
         let entries = mgr.list_dir(tmp.path().to_str().unwrap()).await.unwrap();
@@ -1314,7 +1302,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let root = tmp.path().to_str().unwrap();
         let config = make_config(root);
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let file_path = tmp.path().join("download.txt");
         std::fs::write(&file_path, "Download me!").unwrap();
@@ -1361,7 +1349,7 @@ mod tests {
     fn test_is_enabled_true() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
         assert!(mgr.is_enabled());
     }
 
@@ -1370,7 +1358,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut config = make_config(tmp.path().to_str().unwrap());
         config.enabled = false;
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
         assert!(!mgr.is_enabled());
     }
 
@@ -1448,7 +1436,7 @@ mod tests {
     fn test_validate_path_nonexistent_cannot_resolve() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let missing = tmp.path().join("does_not_exist.txt");
         let result = mgr.validate_path(missing.to_str().unwrap());
@@ -1471,7 +1459,7 @@ mod tests {
             max_file_size: 1_073_741_824,
             deny_patterns: vec![],
         };
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
         let result = mgr.list_dir("/tmp").await;
         assert!(result.is_err());
         assert!(
@@ -1491,7 +1479,7 @@ mod tests {
         std::fs::create_dir(&nested).unwrap();
 
         let config = make_config(nested.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // The parent (tmp) is an ancestor of the root but not within it.
         let entries = mgr.list_dir(tmp.path().to_str().unwrap()).await.unwrap();
@@ -1511,7 +1499,7 @@ mod tests {
         std::fs::create_dir(&nested).unwrap();
 
         let config = make_config(nested.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let entries = mgr.list_dir("/").await.unwrap();
         assert!(!entries.is_empty());
@@ -1531,7 +1519,7 @@ mod tests {
         std::fs::create_dir(&sibling).unwrap();
 
         let config = make_config(allowed.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // sibling is neither within nor an ancestor of allowed.
         let result = mgr.list_dir(sibling.to_str().unwrap()).await;
@@ -1548,7 +1536,7 @@ mod tests {
     async fn test_list_dir_includes_symlink_entry() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let target = tmp.path().join("target.txt");
         std::fs::write(&target, "data").unwrap();
@@ -1570,7 +1558,7 @@ mod tests {
     async fn test_stat_nonexistent_path_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let missing = tmp.path().join("nope.txt");
         let result = mgr.stat(missing.to_str().unwrap()).await;
@@ -1581,7 +1569,7 @@ mod tests {
     async fn test_stat_directory() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let dir = tmp.path().join("a_dir");
         std::fs::create_dir(&dir).unwrap();
@@ -1599,7 +1587,7 @@ mod tests {
     async fn test_read_file_nonexistent_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let missing = tmp.path().join("missing.txt");
         let result = mgr.read_file(missing.to_str().unwrap(), 1024).await;
@@ -1610,7 +1598,7 @@ mod tests {
     async fn test_read_file_exactly_at_limit_ok() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("exact.txt");
         std::fs::write(&path, vec![b'a'; 100]).unwrap();
@@ -1626,7 +1614,7 @@ mod tests {
     async fn test_read_file_one_over_limit_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("over.txt");
         std::fs::write(&path, vec![b'a'; 101]).unwrap();
@@ -1642,7 +1630,7 @@ mod tests {
     async fn test_write_file_invalid_base64_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("bad.txt");
         std::fs::write(&path, "").unwrap();
@@ -1666,7 +1654,7 @@ mod tests {
         let allowed = tmp.path().join("allowed");
         std::fs::create_dir(&allowed).unwrap();
         let config = make_config(allowed.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Path outside the allowed root, but file exists so canonicalize succeeds.
         let outside = tmp.path().join("outside.txt");
@@ -1683,7 +1671,7 @@ mod tests {
     async fn test_delete_nonexistent_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let missing = tmp.path().join("ghost.txt");
         let result = mgr.delete(missing.to_str().unwrap(), false).await;
@@ -1694,7 +1682,7 @@ mod tests {
     async fn test_delete_nonempty_dir_non_recursive_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let dir = tmp.path().join("nonempty");
         std::fs::create_dir(&dir).unwrap();
@@ -1710,7 +1698,7 @@ mod tests {
     async fn test_delete_empty_dir_non_recursive_ok() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let dir = tmp.path().join("empty_to_remove");
         std::fs::create_dir(&dir).unwrap();
@@ -1727,7 +1715,7 @@ mod tests {
         let allowed = tmp.path().join("allowed");
         std::fs::create_dir(&allowed).unwrap();
         let config = make_config(allowed.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Closest existing ancestor (tmp) is outside the allowed root.
         let target = tmp.path().join("brand_new").join("child");
@@ -1740,7 +1728,7 @@ mod tests {
     async fn test_mkdir_existing_dir_ok() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let dir = tmp.path().join("already_there");
         std::fs::create_dir(&dir).unwrap();
@@ -1756,7 +1744,7 @@ mod tests {
     async fn test_rename_path_from_missing_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let from = tmp.path().join("not_here.txt");
         let to = tmp.path().join("dest.txt");
@@ -1770,7 +1758,7 @@ mod tests {
     async fn test_rename_path_dest_deny_pattern_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let from = tmp.path().join("plain.txt");
         std::fs::write(&from, "x").unwrap();
@@ -1792,7 +1780,7 @@ mod tests {
         let allowed = tmp.path().join("allowed");
         std::fs::create_dir(&allowed).unwrap();
         let config = make_config(allowed.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let from = allowed.join("src.txt");
         std::fs::write(&from, "x").unwrap();
@@ -1812,7 +1800,7 @@ mod tests {
     async fn test_start_download_invalid_path_emits_error() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let missing = tmp.path().join("nope.bin");
         let (tx, mut rx) = mpsc::channel::<FileEvent>(4);
@@ -1832,7 +1820,7 @@ mod tests {
     async fn test_download_empty_file_sends_ready_and_end_only() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("empty.bin");
         std::fs::write(&path, b"").unwrap();
@@ -1866,7 +1854,7 @@ mod tests {
     async fn test_download_multi_chunk_file() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Slightly larger than one chunk to force a second read iteration.
         let total = MAX_FILE_CHUNK_SIZE + 1234;
@@ -1909,7 +1897,7 @@ mod tests {
     async fn test_cancel_download_removes_entry() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("cancel.bin");
         std::fs::write(&path, vec![0u8; MAX_FILE_CHUNK_SIZE * 2]).unwrap();
@@ -1929,7 +1917,7 @@ mod tests {
     async fn test_cancel_all_transfers_clears_maps() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Seed an active download.
         let dpath = tmp.path().join("dl.bin");
@@ -1958,7 +1946,7 @@ mod tests {
     async fn test_start_upload_deny_pattern_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("secret.key");
         let result = mgr
@@ -1974,7 +1962,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut config = make_config(tmp.path().to_str().unwrap());
         config.max_file_size = 50;
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("toobig.bin");
         let result = mgr
@@ -1995,7 +1983,7 @@ mod tests {
         let allowed = tmp.path().join("allowed");
         std::fs::create_dir(&allowed).unwrap();
         let config = make_config(allowed.to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         // Parent (tmp) is outside the allowed root.
         let path = tmp.path().join("escape.bin");
@@ -2010,7 +1998,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut config = make_config(tmp.path().to_str().unwrap());
         config.max_file_size = 50;
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("exact_upload.bin");
         // size == max_file_size must be allowed (boundary is strictly greater-than).
@@ -2026,7 +2014,7 @@ mod tests {
     async fn test_receive_chunk_unknown_transfer_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let data = BASE64.encode(b"x");
         let result = mgr.receive_chunk("ghost", 0, &data).await;
@@ -2043,7 +2031,7 @@ mod tests {
     async fn test_receive_chunk_invalid_base64_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("chunk.bin");
         mgr.start_upload("uc".into(), path.to_str().unwrap().into(), 100)
@@ -2064,7 +2052,7 @@ mod tests {
     async fn test_receive_chunk_multi_chunk_offsets() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("multi_upload.bin");
         mgr.start_upload("um".into(), path.to_str().unwrap().into(), 10)
@@ -2088,7 +2076,7 @@ mod tests {
     async fn test_receive_chunk_empty_data_ok() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("empty_chunk.bin");
         mgr.start_upload("ue".into(), path.to_str().unwrap().into(), 0)
@@ -2110,7 +2098,7 @@ mod tests {
     async fn test_finish_upload_unknown_transfer_errors() {
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let result = mgr.finish_upload("never-started").await;
         assert!(result.is_err());
@@ -2125,7 +2113,7 @@ mod tests {
     #[tokio::test]
     async fn test_receive_chunk_rejects_out_of_order_offset() {
         let tmp = TempDir::new().unwrap();
-        let mgr = make_manager(make_config(tmp.path().to_str().unwrap()));
+        let mgr = FileManager::new(make_config(tmp.path().to_str().unwrap()));
         let path = tmp.path().join("ordered.bin");
         mgr.start_upload("ordered".into(), path.to_str().unwrap().into(), 2)
             .await
@@ -2141,7 +2129,7 @@ mod tests {
     #[tokio::test]
     async fn test_receive_chunk_rejects_data_beyond_declared_size() {
         let tmp = TempDir::new().unwrap();
-        let mgr = make_manager(make_config(tmp.path().to_str().unwrap()));
+        let mgr = FileManager::new(make_config(tmp.path().to_str().unwrap()));
         let path = tmp.path().join("bounded.bin");
         mgr.start_upload("bounded".into(), path.to_str().unwrap().into(), 1)
             .await
@@ -2157,7 +2145,7 @@ mod tests {
     #[tokio::test]
     async fn test_finish_upload_rejects_incomplete_data_and_removes_temp_file() {
         let tmp = TempDir::new().unwrap();
-        let mgr = make_manager(make_config(tmp.path().to_str().unwrap()));
+        let mgr = FileManager::new(make_config(tmp.path().to_str().unwrap()));
         let path = tmp.path().join("incomplete.bin");
         mgr.start_upload("incomplete".into(), path.to_str().unwrap().into(), 2)
             .await
@@ -2181,7 +2169,7 @@ mod tests {
     #[tokio::test]
     async fn test_start_upload_rejects_concurrent_same_target() {
         let tmp = TempDir::new().unwrap();
-        let mgr = make_manager(make_config(tmp.path().to_str().unwrap()));
+        let mgr = FileManager::new(make_config(tmp.path().to_str().unwrap()));
         let path = tmp.path().join("shared.bin");
         mgr.start_upload("first".into(), path.to_str().unwrap().into(), 1)
             .await
@@ -2228,7 +2216,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let tmp = TempDir::new().unwrap();
         let config = make_config(tmp.path().to_str().unwrap());
-        let mgr = make_manager(config);
+        let mgr = FileManager::new(config);
 
         let path = tmp.path().join("perm.txt");
         std::fs::write(&path, "x").unwrap();

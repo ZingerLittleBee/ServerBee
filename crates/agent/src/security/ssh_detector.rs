@@ -57,6 +57,7 @@ impl SshDetector {
         }
     }
 
+    #[cfg(test)]
     pub fn with_clock(
         window: Duration,
         threshold: u32,

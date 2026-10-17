@@ -91,7 +91,7 @@ impl ConnectionRuntime {
         let unlock_checker = UnlockChecker::new(Arc::clone(&capabilities), unlock_result_tx);
 
         let (file_tx, file_rx) = mpsc::channel::<FileEvent>(16);
-        let file_manager = FileManager::new(config.file.clone(), Arc::clone(&capabilities));
+        let file_manager = FileManager::new(config.file.clone());
 
         let (docker_tx, docker_rx) = mpsc::channel::<AgentMessage>(256);
         let docker = DockerSubsystem::new(docker_tx, Arc::clone(&capabilities));

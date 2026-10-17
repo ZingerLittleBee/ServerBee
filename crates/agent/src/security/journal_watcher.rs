@@ -7,7 +7,7 @@
 use std::io;
 
 use serde_json::Value;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncRead, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::mpsc;
 
 #[cfg(target_os = "linux")]
@@ -133,7 +133,7 @@ fn extract_message(line: &str) -> Option<String> {
         Value::Array(bytes) => {
             let mut buf = Vec::with_capacity(bytes.len());
             for b in bytes {
-                buf.push(b.as_u64()? as u8);
+                buf.push(u8::try_from(b.as_u64()?).ok()?);
             }
             String::from_utf8(buf).ok()
         }
@@ -141,32 +141,14 @@ fn extract_message(line: &str) -> Option<String> {
     }
 }
 
-/// Drain `auth.log` lines from a reader and forward attempts.
-///
-/// Public for tests. The production tail loop calls this against a
-/// file-backed reader and re-opens on EOF / inode change.
-pub async fn drain_auth_log<R: AsyncBufRead + Unpin>(
-    mut reader: R,
-    out_tx: mpsc::Sender<AuthAttempt>,
-) -> io::Result<()> {
-    let mut buf = String::new();
-    loop {
-        buf.clear();
-        let n = reader.read_line(&mut buf).await?;
-        if n == 0 {
-            return Ok(());
-        }
-        // auth.log lines look like:
-        // `Mar 12 13:14:15 host sshd[123]: Failed password for ...`
-        // We strip everything up to the first sshd[NNN]: prefix.
-        if let Some(msg) = strip_syslog_prefix(buf.trim_end())
-            && let Some(attempt) = parse_sshd_line(msg)
-            && out_tx.send(attempt).await.is_err()
-        {
-            break;
-        }
+/// Forward one auth.log line. A closed receiver tells the tail loop to stop.
+async fn forward_auth_log_line(line: &str, out_tx: &mpsc::Sender<AuthAttempt>) -> bool {
+    if let Some(msg) = strip_syslog_prefix(line.trim_end())
+        && let Some(attempt) = parse_sshd_line(msg)
+    {
+        return out_tx.send(attempt).await.is_ok();
     }
-    Ok(())
+    true
 }
 
 fn strip_syslog_prefix(line: &str) -> Option<&str> {
@@ -209,10 +191,7 @@ async fn run_auth_log_tail(out_tx: mpsc::Sender<AuthAttempt>) -> io::Result<()> 
                 tokio::time::sleep(Duration::from_millis(500)).await;
             }
             Ok(_) => {
-                if let Some(msg) = strip_syslog_prefix(buf.trim_end())
-                    && let Some(attempt) = parse_sshd_line(msg)
-                    && out_tx.send(attempt).await.is_err()
-                {
+                if !forward_auth_log_line(&buf, &out_tx).await {
                     return Ok(());
                 }
             }
@@ -367,7 +346,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drain_auth_log_skips_non_sshd_lines() {
+    async fn drain_journalctl_json_rejects_overflowed_binary_message() {
+        let mut invalid_bytes: Vec<u64> = b"Failed password for root from 1.2.3.4 port 22 ssh2"
+            .iter()
+            .map(|byte| u64::from(*byte))
+            .collect();
+        invalid_bytes[0] += 256;
+        let input = format!(
+            "{}\n{}\n",
+            serde_json::json!({ "MESSAGE": invalid_bytes }),
+            serde_json::json!({
+                "MESSAGE": "Failed password for root from 5.6.7.8 port 22 ssh2"
+            })
+        );
+        let (tx, mut rx) = mpsc::channel(4);
+        drain_journalctl_json(BufReader::new(input.as_bytes()), tx)
+            .await
+            .unwrap();
+
+        let attempt = rx.recv().await.unwrap();
+        assert_eq!(attempt.source_ip, "5.6.7.8");
+        assert!(rx.recv().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn forward_auth_log_line_skips_non_sshd_lines() {
         let input = concat!(
             "Mar 12 13:14:15 host kernel: oom-killer fired\n",
             "Mar 12 13:14:16 host sshd[1234]: Failed password for root from 1.2.3.4 port 22 ssh2\n",
@@ -375,9 +378,10 @@ mod tests {
             "Mar 12 13:14:18 host sshd[1235]: Accepted publickey for ubuntu from 5.6.7.8 port 4242 ssh2: ED25519 abc\n",
         );
         let (tx, mut rx) = mpsc::channel(8);
-        drain_auth_log(BufReader::new(input.as_bytes()), tx)
-            .await
-            .unwrap();
+        for line in input.lines() {
+            assert!(forward_auth_log_line(line, &tx).await);
+        }
+        drop(tx);
         let a = rx.recv().await.unwrap();
         assert_eq!(a.source_ip, "1.2.3.4");
         let b = rx.recv().await.unwrap();
@@ -468,6 +472,8 @@ mod tests {
     fn extract_message_returns_none_for_array_with_non_u8_element() {
         // Array element that is not a u64 number -> `b.as_u64()?` None.
         assert_eq!(extract_message(r#"{"MESSAGE":[72,"x",73]}"#), None);
+        assert_eq!(extract_message(r#"{"MESSAGE":[72,256,73]}"#), None);
+        assert_eq!(extract_message(r#"{"MESSAGE":[72,-1,73]}"#), None);
     }
 
     #[test]
@@ -541,25 +547,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn drain_auth_log_returns_on_empty_input() {
-        // Empty reader: the first `read_line` returns 0 -> early Ok(()).
+    async fn forward_auth_log_line_skips_empty_and_malformed_input() {
         let (tx, mut rx) = mpsc::channel::<AuthAttempt>(4);
-        drain_auth_log(BufReader::new(&b""[..]), tx).await.unwrap();
+        for line in ["", "host sshd[123]: unrelated message", "malformed line"] {
+            assert!(forward_auth_log_line(line, &tx).await);
+        }
+        drop(tx);
         assert!(rx.recv().await.is_none());
     }
 
     #[tokio::test]
-    async fn drain_auth_log_stops_when_receiver_dropped() {
-        // A matching sshd line whose send fails (receiver dropped) breaks the
-        // loop via the `out_tx.send(..).is_err()` branch, returning Ok(()).
-        let input = concat!(
-            "Mar 12 13:14:16 host sshd[1234]: Failed password for root from 1.2.3.4 port 22 ssh2\n",
-            "Mar 12 13:14:18 host sshd[1235]: Failed password for root from 5.6.7.8 port 22 ssh2\n",
-        );
+    async fn forward_auth_log_line_stops_when_receiver_dropped() {
+        let line =
+            "Mar 12 13:14:16 host sshd[1234]: Failed password for root from 1.2.3.4 port 22 ssh2";
         let (tx, rx) = mpsc::channel::<AuthAttempt>(1);
         drop(rx);
-        drain_auth_log(BufReader::new(input.as_bytes()), tx)
-            .await
-            .unwrap();
+        assert!(!forward_auth_log_line(line, &tx).await);
     }
 }
