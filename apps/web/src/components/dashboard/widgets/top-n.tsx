@@ -11,12 +11,7 @@ import { TooltipContent, type TooltipRow } from '@/components/charts/tooltip/too
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
 import type { ServerMetrics } from '@/lib/server-catalog'
 import { cn, formatBytes } from '@/lib/utils'
-import {
-  DEFAULT_WIDGET_CHART_COLOR,
-  hexRelativeLuminance,
-  normalizeWidgetColor,
-  resolveWidgetColor
-} from '@/lib/widget-color'
+import { DEFAULT_WIDGET_CHART_COLOR, hexRelativeLuminance, resolveWidgetColor } from '@/lib/widget-color'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { TopNConfig } from '@/lib/widget-types'
 
@@ -46,18 +41,7 @@ const LABEL_INSET_PX = 8
 /** Bars narrower than this put the name to the right of the fill (outside). */
 const MIN_INNER_LABEL_WIDTH_PX = 56
 
-/** @deprecated Prefer `DEFAULT_WIDGET_CHART_COLOR` from `@/lib/widget-color`. */
-export const DEFAULT_TOP_N_BAR_COLOR = DEFAULT_WIDGET_CHART_COLOR
-
 const PERCENT_METRICS = new Set(['cpu', 'memory', 'disk', 'swap'])
-
-/** @deprecated Prefer `normalizeWidgetColor` from `@/lib/widget-color`. */
-export const normalizeTopNBarColor = normalizeWidgetColor
-
-/** @deprecated Prefer `resolveWidgetColor` from `@/lib/widget-color`. */
-export function resolveTopNBarColor(value: string | undefined | null): string {
-  return resolveWidgetColor(value, DEFAULT_WIDGET_CHART_COLOR)
-}
 
 function labelClassForBar(fillHex: string, inside: boolean): string {
   if (!inside) {
@@ -186,7 +170,7 @@ export function TopNWidget({ config, servers }: TopNWidgetProps) {
   const { t } = useTranslation('dashboard')
   const { metric, sort = 'desc' } = config
   const count = config.count ?? 5
-  const barColor = resolveTopNBarColor(config.color)
+  const barColor = resolveWidgetColor(config.color, DEFAULT_WIDGET_CHART_COLOR)
   const metricName = metricLabel(metric, t)
   const title = t('widgets.topN.title', { metric: metricName })
 

@@ -36,7 +36,6 @@ import { ChartRevealClip } from './chart-reveal-clip'
 import { decimateTimeSeries, maxRenderPointsForWidth } from './decimate-time-series'
 import { filterDataByXDomain } from './filter-data-by-x-domain'
 import { generateChartSkeletonData, generateChartSkeletonFromTarget } from './generate-chart-skeleton-data'
-import { extractProjectionLineConfigs, mergeProjectionXDomainMax, mergeProjectionYDomain } from './projection-config'
 import { extractReferenceAreaConfigs, type ReferenceAreaConfig } from './reference-area-config'
 import { ReferenceAreaRegistrationContext } from './reference-area-registration-context'
 import { computeSeriesBarRevealClipPadding, computeSeriesBarWidth } from './series-bar-layout'
@@ -204,22 +203,15 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
     return filterDataByXDomain(plotData, xDomain, xAccessor)
   }, [plotData, xDomain, xAccessor])
 
-  const projectionConfigs = useMemo(() => extractProjectionLineConfigs(children), [children])
-
   const xScale = useMemo(() => {
     const minTime = xDomain ? xDomain[0].getTime() : (extent(plotData, (d) => xAccessor(d).getTime())[0] ?? 0)
-    let maxTime = xDomain ? xDomain[1].getTime() : (extent(plotData, (d) => xAccessor(d).getTime())[1] ?? minTime)
-    // Brush defines the viewport — projection horizon is included via brush
-    // track extent, not by extending past the selection on the main chart.
-    if (!xDomain) {
-      maxTime = mergeProjectionXDomainMax(maxTime, projectionConfigs)
-    }
+    const maxTime = xDomain ? xDomain[1].getTime() : (extent(plotData, (d) => xAccessor(d).getTime())[1] ?? minTime)
 
     return scaleTime({
       range: [0, innerWidth],
       domain: [minTime, maxTime]
     })
-  }, [innerWidth, plotData, projectionConfigs, xAccessor, xDomain])
+  }, [innerWidth, plotData, xAccessor, xDomain])
 
   // When brushing, keep the full series for path rendering so edge fades stay
   // anchored to the viewport while the line pans through them. Y-domain and
@@ -248,25 +240,14 @@ const TimeSeriesChartCore = memo(function TimeSeriesChartCore({
     [lines, resolveYDomain, skeletonData]
   )
 
-  const yDomainTargetByAxis = useMemo(() => {
-    const base = computeYDomainsByAxis({
-      lines,
-      resolveDomain: (dataKeys) => resolveYDomain(xDomain ? visiblePlotData : data, dataKeys)
-    })
-    if (projectionConfigs.length === 0) {
-      return base
-    }
-    const merged: Record<string, [number, number]> = { ...base }
-    for (const axisId of Object.keys(base)) {
-      merged[axisId] = mergeProjectionYDomain(base[axisId] ?? [0, 100], projectionConfigs, axisId)
-    }
-    for (const config of projectionConfigs) {
-      if (!merged[config.yAxisId]) {
-        merged[config.yAxisId] = mergeProjectionYDomain([0, 100], projectionConfigs, config.yAxisId)
-      }
-    }
-    return merged
-  }, [data, lines, projectionConfigs, resolveYDomain, visiblePlotData, xDomain])
+  const yDomainTargetByAxis = useMemo(
+    () =>
+      computeYDomainsByAxis({
+        lines,
+        resolveDomain: (dataKeys) => resolveYDomain(xDomain ? visiblePlotData : data, dataKeys)
+      }),
+    [data, lines, resolveYDomain, visiblePlotData, xDomain]
+  )
 
   const animatedYDomainsByAxis = useAnimatedYDomains({
     chartPhase,
