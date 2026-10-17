@@ -227,17 +227,6 @@ enum SecuritySeverity {
         }
     }
 
-    /// Higher = more severe, for sorting/emphasis.
-    static func rank(_ severity: String) -> Int {
-        switch severity {
-        case "critical": 4
-        case "high": 3
-        case "medium": 2
-        case "low": 1
-        default: 0
-        }
-    }
-
     static func label(_ severity: String) -> String {
         switch severity {
         case "critical": String(localized: "Critical")

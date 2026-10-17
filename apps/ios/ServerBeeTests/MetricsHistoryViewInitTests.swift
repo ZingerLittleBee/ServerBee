@@ -36,7 +36,7 @@ final class MetricsHistoryViewInitTests: XCTestCase {
         )
         XCTAssertFalse(
             source.contains("String(localized: \"Language\")"),
-            "Appearance must only expose Theme; language selection belongs to iOS Settings"
+            "Appearance must only expose Theme; language selection has its own Settings screen"
         )
     }
 
@@ -48,7 +48,7 @@ final class MetricsHistoryViewInitTests: XCTestCase {
         )
         XCTAssertFalse(
             source.contains("APIClient(authManager:"),
-            "MetricsHistoryView must consume APIClient from the environment, not construct one"
+            "MetricsContentView must consume APIClient from the environment, not construct one"
         )
     }
 }

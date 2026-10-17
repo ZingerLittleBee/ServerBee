@@ -71,11 +71,7 @@ final class AccountModelsDecodingTests: XCTestCase {
         XCTAssertTrue(json.contains("\"new_password\":\"bbbbbbbb\""))
     }
 
-    // MARK: - About / DB status
-
-    func test_aboutInfo_decodes() throws {
-        XCTAssertEqual(try decode(AboutInfo.self, #"{"version":"1.2.3"}"#).version, "1.2.3")
-    }
+    // MARK: - DB status
 
     func test_dbStatus_decodesInstalled() throws {
         let json = """

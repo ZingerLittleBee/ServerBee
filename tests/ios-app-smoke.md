@@ -114,7 +114,7 @@ xcodebuild build -scheme ServerBee \
 | S4 | 拉刷 | 列表下拉 | 出现刷新图标，1s 内完成 | ☐ |
 | S5 | 错误重试 | 杀 Server → 拉刷 | 显示错误信息 + Try again 按钮 | ☐ |
 | S6 | 点击卡片进详情 | 任意卡片 | 进入 ServerDetailView，全部 metric 卡显示 | ☐ |
-| S7 | 历史曲线 | Detail 页底部 History 按钮 | 进入 MetricsHistoryView，曲线渲染 | ☐ |
+| S7 | Historical metrics | Server detail → Metrics tab | MetricsContentView renders the history charts | ☐ |
 | S8 | 时间范围切换 | History 页切 1h / 6h / 24h | 曲线刷新，无白屏 | ☐ |
 | S9 | Detail 返回不断 WS | Detail → 返回 → 再进 | WS 不断流；卡片数据连续 | ☐ |
 | S10 | Detail offline 状态 | 杀掉对应 agent | Detail 显示 "Offline since ..." | ☐ |
@@ -203,7 +203,7 @@ xcodebuild build -scheme ServerBee \
 | V5 | Offline banner | 飞行模式打开 | 念 "Offline. Trying to reconnect." | ☐ |
 | V6 | InsecureURLBanner | LoginView 输 http:// | 念 "Warning. Insecure connection over HTTP." | ☐ |
 | V7 | Retry button | 错误态 | 念 "Try again, button" 并可激活 | ☐ |
-| V8 | 历史曲线 | MetricsHistoryView | 至少念出标题；曲线本身可不被读 | ☐ |
+| V8 | Historical metrics | Server detail → Metrics tab | VoiceOver reads the chart headings; chart plots may remain unread | ☐ |
 
 ### 8.2 Dynamic Type
 

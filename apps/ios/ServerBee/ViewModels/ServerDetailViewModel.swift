@@ -3,28 +3,13 @@ import SwiftUI
 @MainActor
 @Observable
 final class ServerDetailViewModel {
-    var server: ServerStatus?
     /// Full REST configuration (capabilities, billing, kernel, agent version,
     /// enrollment state) — fields the live WebSocket frame never carries.
     var config: ServerConfig?
     var records: [MetricRecord] = []
     var isLoading = false
     var isLoadingConfig = false
-
-    /// Set the server from the parent list (avoids a separate network fetch).
-    func setServer(_ server: ServerStatus) {
-        self.server = server
-    }
-
-    /// Fetch the server detail individually if not already provided.
-    func fetchDetail(serverId: String, apiClient: APIClient) async {
-        guard server == nil else { return }
-        do {
-            server = try await apiClient.get("/api/servers/\(serverId)")
-        } catch {
-            AppLog.viewModel.error("ServerDetail fetch failed: \(String(describing: error), privacy: .public)")
-        }
-    }
+    private var recordsFetchGeneration = 0
 
     /// Fetch the authoritative REST configuration for the detail screen.
     func fetchConfig(serverId: String, apiClient: APIClient) async {
@@ -41,11 +26,17 @@ final class ServerDetailViewModel {
 
     /// Fetch historical metric records for the given server and time range.
     func fetchRecords(serverId: String, range: String, apiClient: APIClient) async {
+        guard !Task.isCancelled else { return }
+        recordsFetchGeneration += 1
+        let generation = recordsFetchGeneration
         isLoading = true
-        defer { isLoading = false }
+        defer { if generation == recordsFetchGeneration { isLoading = false } }
         do {
-            records = try await apiClient.get(MetricsHistoryQuery(range: range).path(serverId: serverId))
+            let refreshed: [MetricRecord] = try await apiClient.get(MetricsHistoryQuery(range: range).path(serverId: serverId))
+            guard generation == recordsFetchGeneration, !Task.isCancelled else { return }
+            records = refreshed
         } catch {
+            guard generation == recordsFetchGeneration, !Task.isCancelled else { return }
             AppLog.viewModel.error("ServerDetail records fetch failed: \(String(describing: error), privacy: .public)")
         }
     }

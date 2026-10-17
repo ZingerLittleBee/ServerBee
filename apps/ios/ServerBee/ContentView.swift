@@ -35,9 +35,6 @@ struct ContentView: View {
         _apiClient = State(initialValue: APIClient(authManager: authManager))
     }
 
-    /// Test-only accessor — assert the client was built during init.
-    var apiClientForTest: APIClient { apiClient }
-
     var body: some View {
         ZStack(alignment: .top) {
             TabView(selection: $selectedTab) {
