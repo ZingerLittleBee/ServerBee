@@ -242,10 +242,10 @@ async fn stats(
     let group_by = params.group_by.as_deref().unwrap_or("event_type");
     let limit = params.limit.unwrap_or(50).min(500);
 
-    let (group_expr, group_label) = match group_by {
-        "event_type" => ("event_type", "event_type"),
-        "source_ip" => ("source_ip", "source_ip"),
-        "day" => ("date(created_at)", "day"),
+    let group_expr = match group_by {
+        "event_type" => "event_type",
+        "source_ip" => "source_ip",
+        "day" => "date(created_at)",
         other => {
             return Err(AppError::BadRequest(format!(
                 "invalid group_by '{other}': expected event_type|source_ip|day"
@@ -293,7 +293,6 @@ async fn stats(
             StatsBucket { key, count }
         })
         .collect::<Vec<_>>();
-    let _ = group_label; // currently unused but retained for future response metadata
     ok(buckets)
 }
 
@@ -325,9 +324,27 @@ async fn delete_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AppConfig;
     use crate::entity::server as server_entity;
     use crate::test_utils::setup_test_db;
     use chrono::Duration;
+
+    fn list_params() -> ListEventsParams {
+        ListEventsParams {
+            server_id: None,
+            event_type: None,
+            source_ip: None,
+            severity: None,
+            since: None,
+            until: None,
+            cursor: None,
+            limit: None,
+        }
+    }
+
+    async fn app_state(db: DatabaseConnection) -> Arc<AppState> {
+        AppState::new(db, AppConfig::default()).await.unwrap()
+    }
 
     async fn insert_server(db: &DatabaseConnection, id: &str) {
         let now = Utc::now();
@@ -387,13 +404,19 @@ mod tests {
         insert_event(&db, "e1", "srv-1", "ssh_brute_force", "1.1.1.1", now).await;
         insert_event(&db, "e2", "srv-2", "ssh_brute_force", "2.2.2.2", now).await;
 
-        let q = security_event::Entity::find()
-            .filter(security_event::Column::ServerId.eq("srv-1"))
-            .all(&db)
-            .await
-            .unwrap();
-        assert_eq!(q.len(), 1);
-        assert_eq!(q[0].id, "e1");
+        let state = app_state(db).await;
+        let Json(response) = list_events(
+            State(state),
+            Query(ListEventsParams {
+                server_id: Some("srv-1".to_string()),
+                ..list_params()
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.data.items.len(), 1);
+        assert_eq!(response.data.items[0].id, "e1");
+        assert!(response.data.next_cursor.is_none());
     }
 
     #[tokio::test]
@@ -424,42 +447,35 @@ mod tests {
                 "srv-1",
                 "ssh_brute_force",
                 "1.1.1.1",
-                base - Duration::minutes(i),
+                base - Duration::minutes(i / 3),
             )
             .await;
         }
 
-        // Manual call (without the full app router) to verify pagination plumbing.
-        // Limit=2 → 2 items + a next_cursor pointing at the last returned row.
-        let rows = security_event::Entity::find()
-            .order_by_desc(security_event::Column::CreatedAt)
-            .order_by_desc(security_event::Column::Id)
-            .limit(3)
-            .all(&db)
-            .await
-            .unwrap();
-        assert_eq!(rows.len(), 3);
-        let cursor = encode_cursor(rows[1].created_at, &rows[1].id);
-
-        let (cur_ts, cur_id) = decode_cursor(&cursor).unwrap();
-        let next = security_event::Entity::find()
-            .filter(
-                Condition::any()
-                    .add(security_event::Column::CreatedAt.lt(cur_ts))
-                    .add(
-                        Condition::all()
-                            .add(security_event::Column::CreatedAt.eq(cur_ts))
-                            .add(security_event::Column::Id.lt(cur_id.clone())),
-                    ),
+        let state = app_state(db).await;
+        let mut cursor = None;
+        let mut ids = Vec::new();
+        for expected_len in [2, 2, 1] {
+            let Json(response) = list_events(
+                State(state.clone()),
+                Query(ListEventsParams {
+                    cursor,
+                    limit: Some(2),
+                    ..list_params()
+                }),
             )
-            .order_by_desc(security_event::Column::CreatedAt)
-            .order_by_desc(security_event::Column::Id)
-            .all(&db)
             .await
             .unwrap();
-        assert_eq!(next.len(), 3);
-        assert_eq!(next[0].id, rows[2].id);
-        assert!(next.iter().all(|r| r.id != cur_id));
+            assert_eq!(response.data.items.len(), expected_len);
+            if let Some(next) = &response.data.next_cursor {
+                let (_, cursor_id) = decode_cursor(next).unwrap();
+                assert_eq!(cursor_id, response.data.items.last().unwrap().id);
+            }
+            cursor = response.data.next_cursor;
+            assert_eq!(cursor.is_some(), expected_len == 2);
+            ids.extend(response.data.items.into_iter().map(|event| event.id));
+        }
+        assert_eq!(ids, ["e2", "e1", "e0", "e4", "e3"]);
     }
 
     #[tokio::test]
@@ -469,13 +485,72 @@ mod tests {
         let now = Utc::now();
         insert_event(&db, "e1", "srv-1", "ssh_brute_force", "1.1.1.1", now).await;
 
-        let res = security_event::Entity::delete_by_id("e1")
-            .exec(&db)
+        let state = app_state(db).await;
+        let Json(response) = delete_event(State(state.clone()), Path("e1".to_string()))
             .await
             .unwrap();
-        assert_eq!(res.rows_affected, 1);
+        assert!(response.data);
 
-        let q = security_event::Entity::find().all(&db).await.unwrap();
+        let q = security_event::Entity::find().all(&state.db).await.unwrap();
         assert!(q.is_empty());
+        let error = delete_event(State(state), Path("e1".to_string()))
+            .await
+            .unwrap_err();
+        assert!(matches!(error, AppError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn list_and_stats_share_inclusive_time_boundaries() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_server(&db, "srv-1").await;
+        insert_server(&db, "srv-2").await;
+        let since = DateTime::parse_from_rfc3339("2026-10-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let until = since + Duration::minutes(10);
+        for (id, server_id, created_at) in [
+            ("before", "srv-1", since - Duration::seconds(1)),
+            ("start", "srv-1", since),
+            ("middle", "srv-1", since + Duration::minutes(5)),
+            ("end", "srv-1", until),
+            ("after", "srv-1", until + Duration::seconds(1)),
+            ("other-server", "srv-2", since),
+        ] {
+            insert_event(&db, id, server_id, "ssh_brute_force", "1.1.1.1", created_at).await;
+        }
+        let state = app_state(db).await;
+        let Json(events) = list_events(
+            State(state.clone()),
+            Query(ListEventsParams {
+                server_id: Some("srv-1".into()),
+                since: Some(since),
+                until: Some(until),
+                ..list_params()
+            }),
+        )
+        .await
+        .unwrap();
+        let ids: Vec<_> = events
+            .data
+            .items
+            .iter()
+            .map(|event| event.id.as_str())
+            .collect();
+        assert_eq!(ids, ["end", "middle", "start"]);
+        let Json(buckets) = stats(
+            State(state),
+            Query(StatsParams {
+                server_id: Some("srv-1".into()),
+                since: Some(since),
+                until: Some(until),
+                group_by: None,
+                limit: None,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(buckets.data.len(), 1);
+        assert_eq!(buckets.data[0].key, "ssh_brute_force");
+        assert_eq!(buckets.data[0].count, 3);
     }
 }

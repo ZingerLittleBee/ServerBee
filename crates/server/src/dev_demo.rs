@@ -375,11 +375,6 @@ pub async fn start_demo_agents(state: Arc<AppState>) -> Result<(), AppError> {
         state
             .agent_manager
             .set_protocol_version(&demo_server.id, PROTOCOL_VERSION);
-        state.agent_manager.update_agent_platform(
-            &demo_server.id,
-            spec.os.to_string(),
-            "x86_64".to_string(),
-        );
         state.agent_manager.update_report(
             &demo_server.id,
             build_report(spec, live_sample_index(index), 60),

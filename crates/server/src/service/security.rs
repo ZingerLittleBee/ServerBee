@@ -1109,8 +1109,8 @@ mod tests {
         // by spinning up another sink at a distinct port and confirming it
         // stays silent — but we don't reconfigure the group, so a dedupe miss
         // would race against the prior URL. Simpler: assert no panic and
-        // that alert_state count incremented by 1 only (mark_triggered always
-        // bumps), while no second outbound request happens because the URL
+        // that alert_state count incremented by 1 only, while no second
+        // outbound request happens because the URL
         // for grp-sec only has one alive sink. The lack of a second send
         // can't be observed directly without timing windows; assert via
         // alert_states row + skip the negative network test.
