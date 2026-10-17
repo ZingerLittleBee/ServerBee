@@ -3,7 +3,6 @@ import {
   getCombinedSeverity,
   getLatencyStatus,
   getLatencyTextClass,
-  getLossDotBgClass,
   getLossSeverity,
   getSeverityMarkerColor,
   isLatencyFailure
@@ -63,18 +62,6 @@ describe('network-latency-constants', () => {
       expect(getCombinedSeverity({ latencyMs: 50, lossRatio: null })).toBe('healthy')
       expect(getCombinedSeverity({ latencyMs: 400, lossRatio: null })).toBe('warning')
       expect(getCombinedSeverity({ latencyMs: null, lossRatio: 0.1 })).toBe('severe')
-    })
-  })
-
-  describe('getLossDotBgClass', () => {
-    it('maps loss ratio to Tailwind bg class', () => {
-      expect(getLossDotBgClass(null)).toBe('bg-muted-foreground')
-      expect(getLossDotBgClass(0)).toBe('bg-status-healthy')
-      expect(getLossDotBgClass(0.009)).toBe('bg-status-healthy')
-      expect(getLossDotBgClass(0.01)).toBe('bg-status-warning')
-      expect(getLossDotBgClass(0.049)).toBe('bg-status-warning')
-      expect(getLossDotBgClass(0.05)).toBe('bg-status-danger')
-      expect(getLossDotBgClass(1)).toBe('bg-status-danger')
     })
   })
 

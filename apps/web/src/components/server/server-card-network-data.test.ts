@@ -17,6 +17,28 @@ function makeSummary(overrides: Partial<NetworkServerSummary> = {}): NetworkServ
 }
 
 describe('buildServerCardNetworkState', () => {
+  it('preserves an empty network window when older summaries omit sparkline arrays', () => {
+    const { latency_sparkline: _latency, loss_sparkline: _loss, ...summary } = makeSummary()
+    const state = buildServerCardNetworkState(summary, {})
+
+    expect(state.latencyPoints).toHaveLength(30)
+    expect(state.lossPoints).toHaveLength(30)
+    expect(state.latencyPoints.every((point) => point.value === null)).toBe(true)
+    expect(state.lossPoints.every((point) => point.value === null)).toBe(true)
+    expect(state.currentAvgLatency).toBeNull()
+    expect(state.currentAvgLossRatio).toBeNull()
+  })
+
+  it('keeps summary latency and loss values in matching slots, including zero values', () => {
+    const state = buildServerCardNetworkState(
+      makeSummary({ latency_sparkline: [0, null, 40], loss_sparkline: [0, null, 0.03] }),
+      {}
+    )
+
+    expect(state.latencyPoints.slice(-3).map((point) => point.value)).toEqual([0, null, 40])
+    expect(state.lossPoints.slice(-3).map((point) => point.value)).toEqual([0, null, 0.03])
+  })
+
   it('aggregates multiple targets by timestamp and preserves tooltip details', () => {
     const summary = makeSummary({
       targets: [
@@ -188,6 +210,103 @@ describe('buildServerCardNetworkState', () => {
     expect(state.latencyPoints.at(-1)?.value).toBe(60)
     expect(state.currentAvgLatency).toBe(60)
     expect(state.currentAvgLossRatio).toBe(0.04)
+  })
+
+  it.each([
+    '2026-04-12T10:29:00Z',
+    '2026-04-12T10:29:00.000Z',
+    '2026-04-12T12:29:00+02:00'
+  ])('replaces an overlapping seed instant without evicting older history: %s', (timestamp) => {
+    const state = buildServerCardNetworkState(
+      makeSummary({
+        last_probe_at: '2026-04-12T10:29:30Z',
+        latency_sparkline: Array.from({ length: 30 }, (_, index) => index + 1),
+        loss_sparkline: Array.from({ length: 30 }, () => 0)
+      }),
+      {
+        'target-1': [
+          {
+            avg_latency: 99,
+            max_latency: 99,
+            min_latency: 99,
+            packet_loss: 0.04,
+            packet_received: 96,
+            packet_sent: 100,
+            target_id: 'target-1',
+            timestamp
+          }
+        ]
+      }
+    )
+
+    expect(state.latencyPoints).toHaveLength(30)
+    expect(state.latencyPoints[0].value).toBe(1)
+    expect(state.latencyPoints.at(-1)?.value).toBe(99)
+    expect(state.lossPoints[0].value).toBe(0)
+    expect(state.lossPoints.at(-1)?.value).toBe(0.04)
+    expect(state.currentAvgLatency).toBe(99)
+    expect(state.currentTargets).toEqual([
+      { latency: 99, lossRatio: 0.04, targetId: 'target-1', targetName: 'target-1' }
+    ])
+  })
+
+  it('keeps newer seed readings current when a delayed realtime result replaces an older instant', () => {
+    const state = buildServerCardNetworkState(
+      makeSummary({
+        last_probe_at: '2026-04-12T10:02:30Z',
+        latency_sparkline: [10, 20, 30],
+        loss_sparkline: [0, null, 0.02]
+      }),
+      {
+        'target-1': [
+          {
+            avg_latency: 50,
+            max_latency: 50,
+            min_latency: 50,
+            packet_loss: 0.1,
+            packet_received: 9,
+            packet_sent: 10,
+            target_id: 'target-1',
+            timestamp: '2026-04-12T10:01:00Z'
+          }
+        ]
+      }
+    )
+
+    expect(state.latencyPoints.slice(-3).map((point) => point.value)).toEqual([10, 50, 30])
+    expect(state.lossPoints.slice(-3).map((point) => point.value)).toEqual([0, 0.1, 0.02])
+    expect(state.currentAvgLatency).toBe(30)
+    expect(state.currentAvgLossRatio).toBe(0.02)
+  })
+
+  it('keeps synthetic seed slots in their original order when the summary has no probe timestamp', () => {
+    const state = buildServerCardNetworkState(
+      makeSummary({
+        latency_sparkline: Array.from({ length: 30 }, (_, index) => index + 1),
+        loss_sparkline: Array.from({ length: 30 }, () => 0)
+      }),
+      {
+        'target-1': [
+          {
+            avg_latency: 99,
+            max_latency: 99,
+            min_latency: 99,
+            packet_loss: 0.01,
+            packet_received: 99,
+            packet_sent: 100,
+            target_id: 'target-1',
+            timestamp: '2026-04-12T10:30:00Z'
+          }
+        ]
+      }
+    )
+
+    expect(state.latencyPoints.map((point) => point.value)).toEqual([
+      ...Array.from({ length: 29 }, (_, index) => index + 2),
+      99
+    ])
+    expect(state.currentAvgLatency).toBe(99)
+    expect(state.currentAvgLossRatio).toBe(0.01)
   })
 
   it('left-pads an empty history so the card can reserve a full latency grid slot', () => {

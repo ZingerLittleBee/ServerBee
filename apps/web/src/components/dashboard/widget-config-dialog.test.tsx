@@ -125,10 +125,6 @@ vi.mock('@/components/ui/checkbox', () => ({
   )
 }))
 
-vi.mock('@/lib/markdown', () => ({
-  renderMarkdown: (content: string) => `<p>${content}</p>`
-}))
-
 const mockServers = [
   {
     id: 'srv-1',

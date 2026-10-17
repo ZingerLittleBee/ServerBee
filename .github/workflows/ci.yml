@@ -297,9 +297,19 @@ jobs:
         working-directory: apps/web
         run: bun run tsc -b
 
+      - name: Type check widget SDK
+        if: needs.changes.outputs.web == 'true'
+        working-directory: packages/widget-sdk
+        run: bun run typecheck
+
       - name: Test
         if: needs.changes.outputs.web == 'true'
         working-directory: apps/web
+        run: bun run test
+
+      - name: Test widget SDK
+        if: needs.changes.outputs.web == 'true'
+        working-directory: packages/widget-sdk
         run: bun run test
 
       - name: Lint

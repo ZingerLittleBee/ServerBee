@@ -10,15 +10,6 @@ pub struct ApiResponse<T: Serialize> {
     pub data: T,
 }
 
-#[derive(Debug, Serialize)]
-#[allow(dead_code)]
-pub struct PaginatedResponse<T: Serialize> {
-    pub data: Vec<T>,
-    pub total: u64,
-    pub page: u64,
-    pub page_size: u64,
-}
-
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ErrorBody {
     pub error: ErrorDetail,
@@ -123,9 +114,6 @@ impl From<anyhow::Error> for AppError {
         AppError::Internal("Internal error".to_string())
     }
 }
-
-#[allow(dead_code)]
-pub type ApiResult<T> = Result<Json<ApiResponse<T>>, AppError>;
 
 pub fn ok<T: Serialize>(data: T) -> Result<Json<ApiResponse<T>>, AppError> {
     Ok(Json(ApiResponse { data }))

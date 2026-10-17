@@ -353,6 +353,9 @@ mod tests {
         assert_eq!(probe_type_to_cap("tcp"), Some(CAP_PING_TCP));
         assert_eq!(probe_type_to_cap("http"), Some(CAP_PING_HTTP));
         assert_eq!(probe_type_to_cap("unknown"), None);
+        assert_eq!(probe_type_to_cap(""), None);
+        assert_eq!(probe_type_to_cap("ICMP"), None);
+        assert_eq!(probe_type_to_cap("dns"), None);
     }
 
     #[test]

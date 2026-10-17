@@ -25,6 +25,9 @@ interface ServerCardNetworkTrend {
   lossPoints: ServerCardMetricPoint[]
 }
 
+type NetworkTrendSummary = Pick<NetworkServerSummary, 'targets' | 'last_probe_at'> &
+  Partial<Pick<NetworkServerSummary, 'latency_sparkline' | 'loss_sparkline'>>
+
 export interface ServerCardNetworkState extends ServerCardNetworkTrend {
   currentTargets: readonly ServerCardTooltipTarget[]
 }
@@ -175,7 +178,7 @@ function buildSparklineTimestamps(
 }
 
 function buildFallbackState(
-  summary: Pick<NetworkServerSummary, 'latency_sparkline' | 'loss_sparkline' | 'targets' | 'last_probe_at'> | undefined,
+  summary: NetworkTrendSummary | undefined,
   fallbackTargets: readonly ServerCardTooltipTarget[],
   bucketSeconds: number
 ): ServerCardNetworkTrend {
@@ -240,12 +243,39 @@ function buildFallbackState(
   }
 }
 
+function mergeMetricPoints(
+  seed: readonly ServerCardMetricPoint[],
+  realtime: readonly ServerCardMetricPoint[]
+): ServerCardMetricPoint[] {
+  const pointsByInstant = new Map<number | string, ServerCardMetricPoint>()
+  for (const point of [...seed, ...realtime]) {
+    // Date.parse accepts labels such as "synthetic-1" as calendar dates.
+    const instant = point.timestamp.startsWith('synthetic-') ? Number.NaN : Date.parse(point.timestamp)
+    // Equivalent ISO timestamps identify the same reading. Realtime replaces
+    // the seed at that instant; synthetic seed slots keep their original order.
+    pointsByInstant.set(Number.isNaN(instant) ? point.timestamp : instant, point)
+  }
+
+  return Array.from(pointsByInstant.entries())
+    .toSorted(([left], [right]) => {
+      if (typeof left === 'number' && typeof right === 'number') {
+        return left - right
+      }
+      if (typeof left === 'number') {
+        return 1
+      }
+      return typeof right === 'number' ? -1 : 0
+    })
+    .slice(-MAX_TREND_POINTS)
+    .map(([, point]) => point)
+}
+
 function mergeStates(
   fallbackState: ServerCardNetworkTrend,
   realtimeState: ServerCardNetworkTrend
 ): ServerCardNetworkTrend {
-  const latencyPoints = [...fallbackState.latencyPoints, ...realtimeState.latencyPoints].slice(-MAX_TREND_POINTS)
-  const lossPoints = [...fallbackState.lossPoints, ...realtimeState.lossPoints].slice(-MAX_TREND_POINTS)
+  const latencyPoints = mergeMetricPoints(fallbackState.latencyPoints, realtimeState.latencyPoints)
+  const lossPoints = mergeMetricPoints(fallbackState.lossPoints, realtimeState.lossPoints)
 
   return {
     currentAvgLatency: latencyPoints.at(-1)?.value ?? null,
@@ -265,7 +295,7 @@ function selectCurrentTargets(
 }
 
 export function buildServerCardNetworkState(
-  summary: Pick<NetworkServerSummary, 'latency_sparkline' | 'loss_sparkline' | 'targets' | 'last_probe_at'> | undefined,
+  summary: NetworkTrendSummary | undefined,
   realtimeData: Record<string, NetworkProbeResultData[]>,
   bucketSeconds = 60
 ): ServerCardNetworkState {

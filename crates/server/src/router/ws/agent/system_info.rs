@@ -209,11 +209,6 @@ pub(super) async fn on_system_info(
         .agent_manager
         .set_protocol_version(server_id, agent_pv);
 
-    // Store os/arch for upgrade platform mapping
-    state
-        .agent_manager
-        .update_agent_platform(server_id, info.os.clone(), info.cpu_arch.clone());
-
     if let Some(bits) = agent_local_capabilities {
         state
             .agent_manager

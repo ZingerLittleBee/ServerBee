@@ -64,6 +64,7 @@ impl ScanDetector {
         }
     }
 
+    #[cfg(test)]
     pub fn with_clock(
         window: Duration,
         threshold: u32,
@@ -170,9 +171,7 @@ impl ScanDetector {
                 break;
             }
         }
-        if state.events.is_empty() {
-            state.window_started_at = None;
-        }
+        state.window_started_at = state.events.front().map(|(timestamp, _)| *timestamp);
     }
 }
 
@@ -240,6 +239,51 @@ mod tests {
                 det.observe("1.2.3.4".into(), port),
                 ScanEmit::None
             ));
+        }
+    }
+
+    #[test]
+    fn emitted_window_starts_at_oldest_retained_attempt() {
+        let initial = Instant::now();
+        let now = Arc::new(Mutex::new(initial));
+        let now_for_detector = Arc::clone(&now);
+        let mut detector = ScanDetector::with_clock(Duration::from_secs(30), 3, move || {
+            *now_for_detector.lock().unwrap()
+        });
+        assert!(matches!(
+            detector.observe("1.2.3.4".into(), 1),
+            ScanEmit::None
+        ));
+        *now.lock().unwrap() = initial + Duration::from_secs(20);
+        assert!(matches!(
+            detector.observe("1.2.3.4".into(), 2),
+            ScanEmit::None
+        ));
+        *now.lock().unwrap() = initial + Duration::from_secs(31);
+        assert!(matches!(
+            detector.observe("1.2.3.4".into(), 3),
+            ScanEmit::None
+        ));
+        *now.lock().unwrap() = initial + Duration::from_secs(32);
+
+        match detector.observe("1.2.3.4".into(), 4) {
+            ScanEmit::PortScan {
+                started_at,
+                ended_at,
+                evidence:
+                    SecurityEvidence::PortScan {
+                        sample_ports,
+                        total_attempts,
+                        ..
+                    },
+                ..
+            } => {
+                assert_eq!(started_at, initial + Duration::from_secs(20));
+                assert_eq!(ended_at, initial + Duration::from_secs(32));
+                assert_eq!(sample_ports, vec![2, 3, 4]);
+                assert_eq!(total_attempts, 3);
+            }
+            other => panic!("expected retained attempts to trigger a scan, got {other:?}"),
         }
     }
 

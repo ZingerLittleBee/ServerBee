@@ -1,16 +1,33 @@
 import { useApiMutation, useApiQuery } from './escape-hatch'
 
 export interface AlertEvent {
-  created_at: string
-  id: string
-  message: string
-  severity: string
+  alert_key: string
+  count: number
+  event_at: string
+  resolved_at: string | null
+  rule_id: string
+  rule_name: string
+  server_id: string
+  server_name: string
+  status: string
 }
 
 export interface ServiceMonitor {
+  config_json: string
+  consecutive_failures: number
+  created_at: string
+  enabled: boolean
   id: string
+  interval: number
+  last_checked_at: string | null
+  last_status: boolean | null
+  monitor_type: string
   name: string
-  status: string
+  notification_group_id: string | null
+  retry_count: number
+  server_ids_json: string | null
+  target: string
+  updated_at: string
 }
 
 export function useAlerts(opts?: { limit?: number }) {
@@ -37,14 +54,16 @@ export function useTraffic(serverId: string | null, range?: string) {
 }
 
 export interface UptimeEntry {
-  day: string
-  incidents: number
-  uptime_pct: number
+  date: string
+  downtime_incidents: number
+  online_minutes: number
+  total_minutes: number
 }
 
 export function useUptime(serverId: string | null, days = 30) {
-  return useApiQuery<UptimeEntry[]>(serverId ? `/api/servers/${serverId}/uptime-daily` : '/api/uptime/overview', {
-    params: { days }
+  return useApiQuery<UptimeEntry[]>(`/api/servers/${serverId ?? ''}/uptime-daily`, {
+    params: { days },
+    enabled: Boolean(serverId)
   })
 }
 

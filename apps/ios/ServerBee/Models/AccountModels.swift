@@ -83,12 +83,7 @@ struct MobileDevice: Decodable, Identifiable, Sendable {
     }
 }
 
-// MARK: - About
-
-/// `GET /api/about` — server-reported version.
-struct AboutInfo: Decodable, Sendable {
-    let version: String
-}
+// MARK: - Database status
 
 /// Database (GeoIP / ASN) status (`GET /api/geoip/status`, `/api/asn/status`).
 struct DbStatus: Decodable, Sendable {

@@ -3,20 +3,6 @@ import XCTest
 
 @MainActor
 final class RefreshCoordinatorTests: XCTestCase {
-    override func setUp() async throws {
-        URLProtocol.registerClass(URLProtocolStub.self)
-        URLProtocolStub.stubResponse = nil
-        URLProtocolStub.stubError = nil
-        URLProtocolStub.stubResponseFactory = nil
-    }
-
-    override func tearDown() async throws {
-        URLProtocol.unregisterClass(URLProtocolStub.self)
-        URLProtocolStub.stubResponse = nil
-        URLProtocolStub.stubError = nil
-        URLProtocolStub.stubResponseFactory = nil
-    }
-
     /// Concurrent successful refresh attempts coalesce: every caller observes
     /// the same token without firing the underlying `refreshFn` more than once.
     ///

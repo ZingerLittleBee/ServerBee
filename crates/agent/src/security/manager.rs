@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serverbee_common::constants::{CAP_SECURITY_EVENTS, has_capability};
 use serverbee_common::protocol::AgentMessage;
@@ -127,7 +127,8 @@ impl SecurityManager {
         Ok(Self { handles })
     }
 
-    /// For tests/diagnostics: number of spawned background tasks.
+    /// Number of spawned background tasks for pipeline lifecycle assertions.
+    #[cfg(test)]
     pub fn handle_count(&self) -> usize {
         self.handles.len()
     }
@@ -238,17 +239,23 @@ async fn run_ssh_pipeline(
                 source_ip,
                 severity,
                 evidence,
-                ..
+                started_at,
+                ended_at,
             } => {
-                let now = chrono::Utc::now().timestamp();
+                let (started_at, ended_at) = event_window_timestamps(
+                    started_at,
+                    ended_at,
+                    Instant::now(),
+                    chrono::Utc::now(),
+                );
                 let payload = SecurityEventPayload {
                     event_type: SecurityEventType::SshBruteForce,
                     severity,
                     source_ip,
                     source_port: None,
                     username: None,
-                    started_at: now.saturating_sub(cfg.window_seconds as i64),
-                    ended_at: now,
+                    started_at,
+                    ended_at,
                     first_seen: false,
                     detector_source: DetectorSource::Journal,
                     evidence,
@@ -257,6 +264,26 @@ async fn run_ssh_pipeline(
             }
         }
     }
+}
+
+/// Project detector bounds from one UTC/monotonic reference pair. Saturation
+/// keeps wire timestamps ordered and nonnegative across wall-clock adjustments.
+fn event_window_timestamps(
+    started_at: Instant,
+    ended_at: Instant,
+    monotonic_now: Instant,
+    utc_now: chrono::DateTime<chrono::Utc>,
+) -> (i64, i64) {
+    let ended_at = ended_at.min(monotonic_now);
+    let started_at = started_at.min(ended_at);
+    let latest_timestamp = utc_now.timestamp().max(0);
+    let project = |bound: Instant| {
+        chrono::Duration::from_std(monotonic_now.saturating_duration_since(bound))
+            .ok()
+            .and_then(|age| utc_now.checked_sub_signed(age))
+            .map_or(0, |time| time.timestamp().clamp(0, latest_timestamp))
+    };
+    (project(started_at), project(ended_at))
 }
 
 async fn build_ssh_login_payload(
@@ -290,16 +317,21 @@ async fn run_scan_pipeline(
         tokio::select! {
             Some(ev) = conntrack_rx.recv() => {
                 let emit = detector.observe(ev.source_ip, ev.dst_port);
-                if let ScanEmit::PortScan { source_ip, evidence, .. } = emit {
-                    let now = chrono::Utc::now().timestamp();
+                if let ScanEmit::PortScan { source_ip, evidence, started_at, ended_at } = emit {
+                    let (started_at, ended_at) = event_window_timestamps(
+                        started_at,
+                        ended_at,
+                        Instant::now(),
+                        chrono::Utc::now(),
+                    );
                     let payload = SecurityEventPayload {
                         event_type: SecurityEventType::PortScan,
                         severity: Severity::High,
                         source_ip,
                         source_port: None,
                         username: None,
-                        started_at: now.saturating_sub(cfg.window_seconds as i64),
-                        ended_at: now,
+                        started_at,
+                        ended_at,
                         first_seen: false,
                         detector_source: DetectorSource::Conntrack,
                         evidence,
@@ -323,6 +355,72 @@ mod tests {
     use super::*;
     use crate::security::ssh_parser::{AuthMethodHint, AuthOutcome};
     use serverbee_common::constants::CAP_DEFAULT;
+
+    #[test]
+    fn event_window_timestamps_preserve_detector_bounds() {
+        let now = Instant::now();
+        let utc_now = chrono::DateTime::from_timestamp(100, 0).unwrap();
+        assert_eq!(
+            event_window_timestamps(
+                now - Duration::from_secs(7),
+                now - Duration::from_secs(2),
+                now,
+                utc_now,
+            ),
+            (93, 98)
+        );
+    }
+
+    #[test]
+    fn event_window_timestamps_preserve_subsecond_epoch_boundaries() {
+        let now = Instant::now();
+        let utc_now = chrono::DateTime::from_timestamp(100, 100_000_000).unwrap();
+        assert_eq!(
+            event_window_timestamps(
+                now - Duration::from_millis(200),
+                now - Duration::from_millis(50),
+                now,
+                utc_now,
+            ),
+            (99, 100)
+        );
+    }
+
+    #[test]
+    fn event_window_timestamps_clamp_future_and_reversed_bounds() {
+        let now = Instant::now();
+        let utc_now = chrono::DateTime::from_timestamp(100, 0).unwrap();
+        assert_eq!(
+            event_window_timestamps(
+                now + Duration::from_secs(1),
+                now + Duration::from_secs(2),
+                now,
+                utc_now,
+            ),
+            (100, 100)
+        );
+        assert_eq!(
+            event_window_timestamps(now, now - Duration::from_secs(2), now, utc_now,),
+            (98, 98)
+        );
+    }
+
+    #[test]
+    fn event_window_timestamps_saturate_at_unix_epoch_after_clock_shift() {
+        let now = Instant::now();
+        for unix_now in [5, -1] {
+            let utc_now = chrono::DateTime::from_timestamp(unix_now, 0).unwrap();
+            assert_eq!(
+                event_window_timestamps(
+                    now - Duration::from_secs(7),
+                    now - Duration::from_secs(2),
+                    now,
+                    utc_now,
+                ),
+                (0, (unix_now - 2).max(0))
+            );
+        }
+    }
 
     fn login_attempt(username: &str, source_ip: &str) -> AuthAttempt {
         AuthAttempt {
@@ -426,6 +524,7 @@ mod tests {
         )));
         let (attempt_tx, attempt_rx) = mpsc::channel(4);
         let (event_tx, mut event_rx) = mpsc::channel(4);
+        let earliest_start = chrono::Utc::now().timestamp();
         let task = tokio::spawn(run_ssh_pipeline(
             attempt_rx,
             crate::config::SshDetectorConfig {
@@ -451,7 +550,12 @@ mod tests {
         assert_eq!(payload.source_ip, "198.51.100.20");
         assert_eq!(payload.source_port, None);
         assert!(!payload.first_seen);
+        assert!(
+            payload.started_at >= earliest_start,
+            "a burst must start at its first observed attempt, not a full configured window ago"
+        );
         assert!(payload.started_at <= payload.ended_at);
+        assert!(payload.ended_at <= chrono::Utc::now().timestamp());
         match payload.evidence {
             SecurityEvidence::SshBruteForce {
                 failed_count,
@@ -480,6 +584,7 @@ mod tests {
         let (blocked_tx, blocked_rx) = mpsc::channel(1);
         let (event_tx, mut event_rx) = mpsc::channel(4);
 
+        let earliest_start = chrono::Utc::now().timestamp();
         blocked_tx.send("192.0.2.44".to_string()).await.unwrap();
         let task = tokio::spawn(run_scan_pipeline(
             conntrack_rx,
@@ -514,6 +619,12 @@ mod tests {
         assert_eq!(payload.severity, Severity::High);
         assert_eq!(payload.detector_source, DetectorSource::Conntrack);
         assert_eq!(payload.source_ip, "192.0.2.44");
+        assert!(
+            payload.started_at >= earliest_start,
+            "a burst must start at its first observed attempt, not a full configured window ago"
+        );
+        assert!(payload.started_at <= payload.ended_at);
+        assert!(payload.ended_at <= chrono::Utc::now().timestamp());
         match payload.evidence {
             SecurityEvidence::PortScan {
                 distinct_ports,

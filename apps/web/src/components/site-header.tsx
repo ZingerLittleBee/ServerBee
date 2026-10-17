@@ -12,7 +12,6 @@ interface SiteHeaderPortalsContextValue {
 
 const SiteHeaderPortalsContext = createContext<SiteHeaderPortalsContextValue | null>(null)
 
-/** @deprecated Prefer SiteHeaderPortalsProvider — alias kept for existing call sites. */
 export function SiteHeaderActionsProvider({ children }: { children: ReactNode }) {
   const [leadingTarget, setLeadingTarget] = useState<HTMLDivElement | null>(null)
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(null)

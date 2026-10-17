@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Range selector + history charts for a server. Reusable content (no
-/// navigation chrome) so it can back both the standalone screen and the
-/// detail "Metrics" tab. Consumes `APIClient` from the environment.
+/// Range selector + history charts for the server detail's Metrics tab.
+/// Consumes `APIClient` from the environment.
 struct MetricsContentView: View {
     let serverId: String
 
@@ -21,7 +20,7 @@ struct MetricsContentView: View {
             .padding()
         }
         .background(Color(.systemGroupedBackground))
-        .task {
+        .task(id: selectedRange) {
             await viewModel.fetchRecords(serverId: serverId, range: selectedRange, apiClient: apiClient)
         }
         .task {
@@ -30,11 +29,6 @@ struct MetricsContentView: View {
             // the records so the first render already has the right scale.
             if viewModel.config == nil {
                 await viewModel.fetchConfig(serverId: serverId, apiClient: apiClient)
-            }
-        }
-        .onChange(of: selectedRange) { _, newRange in
-            Task {
-                await viewModel.fetchRecords(serverId: serverId, range: newRange, apiClient: apiClient)
             }
         }
     }
@@ -111,24 +105,11 @@ struct MetricsContentView: View {
     }
 }
 
-/// Standalone history screen (still reachable as a pushed destination).
-struct MetricsHistoryView: View {
-    let serverId: String
-
-    var body: some View {
-        MetricsContentView(serverId: serverId)
-            .navigationTitle(String(localized: "Metrics History"))
-            .navigationBarTitleDisplayMode(.inline)
-    }
-}
-
 // MARK: - Metrics history
 
 /// Renders the standard set of history charts from raw metric records:
 /// CPU, Memory, Disk, Network, Disk I/O (when present), Load (when present)
-/// and Temperature (when reported). Pure presentation — owns no fetching,
-/// scroll, or navigation chrome so it can be embedded in both the standalone
-/// history screen and the detail tab.
+/// and Temperature (when reported). Owns no fetching, scroll, or navigation chrome.
 struct MetricsCharts: View {
     let records: [MetricRecord]
     /// Installed memory / disk capacity from the server configuration. History
@@ -381,6 +362,6 @@ enum MetricsSummary {
 
 #Preview {
     NavigationStack {
-        MetricsHistoryView(serverId: "1")
+        MetricsContentView(serverId: "1")
     }
 }

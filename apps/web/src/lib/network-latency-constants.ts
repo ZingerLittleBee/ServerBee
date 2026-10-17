@@ -99,7 +99,7 @@ export function getSeverityMarkerColor(severity: CombinedSeverity): string {
 }
 
 // Packet-loss severity for the square grid, derived from the shared ratio thresholds so
-// the grid's encoding can never drift from the text and dot tones below.
+// the grid's encoding can never drift from the text tones below.
 export function getLossSeverity(lossRatio: number | null | undefined): CombinedSeverity {
   if (lossRatio == null) {
     return 'unknown'
@@ -129,17 +129,4 @@ export function getLossTextClass(lossRatio: number | null | undefined): string {
     return 'text-status-warning-text'
   }
   return 'text-status-danger-text'
-}
-
-export function getLossDotBgClass(lossRatio: number | null | undefined): string {
-  if (lossRatio == null) {
-    return 'bg-muted-foreground'
-  }
-  if (lossRatio < LOSS_WARNING_THRESHOLD_RATIO) {
-    return 'bg-status-healthy'
-  }
-  if (lossRatio < LOSS_SEVERE_THRESHOLD_RATIO) {
-    return 'bg-status-warning'
-  }
-  return 'bg-status-danger'
 }

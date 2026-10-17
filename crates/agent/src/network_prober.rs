@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use rand::Rng;
-use serverbee_common::constants::{CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP, has_capability};
+use serverbee_common::constants::{has_capability, probe_type_to_cap};
 use serverbee_common::types::{NetworkProbeResultData, NetworkProbeTarget};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -266,54 +266,10 @@ fn aggregate_results(
     }
 }
 
-/// Map a probe_type string to its capability bit.
-fn probe_type_to_cap(probe_type: &str) -> Option<u32> {
-    match probe_type {
-        "icmp" => Some(CAP_PING_ICMP),
-        "tcp" => Some(CAP_PING_TCP),
-        "http" => Some(CAP_PING_HTTP),
-        _ => None,
-    }
-}
-
-/// Split a "host:port" string, returning `(host, port)`.
-/// If no port is specified, `default_port` (80) is returned.
-#[allow(dead_code)]
-fn parse_host_port(target: &str) -> (&str, u16) {
-    if let Some(colon_pos) = target.rfind(':') {
-        let host = &target[..colon_pos];
-        let port_str = &target[colon_pos + 1..];
-        if let Ok(port) = port_str.parse::<u16>() {
-            return (host, port);
-        }
-    }
-    (target, 80)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_parse_host_port_with_port() {
-        let (host, port) = parse_host_port("example.com:443");
-        assert_eq!(host, "example.com");
-        assert_eq!(port, 443);
-    }
-
-    #[test]
-    fn test_parse_host_port_without_port() {
-        let (host, port) = parse_host_port("example.com");
-        assert_eq!(host, "example.com");
-        assert_eq!(port, 80);
-    }
-
-    #[test]
-    fn test_parse_host_port_ipv4_with_port() {
-        let (host, port) = parse_host_port("192.168.1.1:8080");
-        assert_eq!(host, "192.168.1.1");
-        assert_eq!(port, 8080);
-    }
+    use serverbee_common::constants::{CAP_PING_HTTP, CAP_PING_ICMP, CAP_PING_TCP};
 
     #[test]
     fn test_aggregate_results_all_success() {
@@ -345,14 +301,6 @@ mod tests {
         assert!(result.avg_latency.is_none());
         assert!(result.min_latency.is_none());
         assert!(result.max_latency.is_none());
-    }
-
-    #[test]
-    fn test_probe_type_to_cap() {
-        assert_eq!(probe_type_to_cap("icmp"), Some(CAP_PING_ICMP));
-        assert_eq!(probe_type_to_cap("tcp"), Some(CAP_PING_TCP));
-        assert_eq!(probe_type_to_cap("http"), Some(CAP_PING_HTTP));
-        assert_eq!(probe_type_to_cap("unknown"), None);
     }
 
     #[tokio::test]
@@ -413,42 +361,6 @@ mod tests {
             target: addr.to_string(),
             probe_type: probe_type.to_string(),
         }
-    }
-
-    // ── probe_type_to_cap: unknown/empty variants ────────────────────────────
-
-    #[test]
-    fn test_probe_type_to_cap_empty_and_other() {
-        assert_eq!(probe_type_to_cap(""), None);
-        assert_eq!(probe_type_to_cap("ICMP"), None); // case-sensitive
-        assert_eq!(probe_type_to_cap("dns"), None);
-    }
-
-    // ── parse_host_port: extra fall-through branches ─────────────────────────
-
-    #[test]
-    fn test_parse_host_port_non_numeric_port_falls_through() {
-        // rfind finds a colon but the port doesn't parse: fall through to default.
-        let (host, port) = parse_host_port("example.com:notaport");
-        assert_eq!(host, "example.com:notaport");
-        assert_eq!(port, 80);
-    }
-
-    #[test]
-    fn test_parse_host_port_trailing_colon() {
-        // Trailing colon -> empty port string -> parse fails -> default.
-        let (host, port) = parse_host_port("example.com:");
-        assert_eq!(host, "example.com:");
-        assert_eq!(port, 80);
-    }
-
-    #[test]
-    fn test_parse_host_port_uses_last_colon() {
-        // rfind returns the LAST colon; the bare IPv6 here has its port parsed
-        // off the final segment only when that segment is numeric.
-        let (host, port) = parse_host_port("[::1]:8443");
-        assert_eq!(host, "[::1]");
-        assert_eq!(port, 8443);
     }
 
     // ── aggregate_results: single sample + zero-sent edge cases ───────────────

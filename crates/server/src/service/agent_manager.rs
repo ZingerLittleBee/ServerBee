@@ -107,7 +107,7 @@ struct TracerouteCacheEntry {
 
 pub struct AgentManager {
     connections: DashMap<String, AgentConnection>,
-    latest_reports: DashMap<String, CachedReport>,
+    latest_reports: DashMap<String, Arc<SystemReport>>,
     browser_tx: broadcast::Sender<BrowserMessage>,
     /// Maps session_id -> terminal output channel (for routing agent output to browser WS)
     terminal_sessions: DashMap<String, TerminalSession>,
@@ -143,25 +143,14 @@ struct PendingRequest {
     ttl: std::time::Duration,
 }
 
-#[allow(dead_code)]
 pub struct AgentConnection {
     pub connection_id: u64,
     authority_fingerprint: Option<String>,
-    pub server_id: String,
     pub server_name: String,
     pub tx: mpsc::Sender<ServerMessage>,
-    pub connected_at: Instant,
     pub last_report_at: Instant,
     pub remote_addr: SocketAddr,
     pub protocol_version: u32,
-    pub os: String,
-    pub arch: String,
-}
-
-#[allow(dead_code)]
-pub struct CachedReport {
-    pub report: Arc<SystemReport>,
-    pub received_at: Instant,
 }
 
 impl AgentManager {
@@ -200,15 +189,11 @@ impl AgentManager {
             AgentConnection {
                 connection_id,
                 authority_fingerprint: None,
-                server_id: server_id.clone(),
                 server_name,
                 tx,
-                connected_at: now,
                 last_report_at: now,
                 remote_addr,
                 protocol_version: 1,
-                os: String::new(),
-                arch: String::new(),
             },
         );
 
@@ -316,13 +301,8 @@ impl AgentManager {
         });
 
         // Cache the report
-        self.latest_reports.insert(
-            server_id.to_string(),
-            CachedReport {
-                report: Arc::new(report),
-                received_at: now,
-            },
-        );
+        self.latest_reports
+            .insert(server_id.to_string(), Arc::new(report));
     }
 
     /// Check if a server is currently connected.
@@ -338,7 +318,7 @@ impl AgentManager {
     }
 
     /// Return the number of currently connected agents.
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn online_count(&self) -> usize {
         self.connections.len()
     }
@@ -347,14 +327,14 @@ impl AgentManager {
     pub fn get_latest_report(&self, server_id: &str) -> Option<Arc<SystemReport>> {
         self.latest_reports
             .get(server_id)
-            .map(|r| Arc::clone(&r.report))
+            .map(|r| Arc::clone(r.value()))
     }
 
     /// Get all latest cached reports as (server_id, report) pairs.
     pub fn all_latest_reports(&self) -> Vec<(String, Arc<SystemReport>)> {
         self.latest_reports
             .iter()
-            .map(|entry| (entry.key().clone(), Arc::clone(&entry.value().report)))
+            .map(|entry| (entry.key().clone(), Arc::clone(entry.value())))
             .collect()
     }
 
@@ -369,7 +349,7 @@ impl AgentManager {
         self.latest_reports
             .iter()
             .filter(|entry| self.connections.contains_key(entry.key()))
-            .map(|entry| (entry.key().clone(), Arc::clone(&entry.value().report)))
+            .map(|entry| (entry.key().clone(), Arc::clone(entry.value())))
             .collect()
     }
 
@@ -504,19 +484,6 @@ impl AgentManager {
 
     pub fn get_protocol_version(&self, server_id: &str) -> Option<u32> {
         self.connections.get(server_id).map(|c| c.protocol_version)
-    }
-
-    pub fn update_agent_platform(&self, server_id: &str, os: String, arch: String) {
-        if let Some(mut conn) = self.connections.get_mut(server_id) {
-            conn.os = os;
-            conn.arch = arch;
-        }
-    }
-
-    pub fn get_agent_platform(&self, server_id: &str) -> Option<(String, String)> {
-        self.connections
-            .get(server_id)
-            .map(|c| (c.os.clone(), c.arch.clone()))
     }
 
     pub fn broadcast_browser(&self, msg: BrowserMessage) {

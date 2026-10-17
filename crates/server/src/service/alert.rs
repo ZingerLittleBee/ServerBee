@@ -1,6 +1,5 @@
 use chrono::{Duration, Utc};
 use dashmap::DashMap;
-use sea_orm::prelude::Expr;
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -373,7 +372,9 @@ impl AlertStateManager {
             } else {
                 // Retain the evaluator's bookkeeping even on suppressed polls.
                 active.count = Set(if rearm { 1 } else { count.saturating_add(1) });
-                active.last_notified_at = Set(now);
+                if should_notify {
+                    active.last_notified_at = Set(now);
+                }
                 if rearm {
                     active.first_triggered_at = Set(now);
                     active.resolved = Set(false);
@@ -464,119 +465,6 @@ impl AlertStateManager {
                 }
             })
             .or_insert(committed);
-    }
-
-    pub async fn mark_triggered(
-        &self,
-        db: &DatabaseConnection,
-        rule_id: &str,
-        server_id: &str,
-        event_key: &str,
-    ) -> Result<(), AppError> {
-        let now = Utc::now();
-        let key = (
-            rule_id.to_string(),
-            server_id.to_string(),
-            event_key.to_string(),
-        );
-
-        if let Some(mut info) = self.triggered.get_mut(&key) {
-            info.count += 1;
-            info.last_notified_at = now;
-
-            // Update DB
-            alert_state::Entity::update_many()
-                .col_expr(
-                    alert_state::Column::Count,
-                    Expr::col(alert_state::Column::Count).add(1),
-                )
-                .col_expr(alert_state::Column::LastNotifiedAt, Expr::value(now))
-                .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
-                .filter(alert_state::Column::RuleId.eq(rule_id))
-                .filter(alert_state::Column::ServerId.eq(server_id))
-                .filter(alert_state::Column::EventKey.eq(event_key))
-                .filter(alert_state::Column::Resolved.eq(false))
-                .exec(db)
-                .await?;
-        } else {
-            self.triggered.insert(
-                key,
-                TriggeredInfo {
-                    first_triggered_at: now,
-                    last_notified_at: now,
-                    count: 1,
-                },
-            );
-
-            // Re-arm the existing row if one is left over from a prior
-            // resolve cycle, otherwise insert a fresh one. A
-            // UNIQUE(rule_id, server_id, event_key) constraint means at most
-            // one row can exist per dimension, so a blind INSERT here would
-            // fail and abort evaluation forever after the first
-            // trigger→resolve.
-            let existing = alert_state::Entity::find()
-                .filter(alert_state::Column::RuleId.eq(rule_id))
-                .filter(alert_state::Column::ServerId.eq(server_id))
-                .filter(alert_state::Column::EventKey.eq(event_key))
-                .one(db)
-                .await?;
-            if let Some(row) = existing {
-                let mut am: alert_state::ActiveModel = row.into();
-                am.first_triggered_at = Set(now);
-                am.last_notified_at = Set(now);
-                am.count = Set(1);
-                am.resolved = Set(false);
-                am.resolved_at = Set(None);
-                am.updated_at = Set(now);
-                am.update(db).await?;
-            } else {
-                let model = alert_state::ActiveModel {
-                    id: NotSet,
-                    rule_id: Set(rule_id.to_string()),
-                    server_id: Set(server_id.to_string()),
-                    event_key: Set(event_key.to_string()),
-                    first_triggered_at: Set(now),
-                    last_notified_at: Set(now),
-                    count: Set(1),
-                    resolved: Set(false),
-                    resolved_at: Set(None),
-                    updated_at: Set(now),
-                };
-                model.insert(db).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    pub async fn mark_resolved(
-        &self,
-        db: &DatabaseConnection,
-        rule_id: &str,
-        server_id: &str,
-        event_key: &str,
-    ) -> Result<(), AppError> {
-        let now = Utc::now();
-        let key = (
-            rule_id.to_string(),
-            server_id.to_string(),
-            event_key.to_string(),
-        );
-
-        self.triggered.remove(&key);
-
-        alert_state::Entity::update_many()
-            .col_expr(alert_state::Column::Resolved, Expr::value(true))
-            .col_expr(alert_state::Column::ResolvedAt, Expr::value(Some(now)))
-            .col_expr(alert_state::Column::UpdatedAt, Expr::value(now))
-            .filter(alert_state::Column::RuleId.eq(rule_id))
-            .filter(alert_state::Column::ServerId.eq(server_id))
-            .filter(alert_state::Column::EventKey.eq(event_key))
-            .filter(alert_state::Column::Resolved.eq(false))
-            .exec(db)
-            .await?;
-
-        Ok(())
     }
 }
 
@@ -1518,6 +1406,7 @@ mod tests {
     use super::*;
     use crate::entity::record;
     use chrono::{TimeZone, Utc};
+    use sea_orm::prelude::Expr;
 
     // ── describe_rule_items: notification condition summary ──
 
@@ -2026,7 +1915,7 @@ mod tests {
         // triggered→recovered transition.
         let state_manager = AlertStateManager::new();
         state_manager
-            .mark_triggered(&db, "rule-1", "srv-1", "")
+            .admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", false)
             .await
             .expect("seed triggered state");
 
@@ -2057,24 +1946,30 @@ mod tests {
     async fn test_alert_rearms_after_resolve_cycle() {
         let (db, _tmp) = setup_test_db().await;
         insert_test_server(&db, "srv-1", "Server Alpha").await;
+        insert_test_rule(&db, "rule-1", "CPU Alert").await;
+        let rule = alert_rule::Entity::find_by_id("rule-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
 
         let mgr = AlertStateManager::new();
 
         // First fire.
-        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
+        mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", false)
             .await
             .expect("first trigger");
         assert!(mgr.is_triggered("rule-1", "srv-1", ""));
 
         // Recover.
-        mgr.mark_resolved(&db, "rule-1", "srv-1", "")
+        mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", true)
             .await
             .expect("resolve");
         assert!(!mgr.is_triggered("rule-1", "srv-1", ""));
 
         // Re-arm: triggering again must NOT fail on the
         // UNIQUE(rule_id, server_id, event_key) constraint left by the resolved row.
-        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
+        mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", false)
             .await
             .expect("re-trigger after resolve must succeed");
         assert!(mgr.is_triggered("rule-1", "srv-1", ""));
@@ -3037,7 +2932,7 @@ mod tests {
         assert!(!AlertService::check_server(&db, &agent_manager, &items, "srv-1").await);
     }
 
-    // ── AlertStateManager: load_from_db / mark_triggered increment ──
+    // ── AlertStateManager: load_from_db / transactional admission ──
 
     #[tokio::test]
     async fn test_load_from_db_only_unresolved() {
@@ -3055,15 +2950,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mark_triggered_increments_existing() {
+    async fn test_admission_increments_existing() {
         let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "Server Alpha").await;
+        insert_test_rule(&db, "rule-1", "CPU Alert").await;
+        let rule = alert_rule::Entity::find_by_id("rule-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         let mgr = AlertStateManager::new();
         // First trigger inserts count=1.
-        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
+        mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", false)
             .await
             .expect("first");
         // Second trigger increments the existing cache entry and DB row.
-        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
+        mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", false)
             .await
             .expect("second");
 
@@ -3081,13 +2983,92 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_mark_resolved_persists_and_clears_cache() {
+    async fn test_suppressed_alert_poll_preserves_notification_deadline() {
         let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "Server Alpha").await;
+        insert_test_rule(&db, "rule-1", "CPU Alert").await;
+        let rule = alert_rule::Entity::find_by_id("rule-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let last_notification = Utc::now() - Duration::minutes(4);
+        insert_test_state(&db, "rule-1", "srv-1", false, last_notification, None, 1).await;
+        alert_state::Entity::update_many()
+            .col_expr(
+                alert_state::Column::LastNotifiedAt,
+                Expr::value(last_notification),
+            )
+            .exec(&db)
+            .await
+            .unwrap();
+        let mgr = AlertStateManager::load_from_db(&db).await.unwrap();
+
+        assert!(
+            !mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", false)
+                .await
+                .unwrap(),
+            "a poll within five minutes must remain suppressed"
+        );
+        let row = alert_state::Entity::find().one(&db).await.unwrap().unwrap();
+        assert_eq!(
+            row.count, 2,
+            "suppressed polls retain evaluation bookkeeping"
+        );
+        assert_eq!(
+            row.last_notified_at, last_notification,
+            "suppressed polls must not postpone the next notification"
+        );
+        assert_eq!(
+            mgr.get_info("rule-1", "srv-1", "")
+                .unwrap()
+                .last_notified_at,
+            last_notification,
+            "the cache must retain the same notification deadline"
+        );
+
+        // Advance the persisted deadline without waiting five real minutes.
+        let expired_notification = Utc::now() - Duration::minutes(6);
+        alert_state::Entity::update_many()
+            .col_expr(
+                alert_state::Column::LastNotifiedAt,
+                Expr::value(expired_notification),
+            )
+            .exec(&db)
+            .await
+            .unwrap();
+        assert!(
+            mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", false)
+                .await
+                .unwrap(),
+            "a persistent condition becomes eligible after the original debounce window"
+        );
+        let row = alert_state::Entity::find().one(&db).await.unwrap().unwrap();
+        assert_eq!(row.count, 3);
+        assert!(row.last_notified_at > expired_notification);
+        assert_eq!(
+            mgr.get_info("rule-1", "srv-1", "")
+                .unwrap()
+                .last_notified_at,
+            row.last_notified_at
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolution_admission_persists_and_clears_cache() {
+        let (db, _tmp) = setup_test_db().await;
+        insert_test_server(&db, "srv-1", "Server Alpha").await;
+        insert_test_rule(&db, "rule-1", "CPU Alert").await;
+        let rule = alert_rule::Entity::find_by_id("rule-1")
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
         let mgr = AlertStateManager::new();
-        mgr.mark_triggered(&db, "rule-1", "srv-1", "")
+        mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", false)
             .await
             .expect("trigger");
-        mgr.mark_resolved(&db, "rule-1", "srv-1", "")
+        mgr.admit_alert_transition(&db, &rule, "srv-1", "Server Alpha", true)
             .await
             .expect("resolve");
 

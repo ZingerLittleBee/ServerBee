@@ -10287,23 +10287,6 @@
         }
       }
     },
-    "Metrics History": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Metrics History"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "历史指标"
-          }
-        }
-      }
-    },
     "Minor": {
       "extractionState": "manual",
       "localizations": {
