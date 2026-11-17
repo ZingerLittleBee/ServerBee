@@ -134,7 +134,7 @@ Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个�
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `"ipapi_is"` | 主风险评分 Provider。可选：`none`、`ipapi_is`、`ip-api`。 |
+| `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `"ipapi_is"` | 主风险评分 Provider。可选：`none`、`ipapi_is`、`ip-api`、`vpndetection`。 |
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `"ip-api"` | 主 Provider 失败时的兜底。设为 `none` 关闭。 |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | -- | 可选。免费账号的 Key 提供每日 1,000 次请求，以及计算 0–100 风险分所需的完整响应。 |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `""` | 自建镜像或测试时覆盖。留空则回退到内置默认 `https://api.ipapi.is`。 |
@@ -401,7 +401,7 @@ Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个�
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `risk_provider` | string | `"ipapi_is"` | 主风险评分 Provider。可选：`none`、`ipapi_is`、`ip-api`。 |
+| `risk_provider` | string | `"ipapi_is"` | 主风险评分 Provider。可选：`none`、`ipapi_is`、`ip-api`、`vpndetection`。 |
 | `risk_provider_fallback` | string | `"ip-api"` | 主 Provider 失败时的兜底。设为 `none` 关闭。 |
 
 ### `[ip_quality.ipapi_is]` —— ipapi.is

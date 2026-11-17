@@ -92,6 +92,7 @@ Set `ip_quality.risk_provider` in `server.toml` (or `SERVERBEE_IP_QUALITY__RISK_
 |----------|-------|-------|
 | ipapi.is (default) | `ipapi_is` | Anonymous: 100 requests per client IP per UTC day with flags but no numeric score. Free account/API key: 1,000 requests per day with the full response required for the 0–100 score. |
 | ip-api.com (fallback) | `ip-api` | **Free tier, non-commercial use only. HTTP-only endpoint.** No API key. Proxy/hosting flags and a derived IP type, but no numeric risk score. |
+| vpndetection.io | `vpndetection` | No API key ([terms](https://vpndetection.io/terms)). VPN, Tor, relay (proxy) and hosting flags and the network type, but no numeric risk score. |
 | Disabled | `none` | Local GeoIP metadata only when a usable MMDB is loaded; no risk score. |
 
 **Default behavior** (no configuration needed): the Server calls ipapi.is anonymously. Anonymous access is limited to 100 requests per client IP per UTC day and returns flags that ServerBee uses for risk signals and a derived IP type, but no numeric risk score. Only a failed primary request, including an HTTP 429 after quota exhaustion, triggers the `ip-api` fallback; a successful response without a score does not. The fallback can supply proxy/hosting flags and a derived IP type, but not a numeric risk score. See the official [ipapi.is developer limits](https://ipapi.is/developers.html) and [pricing](https://ipapi.is/pricing.html).
