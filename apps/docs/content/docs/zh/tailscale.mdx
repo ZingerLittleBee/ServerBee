@@ -46,7 +46,7 @@ docker run -d \
   -v /var/run/tailscale/tailscaled.sock:/var/run/tailscale/tailscaled.sock:ro \
   -v /opt/serverbee-agent:/etc/serverbee \
   --restart unless-stopped \
-  ghcr.io/zingerlittlebee/serverbee-agent:1.0.0-beta.6
+  ghcr.io/zingerlittlebee/serverbee-agent:1.0.0-beta.7
 ```
 
 如果宿主机的 Socket 位于自定义路径，请挂载对应路径并设置 `SERVERBEE_TAILSCALE__SOCKET_PATH`（或在 `agent.toml` 中设置 `[tailscale] socket_path`）。
@@ -209,7 +209,7 @@ services:
       - NET_RAW
 
   serverbee-server:
-    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.6
+    image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.7
     container_name: serverbee-server
     restart: unless-stopped
     network_mode: service:tailscale

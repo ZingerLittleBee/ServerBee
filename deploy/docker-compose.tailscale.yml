@@ -68,7 +68,7 @@ services:
   serverbee-server:
     # Pin an exact version for repeatable deployments; `:beta` tracks prereleases
     # and `:latest` tracks suffix-free stable releases.
-    image: ghcr.io/zingerlittlebee/serverbee-server:${SERVERBEE_IMAGE_TAG:-1.0.0-beta.6}
+    image: ghcr.io/zingerlittlebee/serverbee-server:${SERVERBEE_IMAGE_TAG:-1.0.0-beta.7}
     container_name: serverbee-server
     restart: unless-stopped
     # Share the Tailscale container's network namespace so `tailscale serve`
