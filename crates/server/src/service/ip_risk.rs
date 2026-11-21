@@ -519,6 +519,9 @@ pub fn provider_for_config(
         "ip-api" => Some(Box::new(IpApiProvider {
             client: build_provider_client(),
         }) as Box<dyn IpRiskProvider>),
+        "vpndetection" => Some(Box::new(VpnDetectionProvider {
+            client: build_provider_client(),
+        }) as Box<dyn IpRiskProvider>),
         _ => None, // "none" or unknown
     }
 }
@@ -642,6 +645,65 @@ impl IpRiskProvider for IpApiIsProvider {
             .await?;
 
         Ok(parse_ipapi_is_response(resp))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Provider: vpndetection.io
+//
+// No API key. VPN, Tor and relay flags plus the network type (`isp`,
+// `hosting`, `business`, `education`, `government`); no numeric risk score.
+// ---------------------------------------------------------------------------
+
+pub const VPNDETECTION_ENDPOINT: &str = "https://api.vpndetection.io";
+
+pub(crate) fn parse_vpndetection_response(v: JsonValue) -> ProviderResult {
+    let raw = v.clone();
+
+    // Unknown networks are sent with an empty type.
+    let ip_type = v
+        .pointer("/asn/type")
+        .and_then(JsonValue::as_str)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+
+    ProviderResult {
+        risk_score: None,
+        is_vpn: v.get("is_vpn").and_then(JsonValue::as_bool),
+        // Relays such as iCloud Private Relay are proxies.
+        is_proxy: v.get("is_relay").and_then(JsonValue::as_bool),
+        is_hosting: ip_type.as_deref().map(|t| t == "hosting"),
+        is_tor: v
+            .get("is_tor")
+            .and_then(JsonValue::as_bool)
+            .unwrap_or(false),
+        ip_type,
+        raw,
+        ..Default::default()
+    }
+}
+
+pub struct VpnDetectionProvider {
+    client: reqwest::Client,
+}
+
+#[async_trait]
+impl IpRiskProvider for VpnDetectionProvider {
+    fn name(&self) -> &'static str {
+        "vpndetection"
+    }
+
+    async fn lookup(&self, ip: &str) -> anyhow::Result<ProviderResult> {
+        let resp = self
+            .client
+            .get(format!("{VPNDETECTION_ENDPOINT}/{ip}"))
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<JsonValue>()
+            .await?;
+
+        Ok(parse_vpndetection_response(resp))
     }
 }
 
@@ -1233,5 +1295,67 @@ mod tests {
             !should_construct_fallback,
             "fallback must not run when user opted out via risk_provider=none"
         );
+    }
+
+    #[test]
+    fn provider_for_config_vpndetection() {
+        let cfg = IpQualityConfig::default();
+        let provider = provider_for_config(&cfg, "vpndetection");
+        assert!(provider.is_some());
+        assert_eq!(provider.unwrap().name(), "vpndetection");
+    }
+
+    #[test]
+    fn parse_vpndetection_vpn() {
+        let json = serde_json::json!({
+            "ip": "185.65.135.230",
+            "is_bogon": false,
+            "is_vpn": true,
+            "is_relay": false,
+            "is_tor": false,
+            "location": { "country": "SE", "country_name": "Sweden" },
+            "asn": { "asn": 39351, "name": "31173 Services AB", "type": "isp" }
+        });
+        let r = super::parse_vpndetection_response(json);
+        assert_eq!(r.is_vpn, Some(true));
+        assert_eq!(r.is_proxy, Some(false));
+        assert_eq!(r.is_hosting, Some(false));
+        assert!(!r.is_tor);
+        assert_eq!(r.ip_type.as_deref(), Some("isp"));
+        assert_eq!(r.risk_score, None);
+        assert_eq!(
+            super::derive_ip_type(false, true, false, r.ip_type.as_deref()),
+            "datacenter"
+        );
+    }
+
+    #[test]
+    fn parse_vpndetection_relay_and_hosting() {
+        let json = serde_json::json!({
+            "is_vpn": false,
+            "is_relay": true,
+            "is_tor": true,
+            "asn": { "asn": 13335, "name": "Cloudflare, Inc.", "type": "hosting" }
+        });
+        let r = super::parse_vpndetection_response(json);
+        assert_eq!(r.is_proxy, Some(true));
+        assert_eq!(r.is_hosting, Some(true));
+        assert!(r.is_tor);
+    }
+
+    #[test]
+    fn parse_vpndetection_unknown_network() {
+        let json = serde_json::json!({
+            "ip": "10.0.0.1",
+            "is_bogon": true,
+            "is_vpn": false,
+            "is_relay": false,
+            "is_tor": false,
+            "asn": { "asn": 0, "name": "", "type": "" }
+        });
+        let r = super::parse_vpndetection_response(json);
+        assert_eq!(r.ip_type, None);
+        assert_eq!(r.is_hosting, None);
+        assert_eq!(r.is_vpn, Some(false));
     }
 }

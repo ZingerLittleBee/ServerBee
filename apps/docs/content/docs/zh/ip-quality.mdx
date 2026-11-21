@@ -92,6 +92,7 @@ Agent 在以下情况运行检测：
 |--------|-----|------|
 | ipapi.is（默认）| `ipapi_is` | 匿名访问：每个客户端 IP 每天 100 次（按 UTC 日计），返回标记但不提供数值评分。免费账号/API Key：每日 1,000 次，返回计算 0–100 风险分所需的完整响应。|
 | ip-api.com（兜底）| `ip-api` | **免费版仅限非商业用途，接口为 HTTP（非 HTTPS）。** 无需 API Key。提供代理/托管标记及派生的 IP 类型，但不提供数值风险分。|
+| vpndetection.io | `vpndetection` | 无需 API Key（[服务条款](https://vpndetection.io/terms)）。提供 VPN、Tor、中继（代理）及托管标记和网络类型，但不提供数值风险分。|
 | 禁用 | `none` | 仅在加载可用 MMDB 时提供本地 GeoIP 元数据；无风险评分。|
 
 **默认行为**（无需任何配置）：Server 匿名调用 ipapi.is。匿名访问限制为每个客户端 IP 每天 100 次（按 UTC 日计），返回的标记可用于风险信号和派生 IP 类型，但不提供数值风险分。只有主请求失败时（包括配额耗尽后的 HTTP 429）才会触发 `ip-api` 兜底；成功响应即使没有评分也不会触发兜底。该兜底可提供代理/托管标记及派生的 IP 类型，但不提供数值风险分。详见 ipapi.is 官方的[开发者限额](https://ipapi.is/developers.html)和[定价页](https://ipapi.is/pricing.html)。
