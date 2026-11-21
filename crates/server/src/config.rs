@@ -46,6 +46,8 @@ pub struct AppConfig {
     pub ip_quality: IpQualityConfig,
     #[serde(default)]
     pub network_probe: NetworkProbeConfig,
+    #[serde(default)]
+    pub tailscale: TailscaleConfig,
 }
 
 impl Default for AppConfig {
@@ -70,6 +72,7 @@ impl Default for AppConfig {
             firewall: FirewallConfig::default(),
             ip_quality: IpQualityConfig::default(),
             network_probe: NetworkProbeConfig::default(),
+            tailscale: TailscaleConfig::default(),
         }
     }
 }
@@ -520,20 +523,94 @@ pub struct DevConfig {
     pub demo_data: bool,
 }
 
+#[derive(Clone, Deserialize)]
+pub struct TailscaleConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_tailscale_provider")]
+    pub provider: String,
+    #[serde(default = "default_tailscale_api_base_url")]
+    pub api_base_url: String,
+    #[serde(default = "default_tailscale_tailnet")]
+    pub tailnet: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default)]
+    pub preferred_server_url: String,
+    #[serde(default)]
+    pub socket_path: String,
+    #[serde(default)]
+    pub auth_enabled: bool,
+    #[serde(default)]
+    pub auto_provision_role: String,
+}
+
+impl std::fmt::Debug for TailscaleConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TailscaleConfig")
+            .field("enabled", &self.enabled)
+            .field("provider", &self.provider)
+            .field("api_base_url", &self.api_base_url)
+            .field("tailnet", &self.tailnet)
+            .field(
+                "api_key",
+                &if self.api_key.is_empty() {
+                    ""
+                } else {
+                    "<redacted>"
+                },
+            )
+            .field("preferred_server_url", &self.preferred_server_url)
+            .field("socket_path", &self.socket_path)
+            .field("auth_enabled", &self.auth_enabled)
+            .field("auto_provision_role", &self.auto_provision_role)
+            .finish()
+    }
+}
+
+impl Default for TailscaleConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: default_tailscale_provider(),
+            api_base_url: default_tailscale_api_base_url(),
+            tailnet: default_tailscale_tailnet(),
+            api_key: String::new(),
+            preferred_server_url: String::new(),
+            socket_path: String::new(),
+            auth_enabled: false,
+            auto_provision_role: String::new(),
+        }
+    }
+}
+
+fn default_tailscale_provider() -> String {
+    "tailscale".to_string()
+}
+
+fn default_tailscale_api_base_url() -> String {
+    "https://api.tailscale.com".to_string()
+}
+
+fn default_tailscale_tailnet() -> String {
+    "-".to_string()
+}
+
 fn default_utc() -> String {
     "UTC".to_string()
 }
 
 // Default functions
 fn default_trusted_proxies() -> Vec<IpNet> {
-    // Trust private/loopback IPs by default so XFF works out-of-the-box
-    // behind Docker, Nginx, Caddy, Kubernetes, etc.
+    // Trust private/loopback/CGNAT IPs by default so XFF works out-of-the-box
+    // behind Docker, Nginx, Caddy, Kubernetes, Tailscale proxies, etc.
     [
         "127.0.0.0/8",
         "::1/128",
         "10.0.0.0/8",
         "172.16.0.0/12",
         "192.168.0.0/16",
+        "100.64.0.0/10",
         "fc00::/7",
         "fe80::/10",
     ]
@@ -637,16 +714,77 @@ mod tests {
     #[test]
     fn test_default_trusted_proxies_includes_private_ranges() {
         let proxies = default_trusted_proxies();
-        assert_eq!(proxies.len(), 7);
+        assert_eq!(proxies.len(), 8);
         // Verify Docker bridge network is covered
         let docker_ip: std::net::IpAddr = "172.17.0.1".parse().unwrap();
         assert!(proxies.iter().any(|net| net.contains(&docker_ip)));
         // Verify localhost is covered
         let localhost: std::net::IpAddr = "127.0.0.1".parse().unwrap();
         assert!(proxies.iter().any(|net| net.contains(&localhost)));
+        // Verify RFC 6598 / Tailscale CGNAT is covered
+        let tailscale_ip: std::net::IpAddr = "100.100.10.20".parse().unwrap();
+        assert!(proxies.iter().any(|net| net.contains(&tailscale_ip)));
+        let outside_cgnat: std::net::IpAddr = "100.63.255.255".parse().unwrap();
+        assert!(!proxies.iter().any(|net| net.contains(&outside_cgnat)));
         // Verify public IP is NOT covered
         let public_ip: std::net::IpAddr = "8.8.8.8".parse().unwrap();
         assert!(!proxies.iter().any(|net| net.contains(&public_ip)));
+    }
+
+    #[test]
+    fn tailscale_config_defaults_and_env_overrides() {
+        let cfg = AppConfig::default();
+        assert!(!cfg.tailscale.enabled);
+        assert_eq!(cfg.tailscale.provider, "tailscale");
+        assert_eq!(cfg.tailscale.api_base_url, "https://api.tailscale.com");
+        assert_eq!(cfg.tailscale.tailnet, "-");
+        assert_eq!(cfg.tailscale.api_key, "");
+        assert_eq!(cfg.tailscale.preferred_server_url, "");
+        assert_eq!(cfg.tailscale.socket_path, "");
+        assert!(!cfg.tailscale.auth_enabled);
+        assert_eq!(cfg.tailscale.auto_provision_role, "");
+
+        figment::Jail::expect_with(|jail| {
+            jail.set_env("SERVERBEE_TAILSCALE__ENABLED", "true");
+            jail.set_env("SERVERBEE_TAILSCALE__PROVIDER", "headscale");
+            jail.set_env(
+                "SERVERBEE_TAILSCALE__API_BASE_URL",
+                "https://hs.internal:8080",
+            );
+            jail.set_env("SERVERBEE_TAILSCALE__TAILNET", "corp");
+            jail.set_env("SERVERBEE_TAILSCALE__API_KEY", "hskey-secret");
+            jail.set_env(
+                "SERVERBEE_TAILSCALE__PREFERRED_SERVER_URL",
+                "https://bee.corp.ts.net",
+            );
+            jail.set_env(
+                "SERVERBEE_TAILSCALE__SOCKET_PATH",
+                "/var/run/tailscale/tailscaled.sock",
+            );
+            jail.set_env("SERVERBEE_TAILSCALE__AUTH_ENABLED", "true");
+            jail.set_env("SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE", "member");
+
+            let loaded: AppConfig = figment::Figment::new()
+                .merge(figment::providers::Env::prefixed("SERVERBEE_").split("__"))
+                .extract()?;
+            assert!(loaded.tailscale.enabled);
+            assert_eq!(loaded.tailscale.provider, "headscale");
+            assert_eq!(loaded.tailscale.api_base_url, "https://hs.internal:8080");
+            assert_eq!(loaded.tailscale.tailnet, "corp");
+            assert_eq!(loaded.tailscale.api_key, "hskey-secret");
+            assert_eq!(
+                loaded.tailscale.preferred_server_url,
+                "https://bee.corp.ts.net"
+            );
+            assert_eq!(
+                loaded.tailscale.socket_path,
+                "/var/run/tailscale/tailscaled.sock"
+            );
+            assert!(loaded.tailscale.auth_enabled);
+            assert_eq!(loaded.tailscale.auto_provision_role, "member");
+            assert!(!format!("{:?}", loaded.tailscale).contains("hskey-secret"));
+            Ok(())
+        });
     }
 
     #[test]

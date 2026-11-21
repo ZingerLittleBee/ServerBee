@@ -179,10 +179,15 @@ pub async fn download_dbip(data_dir: &str) -> Result<GeoIpService, String> {
 
 pub(crate) fn is_private(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
+        IpAddr::V4(v4) => {
+            v4.is_private()
+                || v4.is_link_local()
+                || serverbee_common::tailscale_types::is_cgnat_ipv4(*v4)
+        }
         IpAddr::V6(v6) => {
-            // Unique local fc00::/7 and link-local fe80::/10 are non-routable
-            // and produce no useful GeoIP result.
+            // Unique local fc00::/7 (including Tailscale fd7a:115c:a1e0::/48)
+            // and link-local fe80::/10 are non-routable and produce no useful
+            // GeoIP result.
             let seg = v6.segments();
             (seg[0] & 0xfe00) == 0xfc00 || (seg[0] & 0xffc0) == 0xfe80
         }
@@ -382,5 +387,27 @@ mod tests {
         assert_eq!(pick_public_ip(Some("127.0.0.1"), None), None);
         assert_eq!(pick_public_ip(Some("not-an-ip"), None), None);
         assert_eq!(pick_public_ip(None, None), None);
+    }
+
+    #[test]
+    fn test_is_private_cgnat_tailscale_boundaries() {
+        // RFC 6598 CGNAT 100.64.0.0/10 (used by Tailscale/Headscale) is non-public.
+        assert!(!is_private(&"100.63.255.255".parse().unwrap()));
+        assert!(is_private(&"100.64.0.0".parse().unwrap()));
+        assert!(is_private(&"100.100.100.100".parse().unwrap()));
+        assert!(is_private(&"100.127.255.255".parse().unwrap()));
+        assert!(!is_private(&"100.128.0.0".parse().unwrap()));
+        // Tailscale IPv6 ULA fd7a:115c:a1e0::/48 is also non-public.
+        assert!(is_private(&"fd7a:115c:a1e0::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn test_pick_public_ip_skips_tailscale_cgnat() {
+        let ip = pick_public_ip(Some("100.100.10.20"), Some("2606:4700::1"));
+        assert_eq!(ip, Some("2606:4700::1".parse().unwrap()));
+        assert_eq!(
+            pick_public_ip(Some("100.100.10.20"), Some("fd7a:115c:a1e0::1")),
+            None
+        );
     }
 }

@@ -28,7 +28,10 @@ mod file_transfer;
 mod network;
 mod security;
 mod system_info;
+mod tailscale;
 mod task_exec;
+
+pub(crate) use tailscale::extract_tailscale_fields;
 
 #[derive(Debug, Deserialize)]
 pub struct OptionalWsQuery {
@@ -422,8 +425,10 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             capability,
             reason,
         } => {
-            task_exec::on_capability_denied(state, server_id, msg_id, session_id, capability, reason)
-                .await;
+            task_exec::on_capability_denied(
+                state, server_id, msg_id, session_id, capability, reason,
+            )
+            .await;
         }
         AgentMessage::NetworkProbeResults { results } => {
             network::on_network_probe_results(state, server_id, results).await;
@@ -519,6 +524,15 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             state
                 .agent_manager
                 .dispatch_pending_response(server_id, msg_id, msg.clone());
+        }
+        AgentMessage::TailscaleStatus {
+            ref msg_id,
+            ref status,
+        } => {
+            tailscale::on_tailscale_status(state, server_id, msg_id.as_ref(), status, &msg).await;
+        }
+        AgentMessage::TailscaleUnavailable { ref msg_id, .. } => {
+            tailscale::on_tailscale_unavailable(state, server_id, msg_id.as_ref(), &msg);
         }
         AgentMessage::IpChanged {
             ipv4,
@@ -821,7 +835,11 @@ mod tests {
             .into_iter()
             .filter(|r| r.server_id == "srv-iq")
             .collect();
-        assert_eq!(db_results.len(), 1, "one unlock_result row should be persisted");
+        assert_eq!(
+            db_results.len(),
+            1,
+            "one unlock_result row should be persisted"
+        );
         assert_eq!(db_results[0].service_id, svc_id);
         assert_eq!(db_results[0].status, "unlocked");
 
@@ -880,7 +898,10 @@ mod tests {
             .into_iter()
             .filter(|r| r.server_id == "srv-iq")
             .collect();
-        assert!(!snapshot_rows.is_empty(), "ip_quality_snapshot row should be persisted");
+        assert!(
+            !snapshot_rows.is_empty(),
+            "ip_quality_snapshot row should be persisted"
+        );
         assert_eq!(snapshot_rows[0].ip, "203.0.113.10");
     }
 

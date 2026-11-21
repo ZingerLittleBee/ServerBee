@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::Router;
-use axum::extract::State;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use sea_orm::{EntityTrait, QueryOrder};
 
 use crate::entity::server_tag;
-use crate::middleware::auth::{AuthenticatedConnection, resolve_ws_connection};
+use crate::middleware::auth::{AuthenticatedConnection, resolve_ws_connection_with_peer};
 use crate::service::agent_manager::aggregate_disk_io;
 use crate::service::server::ServerService;
 use crate::state::AppState;
@@ -27,13 +27,14 @@ pub fn router() -> Router<Arc<AppState>> {
 
 async fn browser_ws_handler(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Response {
-    // Shared credential policy (precedence, session source, mobile expiry)
-    // lives in `middleware::auth`; this adapter only maps the verdict onto
-    // the browser WS protocol.
-    match resolve_ws_connection(&headers, &state).await {
+    // Shared credential policy (precedence, session source, mobile expiry,
+    // loopback Tailscale Serve identity) lives in `middleware::auth`; this
+    // adapter only maps the verdict onto the browser WS protocol.
+    match resolve_ws_connection_with_peer(&headers, Some(addr), &state).await {
         Some(conn) => ws
             .max_message_size(MAX_WS_MESSAGE_SIZE)
             .on_upgrade(move |socket| handle_browser_ws(socket, state, conn)),
@@ -376,6 +377,10 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
                 has_token,
                 agent_authority,
                 outstanding_enrollment,
+                tailscale_ipv4: server.tailscale_ipv4,
+                tailscale_ipv6: server.tailscale_ipv6,
+                tailscale_dns_name: server.tailscale_dns_name,
+                tailscale_tailnet: server.tailscale_tailnet,
             }
         })
         .collect();

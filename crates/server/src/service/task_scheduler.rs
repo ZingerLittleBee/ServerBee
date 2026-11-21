@@ -1893,6 +1893,10 @@ mod tests {
             protocol_version: Set(1),
             features: Set("[]".to_string()),
             last_remote_addr: Set(None),
+            tailscale_ipv4: Set(None),
+            tailscale_ipv6: Set(None),
+            tailscale_dns_name: Set(None),
+            tailscale_tailnet: Set(None),
             created_at: Set(now),
             updated_at: Set(now),
         }
