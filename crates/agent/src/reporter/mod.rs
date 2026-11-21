@@ -1,6 +1,7 @@
 mod docker_subsystem;
 mod file_ops;
 mod runtime;
+mod tailscale_subsystem;
 mod wire;
 
 use std::net::IpAddr;
@@ -17,7 +18,6 @@ use tokio::time::interval;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
-use docker_subsystem::DockerTick;
 use runtime::ConnectionRuntime;
 use wire::send_msg;
 
@@ -195,13 +195,14 @@ impl Reporter {
         if let Some(shell) = self.test_terminal_shell.clone() {
             runtime.terminal_manager.set_test_shell(shell);
         }
-        runtime.docker.probe().await;
-        let features = runtime.docker.features();
+        runtime.probe_subsystems().await;
+        let features = runtime.features();
 
         // Send SystemInfo
         let mut collector = Collector::new(
             self.config.collector.enable_temperature,
             self.config.collector.enable_gpu,
+            self.config.collector.exclude_tailscale_traffic,
         );
         let info = collector.system_info();
         let initial_ips = collect_interface_ips();
@@ -230,6 +231,11 @@ impl Reporter {
         };
         send_msg(&mut write, &info_msg).await?;
         tracing::info!("Sent SystemInfo");
+
+        if let Some(ts_msg) = runtime.take_initial_tailscale_status() {
+            send_msg(&mut write, &ts_msg).await?;
+            tracing::debug!("Sent initial TailscaleStatus");
+        }
 
         match crate::upgrade::commit_startup_trial() {
             Ok(true) => tracing::info!("Agent upgrade entered startup stability window"),
@@ -490,11 +496,14 @@ impl Reporter {
                 // Docker housekeeping: stats polling while the daemon is
                 // connected, reconnect retry while it is absent.
                 tick = runtime.docker.tick() => {
-                    let reply = match tick {
-                        DockerTick::PollStats => runtime.docker.poll_stats().await,
-                        DockerTick::Retry => runtime.docker.retry().await,
-                    };
-                    if let Some(msg) = reply {
+                    if let Some(msg) = runtime.on_docker_tick(tick).await {
+                        send_msg(&mut write, &msg).await?;
+                    }
+                }
+                // Tailscale housekeeping: 60s status refresh while available,
+                // 30s reconnect retry while absent.
+                tick = runtime.tailscale.tick() => {
+                    for msg in runtime.on_tailscale_tick(tick).await {
                         send_msg(&mut write, &msg).await?;
                     }
                 }
@@ -650,7 +659,12 @@ fn primary_external_ip(ipv4: Option<&str>, ipv6: Option<&str>) -> Option<IpAddr>
 
 fn is_private_ipv4_str(s: &str) -> bool {
     s.parse::<std::net::Ipv4Addr>()
-        .map(|v4| v4.is_private() || v4.is_link_local() || v4.is_loopback())
+        .map(|v4| {
+            v4.is_private()
+                || v4.is_link_local()
+                || v4.is_loopback()
+                || serverbee_common::tailscale_types::is_cgnat_ipv4(v4)
+        })
         .unwrap_or(false)
 }
 
@@ -665,28 +679,55 @@ fn is_private_ipv6_str(s: &str) -> bool {
 }
 
 /// Pure interface-list scan. Synchronous and fast — never touches the network.
-/// Prefers the first public (routable) address; remembers the first private
-/// one as a fallback so containerised agents on a docker bridge still report
-/// something for the UI even before external discovery completes.
+/// Prefers the first public (routable) address; falls back to RFC1918 LAN
+/// addresses ahead of RFC 6598 CGNAT (`tailscale0`) and loopback so Tailscale
+/// virtual IPs never pollute `public_ipv4` or shadow a real LAN address, while
+/// still reporting CGNAT when no other address exists.
 fn derive_interface_ips(interfaces: &[NetworkInterface]) -> (Option<String>, Option<String>) {
     let mut public_ipv4: Option<String> = None;
-    let mut private_ipv4: Option<String> = None;
+    let mut rfc1918_ipv4: Option<String> = None;
+    let mut link_local_ipv4: Option<String> = None;
+    let mut cgnat_ipv4: Option<String> = None;
+    let mut loopback_ipv4: Option<String> = None;
     let mut public_ipv6: Option<String> = None;
     let mut private_ipv6: Option<String> = None;
+    let mut tailscale_ipv6: Option<String> = None;
 
     for iface in interfaces {
         for ip in &iface.ipv4 {
-            if is_private_ipv4_str(ip) {
-                if private_ipv4.is_none() {
-                    private_ipv4 = Some(ip.clone());
+            if !is_private_ipv4_str(ip) {
+                if public_ipv4.is_none() {
+                    public_ipv4 = Some(ip.clone());
                 }
-            } else if public_ipv4.is_none() {
-                public_ipv4 = Some(ip.clone());
+            } else if let Ok(v4) = ip.parse::<std::net::Ipv4Addr>() {
+                if v4.is_private() {
+                    if rfc1918_ipv4.is_none() {
+                        rfc1918_ipv4 = Some(ip.clone());
+                    }
+                } else if v4.is_link_local() {
+                    if link_local_ipv4.is_none() {
+                        link_local_ipv4 = Some(ip.clone());
+                    }
+                } else if serverbee_common::tailscale_types::is_cgnat_ipv4(v4) {
+                    if cgnat_ipv4.is_none() {
+                        cgnat_ipv4 = Some(ip.clone());
+                    }
+                } else if loopback_ipv4.is_none() {
+                    loopback_ipv4 = Some(ip.clone());
+                }
             }
         }
         for ip in &iface.ipv6 {
             if is_private_ipv6_str(ip) {
-                if private_ipv6.is_none() {
+                let is_ts_v6 = ip
+                    .parse::<std::net::Ipv6Addr>()
+                    .map(serverbee_common::tailscale_types::is_tailscale_ipv6)
+                    .unwrap_or(false);
+                if is_ts_v6 {
+                    if tailscale_ipv6.is_none() {
+                        tailscale_ipv6 = Some(ip.clone());
+                    }
+                } else if private_ipv6.is_none() {
                     private_ipv6 = Some(ip.clone());
                 }
             } else if public_ipv6.is_none() {
@@ -698,7 +739,14 @@ fn derive_interface_ips(interfaces: &[NetworkInterface]) -> (Option<String>, Opt
         }
     }
 
-    (public_ipv4.or(private_ipv4), public_ipv6.or(private_ipv6))
+    (
+        public_ipv4
+            .or(rfc1918_ipv4)
+            .or(link_local_ipv4)
+            .or(cgnat_ipv4)
+            .or(loopback_ipv4),
+        public_ipv6.or(private_ipv6).or(tailscale_ipv6),
+    )
 }
 
 /// Overlay an externally-observed IP on top of interface-derived primaries.
@@ -770,7 +818,7 @@ mod tests {
     use super::*;
     use crate::config::{
         CapabilitiesConfig, CollectorConfig, FileConfig, IpChangeConfig, LogConfig, SecurityConfig,
-        UpgradeConfig,
+        TailscaleConfig, UpgradeConfig,
     };
     use serverbee_common::constants::CapabilityDeniedReason;
     use tokio_tungstenite::tungstenite::http::Response;
@@ -788,6 +836,7 @@ mod tests {
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
             capabilities: CapabilitiesConfig::default(),
+            tailscale: TailscaleConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -809,6 +858,7 @@ mod tests {
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
             capabilities: CapabilitiesConfig::default(),
+            tailscale: TailscaleConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(401).body(None).unwrap(),
@@ -830,6 +880,7 @@ mod tests {
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
             capabilities: CapabilitiesConfig::default(),
+            tailscale: TailscaleConfig::default(),
         };
         let err = anyhow::Error::new(tokio_tungstenite::tungstenite::Error::Http(
             Response::builder().status(500).body(None).unwrap(),
@@ -851,6 +902,7 @@ mod tests {
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
             capabilities: CapabilitiesConfig::default(),
+            tailscale: TailscaleConfig::default(),
         };
 
         let request = build_ws_request(&config).expect("request should build");
@@ -873,8 +925,70 @@ mod tests {
         assert!(is_private_ipv4_str("192.168.1.1"));
         assert!(is_private_ipv4_str("169.254.1.1"));
         assert!(is_private_ipv4_str("127.0.0.1"));
+        // RFC 6598 CGNAT (Tailscale 100.64.0.0/10) is non-public
+        assert!(is_private_ipv4_str("100.64.0.0"));
+        assert!(is_private_ipv4_str("100.100.100.100"));
+        assert!(is_private_ipv4_str("100.127.255.255"));
+        // Public addresses just outside 100.64.0.0/10 remain public
+        assert!(!is_private_ipv4_str("100.63.255.255"));
+        assert!(!is_private_ipv4_str("100.128.0.0"));
         assert!(!is_private_ipv4_str("8.8.8.8"));
         assert!(!is_private_ipv4_str("203.0.113.1"));
+    }
+
+    #[test]
+    fn test_derive_interface_ips_tailscale_cgnat_never_pollutes_public_and_prefers_rfc1918() {
+        // 1. Public IP wins even when tailscale0 appears first.
+        let with_public = vec![
+            NetworkInterface {
+                name: "tailscale0".to_string(),
+                ipv4: vec!["100.64.0.10".to_string()],
+                ipv6: vec!["fd7a:115c:a1e0::10".to_string()],
+            },
+            NetworkInterface {
+                name: "wan0".to_string(),
+                ipv4: vec!["203.0.113.42".to_string()],
+                ipv6: vec!["2001:db8::42".to_string()],
+            },
+        ];
+        let (v4, v6) = derive_interface_ips(&with_public);
+        assert_eq!(v4.as_deref(), Some("203.0.113.42"));
+        assert_eq!(v6.as_deref(), Some("2001:db8::42"));
+
+        // 2. RFC1918 LAN wins over CGNAT even when tailscale0 sorts before wlan0.
+        let lan_and_cgnat = vec![
+            NetworkInterface {
+                name: "tailscale0".to_string(),
+                ipv4: vec!["100.101.2.3".to_string()],
+                ipv6: vec!["fd7a:115c:a1e0::2".to_string()],
+            },
+            NetworkInterface {
+                name: "wlan0".to_string(),
+                ipv4: vec!["192.168.1.50".to_string()],
+                ipv6: vec!["fe80::50".to_string()],
+            },
+        ];
+        let (v4, v6) = derive_interface_ips(&lan_and_cgnat);
+        assert_eq!(v4.as_deref(), Some("192.168.1.50"));
+        assert_eq!(v6.as_deref(), Some("fe80::50"));
+
+        // 3. CGNAT is selected as fallback when no public or RFC1918 IP exists
+        // (even alongside loopback).
+        let cgnat_only = vec![
+            NetworkInterface {
+                name: "lo".to_string(),
+                ipv4: vec!["127.0.0.1".to_string()],
+                ipv6: vec![],
+            },
+            NetworkInterface {
+                name: "tailscale0".to_string(),
+                ipv4: vec!["100.101.2.3".to_string()],
+                ipv6: vec!["fd7a:115c:a1e0::2".to_string()],
+            },
+        ];
+        let (v4, v6) = derive_interface_ips(&cgnat_only);
+        assert_eq!(v4.as_deref(), Some("100.101.2.3"));
+        assert_eq!(v6.as_deref(), Some("fd7a:115c:a1e0::2"));
     }
 
     #[test]
@@ -1083,6 +1197,7 @@ mod tests {
                 upgrade: UpgradeConfig::default(),
                 security: SecurityConfig::default(),
                 capabilities: CapabilitiesConfig::default(),
+                tailscale: TailscaleConfig::default(),
             };
             build_ws_url(&c).unwrap()
         };
@@ -1307,6 +1422,13 @@ mod tests {
             capabilities: CapabilitiesConfig {
                 state_dir: state_dir.to_string_lossy().to_string(),
                 ..CapabilitiesConfig::default()
+            },
+            tailscale: TailscaleConfig {
+                socket_path: state_dir
+                    .join("no-tailscale.sock")
+                    .to_string_lossy()
+                    .to_string(),
+                disable_cli_fallback_for_test: true,
             },
         }
     }
@@ -4104,6 +4226,93 @@ mod tests {
             authority.pending_events().is_err(),
             "never claim unavailable storage is durable"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_e2e_tailscale_advertises_feature_pushes_initial_status_and_handles_get_status() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (listener, addr) = bind_fake_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let sock_path = tmp.path().join("tailscaled.sock");
+        let ts_listener = tokio::net::UnixListener::bind(&sock_path).unwrap();
+
+        // Serve two LocalAPI requests: startup probe + explicit TailscaleGetStatus.
+        let ts_daemon = tokio::spawn(async move {
+            for _ in 0..2 {
+                let (mut stream, _) = ts_listener.accept().await.unwrap();
+                let mut req = [0u8; 512];
+                let _ = stream.read(&mut req).await.unwrap();
+                let body = r#"{"Version":"1.78.1","BackendState":"Running","TailscaleIPs":["100.64.7.8"],"Self":{"HostName":"e2e-node","DNSName":"e2e-node.ts.net.","Online":true}}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(resp.as_bytes()).await.unwrap();
+            }
+        });
+
+        let mut cfg = e2e_config(&addr, tmp.path());
+        cfg.tailscale.socket_path = sock_path.to_string_lossy().to_string();
+        let mut reporter = Reporter::new(cfg, CapabilityAuthority::fixed(ALL_CAPS));
+
+        let server = tokio::spawn(async move {
+            let mut ws = accept_ws(&listener).await;
+            send_welcome(&mut ws, 30).await;
+
+            // 1. SystemInfo must advertise "tailscale" in features.
+            let sys_info = handshake_collect_system_info(&mut ws).await;
+            match sys_info {
+                AgentMessage::SystemInfo { info, .. } => {
+                    assert!(
+                        info.features.contains(&"tailscale".to_string()),
+                        "SystemInfo.features must include tailscale, got {:?}",
+                        info.features
+                    );
+                }
+                other => panic!("expected SystemInfo, got {other:?}"),
+            }
+
+            // 2. Unsolicited initial TailscaleStatus (msg_id: None) arrives right after SystemInfo.
+            let initial_ts = read_agent_until(&mut ws, |m| {
+                matches!(m, AgentMessage::TailscaleStatus { msg_id: None, .. })
+            })
+            .await;
+            if let AgentMessage::TailscaleStatus { status, .. } = initial_ts {
+                assert_eq!(status.summary.dns_name.as_deref(), Some("e2e-node.ts.net"));
+                assert_eq!(status.summary.tailscale_ips, vec!["100.64.7.8"]);
+            }
+
+            // 3. Explicit TailscaleGetStatus returns correlated TailscaleStatus.
+            send_server_msg(
+                &mut ws,
+                &ServerMessage::TailscaleGetStatus {
+                    msg_id: "req-ts-42".into(),
+                },
+            )
+            .await;
+            let reply = read_agent_until(&mut ws, |m| {
+                matches!(
+                    m,
+                    AgentMessage::TailscaleStatus {
+                        msg_id: Some(id),
+                        ..
+                    } if id == "req-ts-42"
+                )
+            })
+            .await;
+            assert!(matches!(reply, AgentMessage::TailscaleStatus { .. }));
+
+            ws.send(WsMessage::Close(None)).await.ok();
+        });
+
+        run_connect_once(&mut reporter, Duration::from_secs(10))
+            .await
+            .expect("connect finished")
+            .expect("clean exit");
+        server.await.unwrap();
+        ts_daemon.await.unwrap();
     }
 }
 

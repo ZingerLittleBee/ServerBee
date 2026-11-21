@@ -494,9 +494,7 @@ mod tests {
     #[test]
     fn test_get_block_io_stats_mixed_ops() {
         // Covers lower/upper case op variants and the ignored default arm.
-        let entry = |op: &str, value: u64| {
-            serde_json::json!({ "major": 8, "minor": 0, "op": op, "value": value })
-        };
+        let entry = |op: &str, value: u64| serde_json::json!({ "major": 8, "minor": 0, "op": op, "value": value });
         let mut json = base_stats_json();
         json["blkio_stats"]["io_service_bytes_recursive"] = serde_json::json!([
             entry("read", 100),
@@ -610,12 +608,18 @@ mod tests {
         assert_eq!(out.image, "nginx:latest", "image passes through");
         assert_eq!(out.state, "running", "running state passes through");
         assert_eq!(out.status, "Up 3 hours", "status passes through");
-        assert_eq!(out.created, 1_700_000_000, "created timestamp passes through");
+        assert_eq!(
+            out.created, 1_700_000_000,
+            "created timestamp passes through"
+        );
         assert_eq!(out.labels, labels, "labels pass through");
         assert_eq!(out.ports.len(), 1, "single port is mapped");
         assert_eq!(out.ports[0].private_port, 80);
         assert_eq!(out.ports[0].public_port, Some(8080));
-        assert_eq!(out.ports[0].port_type, "tcp", "TCP enum lowercases to 'tcp'");
+        assert_eq!(
+            out.ports[0].port_type, "tcp",
+            "TCP enum lowercases to 'tcp'"
+        );
         assert_eq!(out.ports[0].ip.as_deref(), Some("0.0.0.0"));
     }
 
@@ -644,7 +648,10 @@ mod tests {
         assert_eq!(out.status, "Exited (0) 5 minutes ago");
         assert_eq!(out.ports[0].public_port, None, "no public port stays None");
         assert_eq!(out.ports[0].ip, None, "missing host IP stays None");
-        assert_eq!(out.ports[0].port_type, "udp", "UDP enum lowercases to 'udp'");
+        assert_eq!(
+            out.ports[0].port_type, "udp",
+            "UDP enum lowercases to 'udp'"
+        );
     }
 
     /// A paused container maps its 'paused' state through unchanged.
@@ -702,7 +709,10 @@ mod tests {
         assert_eq!(out.status, "", "missing status defaults to empty string");
         assert_eq!(out.created, 0, "missing created defaults to 0");
         assert!(out.ports.is_empty(), "missing ports defaults to empty vec");
-        assert!(out.labels.is_empty(), "missing labels defaults to empty map");
+        assert!(
+            out.labels.is_empty(),
+            "missing labels defaults to empty map"
+        );
     }
 
     /// An empty `names` vec falls back to the default empty name (first() is None).

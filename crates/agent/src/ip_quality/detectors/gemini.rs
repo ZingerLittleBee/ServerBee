@@ -171,7 +171,12 @@ mod tests {
     fn failed_when_200_no_service_markers() {
         // Ambiguous 200 with no Gemini markers => Failed (inconclusive),
         // not Blocked — an unrecognized 200 is not a geo-block signal.
-        let o = outcome(200, "<html>Loading</html>", "https://gemini.google.com/", vec![]);
+        let o = outcome(
+            200,
+            "<html>Loading</html>",
+            "https://gemini.google.com/",
+            vec![],
+        );
         let (status, _) = classify(&o);
         assert_eq!(status, UnlockStatus::Failed);
     }

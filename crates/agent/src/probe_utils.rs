@@ -645,7 +645,8 @@ mod tests {
     fn parse_batch_output_latency_with_fewer_than_three_parts() {
         // Only two values after '=' — the `parts.len() >= 3` guard fails, so the
         // latencies stay None even though packets were received.
-        let output = "2 packets transmitted, 2 received, 0% packet loss\nrtt min/avg/max/mdev = 1.0/2.0 ms";
+        let output =
+            "2 packets transmitted, 2 received, 0% packet loss\nrtt min/avg/max/mdev = 1.0/2.0 ms";
         let result = parse_ping_batch_output(output, 2);
         assert_eq!(result.packet_received, 2);
         assert!(result.min_latency.is_none());
@@ -798,11 +799,7 @@ mod tests {
     async fn probe_http_https_loopback_blocked() {
         // An explicit https:// loopback URL is kept as-is (not re-normalized)
         // and rejected by the address guard.
-        let r = probe_http(
-            "https://127.0.0.1/",
-            std::time::Duration::from_millis(500),
-        )
-        .await;
+        let r = probe_http("https://127.0.0.1/", std::time::Duration::from_millis(500)).await;
         assert!(!r.success);
         assert!(r.error.unwrap_or_default().contains("SSRF guard"));
     }
@@ -822,12 +819,7 @@ mod tests {
 
     #[tokio::test]
     async fn probe_icmp_batch_blocks_cloud_metadata() {
-        let r = probe_icmp_batch(
-            "169.254.169.254",
-            3,
-            std::time::Duration::from_millis(500),
-        )
-        .await;
+        let r = probe_icmp_batch("169.254.169.254", 3, std::time::Duration::from_millis(500)).await;
         assert_eq!(r.packet_sent, 3);
         assert_eq!(r.packet_received, 0);
         assert!((r.packet_loss - 1.0).abs() < f64::EPSILON);
@@ -839,8 +831,7 @@ mod tests {
     fn parse_batch_output_latency_line_without_ms_suffix() {
         // Latency line whose values have no trailing " ms": `trim_end_matches`
         // is a no-op and the slash-split still yields the three values.
-        let output =
-            "3 packets transmitted, 3 received, 0% packet loss\nrtt min/avg/max/mdev = 1.5/2.5/3.5/0.7";
+        let output = "3 packets transmitted, 3 received, 0% packet loss\nrtt min/avg/max/mdev = 1.5/2.5/3.5/0.7";
         let result = parse_ping_batch_output(output, 3);
         assert_eq!(result.packet_received, 3);
         assert!((result.min_latency.unwrap() - 1.5).abs() < 0.001);
@@ -1052,7 +1043,10 @@ mod tests {
         let r = probe_tcp_addrs(&[addr], std::time::Duration::from_millis(500)).await;
         assert!(r.success, "open local port must report success");
         assert!(r.error.is_none(), "successful connect must carry no error");
-        assert!(r.latency_ms >= 0.0, "latency must be a non-negative duration");
+        assert!(
+            r.latency_ms >= 0.0,
+            "latency must be a non-negative duration"
+        );
 
         accept.abort();
     }

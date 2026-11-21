@@ -33,7 +33,10 @@ mod tests {
             None => {}
             Some(t) => {
                 assert!(t > 0.0, "averaged temperature must be positive, got {t}");
-                assert!(t.is_finite(), "averaged temperature must be finite, got {t}");
+                assert!(
+                    t.is_finite(),
+                    "averaged temperature must be finite, got {t}"
+                );
                 // Sanity upper bound: real sensors stay well under this.
                 assert!(t < 1000.0, "temperature {t} is implausibly high");
             }

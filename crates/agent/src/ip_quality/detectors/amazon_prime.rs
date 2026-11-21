@@ -150,7 +150,12 @@ mod tests {
     fn failed_when_no_service_content() {
         // Ambiguous 200 with no catalog content => Failed (inconclusive),
         // not Blocked — an unrecognized 200 is not a geo-block signal.
-        let o = outcome(200, "<html>Loading</html>", "https://www.primevideo.com/", vec![]);
+        let o = outcome(
+            200,
+            "<html>Loading</html>",
+            "https://www.primevideo.com/",
+            vec![],
+        );
         let (status, _) = classify(&o);
         assert_eq!(status, UnlockStatus::Failed);
     }

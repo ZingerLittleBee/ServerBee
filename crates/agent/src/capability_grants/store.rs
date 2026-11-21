@@ -4,7 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serverbee_common::constants::{CapabilityKey, CAP_VALID_MASK};
+use serverbee_common::constants::{CAP_VALID_MASK, CapabilityKey};
 use serverbee_common::protocol::TemporaryGrant;
 
 const SCHEMA_VERSION: u32 = 1;
@@ -61,8 +61,10 @@ impl CapabilityGrantStore {
         let parsed: Persisted = serde_json::from_slice(&bytes)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
         if parsed.version != SCHEMA_VERSION {
-            tracing::warn!(version = parsed.version,
-                "unknown capability grants schema version; treating as empty");
+            tracing::warn!(
+                version = parsed.version,
+                "unknown capability grants schema version; treating as empty"
+            );
             return Ok(BTreeMap::new());
         }
         Ok(parsed

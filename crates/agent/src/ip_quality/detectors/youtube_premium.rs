@@ -141,7 +141,12 @@ mod tests {
     fn failed_when_200_no_plan_signals() {
         // Ambiguous 200 with no plan signals => Failed (inconclusive),
         // not Blocked — an unrecognized 200 is not a geo-block signal.
-        let o = outcome(200, "<html>Loading...</html>", "https://www.youtube.com/premium", vec![]);
+        let o = outcome(
+            200,
+            "<html>Loading...</html>",
+            "https://www.youtube.com/premium",
+            vec![],
+        );
         let (status, _) = classify(&o);
         assert_eq!(status, UnlockStatus::Failed);
     }

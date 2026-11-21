@@ -13,6 +13,7 @@ mod register;
 mod reporter;
 mod run_token_store;
 mod security;
+mod tailscale;
 mod terminal;
 mod traceroute;
 mod upgrade;
@@ -39,7 +40,9 @@ fn install_rustls_crypto_provider() -> anyhow::Result<()> {
         // by another code path (e.g. reqwest building a ClientConfig in a parallel test).
         // If a provider is now present, treat that as success — we just didn't win the race.
         if rustls::crypto::CryptoProvider::get_default().is_none() {
-            return Err(anyhow::anyhow!("Failed to install rustls ring CryptoProvider"));
+            return Err(anyhow::anyhow!(
+                "Failed to install rustls ring CryptoProvider"
+            ));
         }
     }
 
@@ -49,7 +52,9 @@ fn install_rustls_crypto_provider() -> anyhow::Result<()> {
 
 /// Return the token following `flag` in `argv`, if present (`--reason foo` → `foo`).
 fn flag_value(argv: &[String], flag: &str) -> Option<String> {
-    argv.iter().position(|a| a == flag).and_then(|i| argv.get(i + 1).cloned())
+    argv.iter()
+        .position(|a| a == flag)
+        .and_then(|i| argv.get(i + 1).cloned())
 }
 
 #[tokio::main]
@@ -196,7 +201,9 @@ async fn main() -> anyhow::Result<()> {
     // that should be discovered only at upgrade time.
     if let Err(e) = crate::upgrade::normalize_spki_pin(&config.upgrade.release_cert_spki_sha256) {
         eprintln!("Invalid release_cert_spki_sha256: {e}");
-        eprintln!("Fix the value in agent.toml (must be 64 lowercase hex chars) or leave it empty to disable pinning.");
+        eprintln!(
+            "Fix the value in agent.toml (must be 64 lowercase hex chars) or leave it empty to disable pinning."
+        );
         std::process::exit(1);
     }
 
@@ -268,9 +275,8 @@ async fn main() -> anyhow::Result<()> {
     // Security pipeline, supervised against the authority so a temporary
     // security-events grant can start it and its expiry stops it. It owns a
     // long-lived mpsc::Sender that the reporter forwards over the WebSocket.
-    let (security_tx, security_rx) = tokio::sync::mpsc::channel::<
-        serverbee_common::protocol::AgentMessage,
-    >(128);
+    let (security_tx, security_rx) =
+        tokio::sync::mpsc::channel::<serverbee_common::protocol::AgentMessage>(128);
     let _security_supervisor = SecurityManager::spawn_supervised(
         config.security.clone(),
         std::sync::Arc::clone(&capabilities),

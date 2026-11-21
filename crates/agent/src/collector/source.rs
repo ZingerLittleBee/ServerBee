@@ -43,10 +43,11 @@ pub(crate) struct SysinfoSource {
     sys: System,
     networks: Networks,
     prev_disk_io: HashMap<String, disk_io::DiskCounters>,
+    exclude_tailscale_traffic: bool,
 }
 
 impl SysinfoSource {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(exclude_tailscale_traffic: bool) -> Self {
         let mut sys = System::new_all();
         sys.refresh_all();
         let networks = Networks::new_with_refreshed_list();
@@ -54,6 +55,7 @@ impl SysinfoSource {
             sys,
             networks,
             prev_disk_io: HashMap::new(),
+            exclude_tailscale_traffic,
         }
     }
 
@@ -164,7 +166,7 @@ impl MetricsSource for SysinfoSource {
     }
 
     fn net_total_bytes(&self) -> (u64, u64) {
-        network::total_bytes(&self.networks)
+        network::total_bytes(&self.networks, self.exclude_tailscale_traffic)
     }
 
     fn load_averages(&self) -> (f64, f64, f64) {

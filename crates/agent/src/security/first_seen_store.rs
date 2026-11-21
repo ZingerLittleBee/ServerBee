@@ -226,7 +226,11 @@ mod tests {
     fn flush_creates_missing_parent_directory() {
         let dir = TempDir::new().unwrap();
         // Path with a not-yet-existing nested parent.
-        let p = dir.path().join("nested").join("deeper").join("first_seen.json");
+        let p = dir
+            .path()
+            .join("nested")
+            .join("deeper")
+            .join("first_seen.json");
         let mut store = FirstSeenStore::open(p.clone(), 100);
         assert!(store.mark("root", "1.2.3.4", 1000));
         store.flush().unwrap();
