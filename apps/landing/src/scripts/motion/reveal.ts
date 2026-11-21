@@ -1,11 +1,11 @@
 /*
  * Scroll reveal. What is still below the screen when the page starts is held back, and each group appears
- * together, staggered, when its first member nears the screen. What the reader can already see is left alone.
+ * together, staggered, when any of its members nears the screen. What the reader can already see is left alone.
  */
 
 type Kind = 'item' | 'shot' | 'text'
 
-/** A group arrives once its first member is this far up from the bottom of the screen. */
+/** A group arrives once one of its members is this far up from the bottom of the screen. */
 const LINE = 0.88
 
 export function mountReveal(): void {
@@ -55,12 +55,16 @@ export function mountReveal(): void {
     write()
   }
 
+  // Every member is watched, not only the first: a reader who jumps down the page and scrolls back up meets a
+  // group's last member first, and it must not stay hidden until the first one comes into view.
+  const groupOf = new Map<Element, HTMLElement[]>()
   const observer = new IntersectionObserver(
     (entries) => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
-          observer.unobserve(entry.target)
-          for (const member of groups.find((members) => members[0] === entry.target) ?? []) {
+          for (const member of groupOf.get(entry.target) ?? []) {
+            observer.unobserve(member)
+            groupOf.delete(member)
             member.dataset.in = ''
           }
         }
@@ -69,6 +73,9 @@ export function mountReveal(): void {
     { rootMargin: `0px 0px -${Math.round((1 - LINE) * 100)}% 0px` }
   )
   for (const members of groups) {
-    observer.observe(members[0])
+    for (const member of members) {
+      groupOf.set(member, members)
+      observer.observe(member)
+    }
   }
 }
