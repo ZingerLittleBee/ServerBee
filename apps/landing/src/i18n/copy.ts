@@ -363,7 +363,7 @@ const zh: LandingCopy = {
       detail: 'iOS 上的服务器概览：CPU、内存、磁盘和网络四块数据，下面是运行时信息。',
       insights: 'iOS 上的 Insights 页：机群总览、实时流量、每月费用，以及流量、安全、IP 质量和网络探测的入口。'
     },
-    lede: '纯 SwiftUI 原生编写，只用 Apple 系统框架，零第三方 SDK，也不埋点。外出时收到告警，点开就能看指标、线路、IP 状态、Tailscale 和容器，顺手处理掉。',
+    lede: 'SwiftUI 原生编写，只用 Apple 系统框架，零第三方 SDK，也不埋点。外出时收到告警，点开就能看指标、线路、IP 状态、Tailscale 和容器，顺手处理掉。',
     points: [
       {
         t: '扫码配对',
@@ -399,7 +399,7 @@ const zh: LandingCopy = {
           },
           {
             t: '公开状态页',
-            d: '自带 /status 状态页，按需展示在线状态、90 天可用率、网络和 IP 质量，主机 IP 自动脱敏。默认关闭。'
+            d: '自带 /status 状态页，按需展示在线状态、90 天可用率、网络和 IP 质量，主机 IP 不会公开。默认关闭。'
           },
           {
             t: '服务监控',
@@ -830,7 +830,7 @@ const en: LandingCopy = {
           },
           {
             t: 'Public status page',
-            d: 'A built-in /status page with live health, 90-day uptime, network and IP quality. Server IPs stay masked, and the page stays off until you enable it.'
+            d: 'A built-in /status page with live health, 90-day uptime, network and IP quality. Server IPs are not shown, and the page stays off until you enable it.'
           },
           {
             t: 'Service monitors',
