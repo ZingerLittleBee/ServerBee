@@ -751,10 +751,7 @@ fn matches_security_params(
             {
                 return false;
             }
-            if ip_in_any_cidr(&payload.source_ip, &params.exclude_cidrs) {
-                return false;
-            }
-            true
+            !ip_in_any_cidr(&payload.source_ip, &params.exclude_cidrs)
         }
         _ => false,
     }
