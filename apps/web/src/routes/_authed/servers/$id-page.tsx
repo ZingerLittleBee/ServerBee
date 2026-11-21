@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi, Link } from '@tanstack/react-router'
-import { Container, FileText, Pencil, Terminal as TerminalIcon } from 'lucide-react'
+import { Container, Copy, FileText, Pencil, Share2, Terminal as TerminalIcon } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { ServerDetailSkeleton } from '@/components/boneyard/page-skeletons'
 import { CountryFlag } from '@/components/country-flag'
 import { NetworkTab } from '@/components/network/network-tab'
@@ -19,7 +20,7 @@ import { useServer } from '@/hooks/use-api'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
 import type { ServerResponse } from '@/lib/api-schema'
-import { CAP_DOCKER, CAP_FILE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
+import { CAP_DOCKER, CAP_FILE, CAP_TAILSCALE, CAP_TERMINAL, getEffectiveCapabilityEnabled } from '@/lib/capabilities'
 import { useLiveServers } from '@/lib/server-catalog'
 import type { ServerDetailTab } from '@/lib/server-detail-nav'
 import { formatBytes } from '@/lib/utils'
@@ -37,8 +38,17 @@ interface ServerWithCaps {
 
 function ServerInfoMeta({ server }: { server: ServerResponse }) {
   const { t } = useTranslation('servers')
+  const copyValue = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      toast.success(t('add_server.copied', { defaultValue: 'Copied' }))
+    } catch {
+      // Clipboard access denied
+    }
+  }
+
   return (
-    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground text-sm">
+    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground text-sm">
       {server.os && (
         <span>
           {t('detail_os')} {server.os}
@@ -66,6 +76,29 @@ function ServerInfoMeta({ server }: { server: ServerResponse }) {
           {t('detail_ipv6_label')} {server.ipv6}
         </span>
       )}
+      {server.tailscale_ipv4 && (
+        <button
+          className="inline-flex cursor-pointer items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-foreground text-xs transition-colors hover:bg-muted"
+          onClick={() => copyValue(server.tailscale_ipv4 ?? '')}
+          title={t('detail_copy_tailscale', { defaultValue: 'Click to copy' })}
+          type="button"
+        >
+          <span>{t('detail_tailscale_label', { defaultValue: 'Tailscale:' })}</span>
+          <span>{server.tailscale_ipv4}</span>
+          <Copy aria-hidden="true" className="size-3 text-muted-foreground" />
+        </button>
+      )}
+      {server.tailscale_dns_name && (
+        <button
+          className="inline-flex cursor-pointer items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 font-mono text-foreground text-xs transition-colors hover:bg-muted"
+          onClick={() => copyValue(server.tailscale_dns_name ?? '')}
+          title={t('detail_copy_tailscale', { defaultValue: 'Click to copy' })}
+          type="button"
+        >
+          <span>{server.tailscale_dns_name}</span>
+          <Copy aria-hidden="true" className="size-3 text-muted-foreground" />
+        </button>
+      )}
       {server.kernel_version && (
         <span>
           {t('detail_kernel_label')} {server.kernel_version}
@@ -91,6 +124,7 @@ function ServerActionButtons({
   onEditOpen,
   onReenrollmentOpen,
   serverWithCaps,
+  tailscaleEnabled,
   terminalEnabled
 }: {
   dockerEnabled: boolean
@@ -102,6 +136,7 @@ function ServerActionButtons({
   onEditOpen: () => void
   onReenrollmentOpen: () => void
   serverWithCaps: ServerResponse & ServerWithCaps
+  tailscaleEnabled: boolean
   terminalEnabled: boolean
 }) {
   const { t } = useTranslation('servers')
@@ -140,6 +175,14 @@ function ServerActionButtons({
           <Button size="sm" variant="outline">
             <Container aria-hidden="true" className="mr-1 size-4" />
             {t('detail_docker')}
+          </Button>
+        </Link>
+      )}
+      {liveHydrated && tailscaleEnabled && (
+        <Link params={{ serverId: id }} to="/servers/$serverId/tailscale">
+          <Button size="sm" variant="outline">
+            <Share2 aria-hidden="true" className="mr-1 size-4" />
+            {t('detail_tailscale', { defaultValue: 'Tailscale' })}
           </Button>
         </Link>
       )}
@@ -198,6 +241,22 @@ export function ServerDetailPage() {
     serverWithCaps.capabilities,
     CAP_DOCKER
   )
+  const tailscaleCapEnabled = getEffectiveCapabilityEnabled(
+    serverWithCaps.effective_capabilities,
+    serverWithCaps.capabilities,
+    CAP_TAILSCALE
+  )
+  const hasTailscale =
+    Boolean(server.features?.includes('tailscale')) ||
+    Boolean(liveData?.features?.includes('tailscale')) ||
+    Boolean(server.tailscale_ipv4) ||
+    Boolean(liveData?.tailscale_ipv4)
+  const tailscaleEnabled = tailscaleCapEnabled && hasTailscale
+  const mergedServer: ServerResponse = {
+    ...server,
+    tailscale_dns_name: server.tailscale_dns_name ?? liveData?.tailscale_dns_name,
+    tailscale_ipv4: server.tailscale_ipv4 ?? liveData?.tailscale_ipv4
+  }
 
   return (
     <div className="pb-6">
@@ -212,6 +271,7 @@ export function ServerDetailPage() {
           onEditOpen={() => setEditOpen(true)}
           onReenrollmentOpen={() => setReenrollmentOpen(true)}
           serverWithCaps={serverWithCaps}
+          tailscaleEnabled={tailscaleEnabled}
           terminalEnabled={terminalEnabled}
         />
       </SiteHeaderActions>
@@ -224,7 +284,7 @@ export function ServerDetailPage() {
             <StatusBadge status={isOnline ? 'online' : 'offline'} />
             <UpgradeJobBadge job={upgradeJob} />
           </div>
-          <ServerInfoMeta server={server} />
+          <ServerInfoMeta server={mergedServer} />
         </div>
         <AgentVersionSection
           agentVersion={server.agent_version}

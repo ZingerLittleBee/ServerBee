@@ -5,6 +5,7 @@ import type enLogin from '@/locales/en/login.json'
 import type enServers from '@/locales/en/servers.json'
 import type enSettings from '@/locales/en/settings.json'
 import type enStatus from '@/locales/en/status.json'
+import type enTailscale from '@/locales/en/tailscale.json'
 import type enTerminal from '@/locales/en/terminal.json'
 
 declare module 'i18next' {
@@ -20,6 +21,7 @@ declare module 'i18next' {
       settings: typeof enSettings
       login: typeof enLogin
       status: typeof enStatus
+      tailscale: typeof enTailscale
     }
   }
 }

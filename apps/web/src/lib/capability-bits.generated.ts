@@ -12,9 +12,10 @@ export const CAP_DOCKER = 128
 export const CAP_SECURITY_EVENTS = 256
 export const CAP_FIREWALL_BLOCK = 512
 export const CAP_IP_QUALITY = 1024
+export const CAP_TAILSCALE = 2048
 
-// The OR of every default_enabled bit: upgrade + ping_icmp + ping_tcp + ping_http + security_events + firewall_block + ip_quality.
-export const CAP_DEFAULT = 1852
+// The OR of every default_enabled bit: upgrade + ping_icmp + ping_tcp + ping_http + security_events + firewall_block + ip_quality + tailscale.
+export const CAP_DEFAULT = 3900
 
 export const CAPABILITIES = [
   { bit: CAP_TERMINAL, key: 'terminal', labelKey: 'cap_terminal', risk: 'high' },
@@ -27,7 +28,8 @@ export const CAPABILITIES = [
   { bit: CAP_DOCKER, key: 'docker', labelKey: 'cap_docker', risk: 'high' },
   { bit: CAP_SECURITY_EVENTS, key: 'security_events', labelKey: 'cap_security_events', risk: 'low' },
   { bit: CAP_FIREWALL_BLOCK, key: 'firewall_block', labelKey: 'cap_firewall_block', risk: 'medium' },
-  { bit: CAP_IP_QUALITY, key: 'ip_quality', labelKey: 'cap_ip_quality', risk: 'medium' }
+  { bit: CAP_IP_QUALITY, key: 'ip_quality', labelKey: 'cap_ip_quality', risk: 'medium' },
+  { bit: CAP_TAILSCALE, key: 'tailscale', labelKey: 'cap_tailscale', risk: 'low' }
 ] as const
 
 export type CapabilityRisk = (typeof CAPABILITIES)[number]['risk']

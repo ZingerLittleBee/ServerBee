@@ -30,6 +30,7 @@ import { Route as AuthedTerminalServerIdRouteImport } from './routes/_authed/ter
 import { Route as AuthedSettingsWidgetsRouteImport } from './routes/_authed/settings/widgets'
 import { Route as AuthedSettingsUsersRouteImport } from './routes/_authed/settings/users'
 import { Route as AuthedSettingsTasksRouteImport } from './routes/_authed/settings/tasks'
+import { Route as AuthedSettingsTailscaleRouteImport } from './routes/_authed/settings/tailscale'
 import { Route as AuthedSettingsStatusPagesRouteImport } from './routes/_authed/settings/status-pages'
 import { Route as AuthedSettingsServiceMonitorsRouteImport } from './routes/_authed/settings/service-monitors'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed/settings/security'
@@ -50,6 +51,7 @@ import { Route as AuthedServersIdRouteImport } from './routes/_authed/servers/$i
 import { Route as AuthedSecurityServerIdRouteImport } from './routes/_authed/security/$serverId'
 import { Route as AuthedNetworkServerIdRouteImport } from './routes/_authed/network/$serverId'
 import { Route as AuthedFilesServerIdRouteImport } from './routes/_authed/files.$serverId'
+import { Route as AuthedServersServerIdTailscaleIndexRouteImport } from './routes/_authed/servers/$serverId/tailscale/index'
 import { Route as AuthedServersServerIdDockerIndexRouteImport } from './routes/_authed/servers/$serverId/docker/index'
 
 const StatusRoute = StatusRouteImport.update({
@@ -154,6 +156,11 @@ const AuthedSettingsUsersRoute = AuthedSettingsUsersRouteImport.update({
 const AuthedSettingsTasksRoute = AuthedSettingsTasksRouteImport.update({
   id: '/settings/tasks',
   path: '/settings/tasks',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedSettingsTailscaleRoute = AuthedSettingsTailscaleRouteImport.update({
+  id: '/settings/tailscale',
+  path: '/settings/tailscale',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsStatusPagesRoute =
@@ -264,6 +271,12 @@ const AuthedFilesServerIdRoute = AuthedFilesServerIdRouteImport.update({
   path: '/files/$serverId',
   getParentRoute: () => AuthedRoute,
 } as any)
+const AuthedServersServerIdTailscaleIndexRoute =
+  AuthedServersServerIdTailscaleIndexRouteImport.update({
+    id: '/servers/$serverId/tailscale/',
+    path: '/servers/$serverId/tailscale/',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedServersServerIdDockerIndexRoute =
   AuthedServersServerIdDockerIndexRouteImport.update({
     id: '/servers/$serverId/docker/',
@@ -300,6 +313,7 @@ export interface FileRoutesByFullPath {
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
+  '/settings/tailscale': typeof AuthedSettingsTailscaleRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/settings/widgets': typeof AuthedSettingsWidgetsRoute
@@ -313,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/traffic/': typeof AuthedTrafficIndexRoute
   '/status/network/': typeof StatusNetworkIndexRoute
   '/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
+  '/servers/$serverId/tailscale/': typeof AuthedServersServerIdTailscaleIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
@@ -341,6 +356,7 @@ export interface FileRoutesByTo {
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
+  '/settings/tailscale': typeof AuthedSettingsTailscaleRoute
   '/settings/tasks': typeof AuthedSettingsTasksRoute
   '/settings/users': typeof AuthedSettingsUsersRoute
   '/settings/widgets': typeof AuthedSettingsWidgetsRoute
@@ -354,6 +370,7 @@ export interface FileRoutesByTo {
   '/traffic': typeof AuthedTrafficIndexRoute
   '/status/network': typeof StatusNetworkIndexRoute
   '/servers/$serverId/docker': typeof AuthedServersServerIdDockerIndexRoute
+  '/servers/$serverId/tailscale': typeof AuthedServersServerIdTailscaleIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -386,6 +403,7 @@ export interface FileRoutesById {
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
   '/_authed/settings/service-monitors': typeof AuthedSettingsServiceMonitorsRoute
   '/_authed/settings/status-pages': typeof AuthedSettingsStatusPagesRoute
+  '/_authed/settings/tailscale': typeof AuthedSettingsTailscaleRoute
   '/_authed/settings/tasks': typeof AuthedSettingsTasksRoute
   '/_authed/settings/users': typeof AuthedSettingsUsersRoute
   '/_authed/settings/widgets': typeof AuthedSettingsWidgetsRoute
@@ -399,6 +417,7 @@ export interface FileRoutesById {
   '/_authed/traffic/': typeof AuthedTrafficIndexRoute
   '/status/network/': typeof StatusNetworkIndexRoute
   '/_authed/servers/$serverId/docker/': typeof AuthedServersServerIdDockerIndexRoute
+  '/_authed/servers/$serverId/tailscale/': typeof AuthedServersServerIdTailscaleIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -431,6 +450,7 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/settings/service-monitors'
     | '/settings/status-pages'
+    | '/settings/tailscale'
     | '/settings/tasks'
     | '/settings/users'
     | '/settings/widgets'
@@ -444,6 +464,7 @@ export interface FileRouteTypes {
     | '/traffic/'
     | '/status/network/'
     | '/servers/$serverId/docker/'
+    | '/servers/$serverId/tailscale/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
@@ -472,6 +493,7 @@ export interface FileRouteTypes {
     | '/settings/security'
     | '/settings/service-monitors'
     | '/settings/status-pages'
+    | '/settings/tailscale'
     | '/settings/tasks'
     | '/settings/users'
     | '/settings/widgets'
@@ -485,6 +507,7 @@ export interface FileRouteTypes {
     | '/traffic'
     | '/status/network'
     | '/servers/$serverId/docker'
+    | '/servers/$serverId/tailscale'
   id:
     | '__root__'
     | '/_authed'
@@ -516,6 +539,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/security'
     | '/_authed/settings/service-monitors'
     | '/_authed/settings/status-pages'
+    | '/_authed/settings/tailscale'
     | '/_authed/settings/tasks'
     | '/_authed/settings/users'
     | '/_authed/settings/widgets'
@@ -529,6 +553,7 @@ export interface FileRouteTypes {
     | '/_authed/traffic/'
     | '/status/network/'
     | '/_authed/servers/$serverId/docker/'
+    | '/_authed/servers/$serverId/tailscale/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -687,6 +712,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsTasksRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/settings/tailscale': {
+      id: '/_authed/settings/tailscale'
+      path: '/settings/tailscale'
+      fullPath: '/settings/tailscale'
+      preLoaderRoute: typeof AuthedSettingsTailscaleRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/settings/status-pages': {
       id: '/_authed/settings/status-pages'
       path: '/settings/status-pages'
@@ -827,6 +859,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedFilesServerIdRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/servers/$serverId/tailscale/': {
+      id: '/_authed/servers/$serverId/tailscale/'
+      path: '/servers/$serverId/tailscale'
+      fullPath: '/servers/$serverId/tailscale/'
+      preLoaderRoute: typeof AuthedServersServerIdTailscaleIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/servers/$serverId/docker/': {
       id: '/_authed/servers/$serverId/docker/'
       path: '/servers/$serverId/docker'
@@ -860,6 +899,7 @@ interface AuthedRouteChildren {
   AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
   AuthedSettingsServiceMonitorsRoute: typeof AuthedSettingsServiceMonitorsRoute
   AuthedSettingsStatusPagesRoute: typeof AuthedSettingsStatusPagesRoute
+  AuthedSettingsTailscaleRoute: typeof AuthedSettingsTailscaleRoute
   AuthedSettingsTasksRoute: typeof AuthedSettingsTasksRoute
   AuthedSettingsUsersRoute: typeof AuthedSettingsUsersRoute
   AuthedSettingsWidgetsRoute: typeof AuthedSettingsWidgetsRoute
@@ -870,6 +910,7 @@ interface AuthedRouteChildren {
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
   AuthedTrafficIndexRoute: typeof AuthedTrafficIndexRoute
   AuthedServersServerIdDockerIndexRoute: typeof AuthedServersServerIdDockerIndexRoute
+  AuthedServersServerIdTailscaleIndexRoute: typeof AuthedServersServerIdTailscaleIndexRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
@@ -895,6 +936,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
   AuthedSettingsServiceMonitorsRoute: AuthedSettingsServiceMonitorsRoute,
   AuthedSettingsStatusPagesRoute: AuthedSettingsStatusPagesRoute,
+  AuthedSettingsTailscaleRoute: AuthedSettingsTailscaleRoute,
   AuthedSettingsTasksRoute: AuthedSettingsTasksRoute,
   AuthedSettingsUsersRoute: AuthedSettingsUsersRoute,
   AuthedSettingsWidgetsRoute: AuthedSettingsWidgetsRoute,
@@ -905,6 +947,8 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
   AuthedTrafficIndexRoute: AuthedTrafficIndexRoute,
   AuthedServersServerIdDockerIndexRoute: AuthedServersServerIdDockerIndexRoute,
+  AuthedServersServerIdTailscaleIndexRoute:
+    AuthedServersServerIdTailscaleIndexRoute,
 }
 
 const AuthedRouteWithChildren =

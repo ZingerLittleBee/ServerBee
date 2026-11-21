@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const UUID_RE = /^[0-9a-f-]{36}$/
 
 const mockPost = vi.fn()
+const mockUseQuery = vi.fn<(_opts?: unknown) => { data: unknown; isLoading: boolean }>(() => ({
+  data: [],
+  isLoading: false
+}))
 const mockRefreshServerCatalog = vi.hoisted(() => vi.fn())
 const mockQueryClient = {}
 
@@ -35,7 +39,7 @@ vi.mock('@tanstack/react-query', () => ({
       }
     }
   }),
-  useQuery: () => ({ data: [], isLoading: false }),
+  useQuery: (opts: unknown) => mockUseQuery(opts),
   useQueryClient: () => mockQueryClient
 }))
 
@@ -118,6 +122,8 @@ const { AddServerDialog } = await import('./add-server-dialog')
 describe('AddServerDialog', () => {
   beforeEach(() => {
     mockPost.mockReset()
+    mockUseQuery.mockReset()
+    mockUseQuery.mockReturnValue({ data: [], isLoading: false })
     mockRefreshServerCatalog.mockReset()
   })
 
@@ -235,5 +241,49 @@ describe('AddServerDialog', () => {
     expect(screen.getByText('add_server.ttl_tip')).toBeInTheDocument()
     expect(screen.queryByText('add_server.validity_10m')).not.toBeInTheDocument()
     expect(screen.queryByText('add_server.validity_1h')).not.toBeInTheDocument()
+  })
+
+  it('switches the generated install command --server-url between origin and server_tailnet_url when toggled', async () => {
+    mockUseQuery.mockImplementation((opts: unknown) => {
+      const queryKey = (opts as { queryKey?: string[] })?.queryKey
+      if (queryKey?.[0] === 'tailscale') {
+        return {
+          data: {
+            configured: true,
+            server_tailnet_url: 'https://serverbee.tailnet.ts.net/'
+          },
+          isLoading: false
+        }
+      }
+      return { data: [], isLoading: false }
+    })
+    mockPost.mockResolvedValueOnce({
+      server_id: 'srv-ts',
+      replayed: false,
+      outstanding_offer: null,
+      enrollment: {
+        id: 'enr-ts',
+        code: 'ts-enrollment-code',
+        code_prefix: 'ts-enr',
+        expires_at: '2030-01-01T00:00:00Z'
+      }
+    })
+    mockRefreshServerCatalog.mockResolvedValueOnce(undefined)
+
+    render(<AddServerDialog onClose={vi.fn()} open />)
+    fireEvent.change(screen.getByLabelText('add_server.name_label'), { target: { value: 'tailnet-node' } })
+    fireEvent.click(screen.getByRole('button', { name: 'add_server.generate' }))
+
+    await waitFor(() => expect(screen.getByText('ts-enrollment-code')).toBeInTheDocument())
+
+    const origin = window.location.origin
+    expect(screen.getByText(new RegExp(`--server-url '${origin}'`))).toBeInTheDocument()
+
+    const toggle = screen.getByRole('switch', { name: 'Use Tailnet Server URL' })
+    fireEvent.click(toggle)
+
+    expect(
+      screen.getByText((content) => content.includes("--server-url 'https://serverbee.tailnet.ts.net'"))
+    ).toBeInTheDocument()
   })
 })
