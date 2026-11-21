@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tailscale and self-hosted Headscale support** -- Agents with `CAP_TAILSCALE` collect Tailnet node status, overlay addresses, peers, DERP relays, and advertised routes over the `tailscaled` LocalAPI socket with CLI fallback and offline cached snapshots. Administrators can connect Tailscale API v2 or Headscale API v1 control planes with outbound SSRF validation, correlate Tailnet devices with monitored servers across the Web dashboard, the `com.serverbee.tailscale-overview` built-in widget, and the native iOS app, and onboard Agents over a Tailnet Server URL
+
+- **Overlay network guardrails and Tailscale Serve identity login** -- Public WAN IP detection and GeoIP ignore `100.64.0.0/10` CGNAT and `fd7a:115c:a1e0::/48` overlay addresses, aggregate host traffic excludes `tailscale*` TUN counters by default, and firewall blocklist rules reject `100.64.0.0/10` lockouts. Deployments behind `tailscale serve` can optionally accept loopback-only `Tailscale-User-Login` headers with LocalAPI `whois` verification, accompanied by a sidecar Docker Compose template and bilingual documentation
+
+### Security
+
+- **Legacy APNs transport removes vulnerable TLS dependencies** -- Direct APNs delivery replaces `a2` and its transitive `rustls 0.22` and `rustls-webpki 0.102` chain with HTTP/2 `reqwest` requests and cached ES256 provider tokens while preserving legacy direct-connection settings, timeouts, recipient fencing, notification payloads, and `410 Unregistered` token cleanup
+
+### Fixed
+
+- **Alert repeat deadlines and Agent security windows stay bounded** -- Suppressed alert polls no longer push back five-minute repeat notification deadlines, Agent SSH brute-force and port-scan detectors retain unexpired events across sliding-window sweeps, and the systemd journal watcher rejects malformed byte arrays
+
+- **Client history views, widget SDK hooks, and push acceptance docs stay aligned** -- Web server-card network history deduplicates timestamps in chronological order, native iOS metric history fences stale range requests so earlier responses cannot overwrite a newer selection, the widget SDK aligns uptime, alert, and service-monitor hooks with Server DTOs under CI coverage, and manual push integration records live APNs sandbox relay verification alongside remaining physical-device gates
+
 ## [1.0.0-beta.6] - 2026-10-06
 
 ### Added

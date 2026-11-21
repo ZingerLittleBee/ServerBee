@@ -1,6 +1,6 @@
 //! Renewal reminders through authenticated HTTP, real persistent SQLite and the production tick.
 mod common;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Datelike, Utc};
 use common::{create_server, http_client, login_admin};
 use serde_json::{Value, json};
 use serverbee_server::{service::renewal_clock::RenewalClock, state::AppState};
@@ -29,10 +29,22 @@ async fn get(admin: &reqwest::Client, base: &str, path: &str) -> Value {
     assert_eq!(response.status(), 200);
     response.json::<Value>().await.unwrap()["data"].clone()
 }
+fn future_october_year() -> i32 {
+    Utc::now().year() + 1
+}
 async fn configure(admin: &reqwest::Client, base: &str, days: u32) -> (String, String) {
+    configure_in_year(admin, base, days, 2026).await
+}
+async fn configure_in_year(
+    admin: &reqwest::Client,
+    base: &str,
+    days: u32,
+    year: i32,
+) -> (String, String) {
     let id = create_server(admin, base, "offline-renewal-reminder").await;
+    let expiry_date = format!("{year}-10-31");
     let response = admin.put(format!("{base}/api/servers/{id}"))
-        .json(&json!({"billing_cycle":"monthly","renewal":{"enabled":true,"expiry_date":"2026-10-31","billing_timezone":"America/New_York"}}))
+        .json(&json!({"billing_cycle":"monthly","renewal":{"enabled":true,"expiry_date":expiry_date,"billing_timezone":"America/New_York"}}))
         .send().await.unwrap();
     assert_eq!(response.status(), 200);
     let response = admin.post(format!("{base}/api/alert-rules"))
@@ -382,7 +394,8 @@ async fn admit_direct(state: &AppState, now: DateTime<Utc>) {
 async fn encrypted_queue_fault_rolls_back_calendar_and_admission_then_retry_and_reopen_are_deduplicated()
  {
     use sea_orm::ConnectionTrait;
-    let clock = ManualClock::at("2026-10-31T12:00:00Z");
+    let year = future_october_year();
+    let clock = ManualClock::at(&format!("{year}-10-31T12:00:00Z"));
     let (_base, tmp, initial) =
         common::start_test_server_with_renewal_clock(100, clock.clone()).await;
     let mut config = initial.config.clone();
@@ -390,14 +403,14 @@ async fn encrypted_queue_fault_rolls_back_calendar_and_admission_then_retry_and_
     let (base, state) = reopen(&tmp, clock.clone(), config).await;
     let admin = http_client();
     login_admin(&admin, &base).await;
-    let (id, _) = configure(&admin, &base, 60).await;
+    let (id, _) = configure_in_year(&admin, &base, 60, year).await;
     register_encrypted_alerts(&admin, &base).await;
     state.db.execute_unprepared("CREATE TRIGGER renewal_queue_failure BEFORE INSERT ON mobile_push_outbox BEGIN SELECT RAISE(FAIL,'isolated admission fault'); END").await.unwrap();
-    clock.set("2026-11-01T04:00:00Z");
+    clock.set(&format!("{year}-11-01T04:00:00Z"));
     admit_direct(&state, clock.now()).await;
     assert_eq!(
         get(&admin, &base, &format!("servers/{id}")).await["renewal"]["expiry_date"],
-        "2026-10-31",
+        format!("{year}-10-31"),
         "failed queue admission cannot commit the calendar snapshot"
     );
     assert!(
@@ -416,7 +429,7 @@ async fn encrypted_queue_fault_rolls_back_calendar_and_admission_then_retry_and_
     admit_direct(&state, clock.now()).await;
     assert_eq!(
         get(&admin, &base, &format!("servers/{id}")).await["renewal"]["expiry_date"],
-        "2026-11-30"
+        format!("{year}-11-30")
     );
     let original = jobs(&state).await;
     assert_eq!(original.len(), 1);
@@ -643,7 +656,8 @@ async fn explicitly_clearing_expiry_resolves_its_retained_occurrence() {
 
 #[tokio::test]
 async fn enabling_tracking_for_same_legacy_date_does_not_readmit_its_once_reminder() {
-    let clock = ManualClock::at("2026-10-15T12:00:00Z");
+    let year = future_october_year();
+    let clock = ManualClock::at(&format!("{year}-10-15T12:00:00Z"));
     use sea_orm::ConnectionTrait;
     let (_base, tmp, initial) =
         common::start_test_server_with_renewal_clock(100, clock.clone()).await;
@@ -653,7 +667,7 @@ async fn enabling_tracking_for_same_legacy_date_does_not_readmit_its_once_remind
     let admin = http_client();
     login_admin(&admin, &base).await;
     let response = admin.post(format!("{base}/api/servers"))
-        .json(&json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"legacy expiry","billing_cycle":"monthly","expired_at":"2026-10-31T12:34:56Z"}))
+        .json(&json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"legacy expiry","billing_cycle":"monthly","expired_at":format!("{year}-10-31T12:34:56Z")}))
         .send().await.unwrap();
     assert_eq!(response.status(), 200);
     let id = response.json::<Value>().await.unwrap()["data"]["server_id"]
@@ -704,7 +718,7 @@ async fn enabling_tracking_for_same_legacy_date_does_not_readmit_its_once_remind
     assert_eq!(response.status(), 200);
     tick(&state).await;
     let enabled = get(&admin, &base, &format!("servers/{id}")).await;
-    assert_eq!(enabled["renewal"]["expiry_date"], "2026-10-31");
+    assert_eq!(enabled["renewal"]["expiry_date"], format!("{year}-10-31"));
     assert_eq!(
         enabled["renewal"]["confirmed_expired_at"],
         before["expired_at"]
@@ -769,7 +783,7 @@ async fn enabling_tracking_for_same_legacy_date_does_not_readmit_its_once_remind
         tick(&reopened).await;
         assert_eq!(jobs(&reopened).await, original_jobs);
     }
-    clock.set("2026-11-01T00:00:00Z");
+    clock.set(&format!("{year}-11-01T00:00:00Z"));
     tick(&state).await;
     assert_eq!(
         get(&admin, &base, "alert-events")
@@ -993,7 +1007,8 @@ async fn typed_disabled_create_reminds_on_local_expiry_date_and_preserves_identi
 
 #[tokio::test]
 async fn legacy_timezone_normalization_uses_local_day_without_readmitting_consumed_once() {
-    let clock = ManualClock::at("2026-10-30T12:00:00Z");
+    let year = future_october_year();
+    let clock = ManualClock::at(&format!("{year}-10-30T12:00:00Z"));
     let (_base, tmp, initial) =
         common::start_test_server_with_renewal_clock(100, clock.clone()).await;
     let mut config = initial.config.clone();
@@ -1003,7 +1018,7 @@ async fn legacy_timezone_normalization_uses_local_day_without_readmitting_consum
     login_admin(&admin, &base).await;
     let response = admin.post(format!("{base}/api/servers"))
         .json(&json!({"onboarding_request_id":uuid::Uuid::new_v4().to_string(),"name":"legacy timezone",
-            "expired_at":"2026-10-31T12:34:56Z"})).send().await.unwrap();
+            "expired_at":format!("{year}-10-31T12:34:56Z")})).send().await.unwrap();
     assert_eq!(response.status(), 200);
     let id = response.json::<Value>().await.unwrap()["data"]["server_id"]
         .as_str()
@@ -1024,7 +1039,7 @@ async fn legacy_timezone_normalization_uses_local_day_without_readmitting_consum
     let old_key = old[0]["alert_key"].as_str().unwrap();
     let original = get(&admin, &base, &format!("alert-events/{old_key}")).await;
     let legacy = get(&admin, &base, &format!("servers/{id}")).await;
-    clock.set("2026-10-31T04:00:00Z");
+    clock.set(&format!("{year}-10-31T04:00:00Z"));
     assert_eq!(
         admin
             .put(format!("{base}/api/servers/{id}"))
@@ -1038,7 +1053,7 @@ async fn legacy_timezone_normalization_uses_local_day_without_readmitting_consum
     tick(&state).await;
     let current = get(&admin, &base, &format!("servers/{id}")).await;
     assert_eq!(current["renewal"]["enabled"], false);
-    assert_eq!(current["renewal"]["expiry_date"], "2026-10-31");
+    assert_eq!(current["renewal"]["expiry_date"], format!("{year}-10-31"));
     assert_eq!(
         current["renewal"]["confirmed_expired_at"],
         legacy["expired_at"]
@@ -1094,7 +1109,8 @@ async fn captured_notification_group_cannot_consume_once_after_committed_channel
         alert::AlertRuleItem,
         renewal_reminders::{self, Outcome},
     };
-    let clock = ManualClock::at("2026-10-30T12:00:00Z");
+    let year = future_october_year();
+    let clock = ManualClock::at(&format!("{year}-10-30T12:00:00Z"));
     let (_base, tmp, initial) =
         common::start_test_server_with_renewal_clock(100, clock.clone()).await;
     let mut config = initial.config.clone();
@@ -1102,7 +1118,7 @@ async fn captured_notification_group_cannot_consume_once_after_committed_channel
     let (base, state) = reopen(&tmp, clock.clone(), config).await;
     let admin = http_client();
     login_admin(&admin, &base).await;
-    let (id, rule) = configure(&admin, &base, 60).await;
+    let (id, rule) = configure_in_year(&admin, &base, 60, year).await;
     register_encrypted_alerts(&admin, &base).await;
     let receipts = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
     let sink = receipts.clone();
