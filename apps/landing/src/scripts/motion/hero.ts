@@ -24,10 +24,10 @@ import {
 const GAP = 7
 const RADIUS = 9
 /** How long the first route takes to draw, and how much longer each next one takes. */
-const DRAW = 1150
-const DRAW_STEP = 120
-/** When the routes leave, measured from the entrance: the headline has landed by then. */
-const DEPART = 1050
+const DRAW = 820
+const DRAW_STEP = 70
+/** When the routes leave, measured from the entrance: the headline's full stop is all but in place by then. */
+const DEPART = 780
 /** A carrier's usual latency in milliseconds, in the order of the tags. */
 const LATENCY = [31, 28, 44]
 
@@ -94,7 +94,9 @@ export function mountHero(): void {
     packet.setAttribute('pathLength', '100')
     packet.dataset.lane = String(index)
     packet.style.setProperty('--period', `${Math.round(rand(2700, 4300))}ms`)
-    packet.style.setProperty('--delay', `${Math.round(rand(0, 2600))}ms`)
+    // Packets go live when the first route is drawn. A route's own first packet waits until that route is drawn
+    // too, and the first route's leaves at once.
+    packet.style.setProperty('--delay', `${Math.round(index * DRAW_STEP + (index ? rand(0, 900) : 0))}ms`)
     const plug = svgEl('circle', 'route-plug')
     plug.setAttribute('r', '3')
     svg.append(route, packet, plug)
@@ -189,7 +191,7 @@ export function mountHero(): void {
     }
     svg.setAttribute('data-drawn', '')
     for (const [index, { tag }] of tags.entries()) {
-      setTimeout(() => tag.setAttribute('data-on', ''), 240 + index * 150)
+      setTimeout(() => tag.setAttribute('data-on', ''), 170 + index * 110)
     }
     for (const [index, { plug }] of lanes.entries()) {
       // A route's card lands as the route arrives, and the cards under it in the column follow.
@@ -206,7 +208,7 @@ export function mountHero(): void {
         DRAW + index * DRAW_STEP - 140
       )
     }
-    await sleep(DRAW + laneCount * DRAW_STEP + 500)
+    await sleep(DRAW)
     svg.setAttribute('data-live', '')
   }
 
