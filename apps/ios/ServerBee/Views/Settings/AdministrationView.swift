@@ -51,6 +51,15 @@ private extension AdministrationView {
                     color: .orange
                 )
             }
+            NavigationLink {
+                TailscaleAdminView(isAdmin: isAdmin)
+            } label: {
+                IconRowLabel(
+                    title: String(localized: "Tailscale"),
+                    systemImage: "circle.grid.3x3.fill",
+                    color: .cyan
+                )
+            }
         }
     }
 

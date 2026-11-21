@@ -67,6 +67,11 @@ struct ServerStatus: Decodable, Identifiable, Hashable, Sendable {
     /// second integer**; the decoder normalises both forms to a string here so
     /// view code keeps a single representation.
     var lastActiveAt: String?
+    var features: [String]?
+    var tailscaleIpv4: String?
+    var tailscaleIpv6: String?
+    var tailscaleDnsName: String?
+    var tailscaleTailnet: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -119,6 +124,11 @@ struct ServerStatus: Decodable, Identifiable, Hashable, Sendable {
         case renewal
         case lastActiveAt = "last_active_at"
         case lastActive = "last_active"
+        case features
+        case tailscaleIpv4 = "tailscale_ipv4"
+        case tailscaleIpv6 = "tailscale_ipv6"
+        case tailscaleDnsName = "tailscale_dns_name"
+        case tailscaleTailnet = "tailscale_tailnet"
     }
 
     /// Convenience: treat unknown (`nil`) as offline for view code.
@@ -177,6 +187,11 @@ extension ServerStatus {
         hasToken = try container.decodeIfPresent(Bool.self, forKey: .hasToken)
         expiredAt = try container.decodeIfPresent(String.self, forKey: .expiredAt)
         renewal = try container.decodeIfPresent(ServerRenewal.self, forKey: .renewal)
+        features = try container.decodeIfPresent([String].self, forKey: .features)
+        tailscaleIpv4 = try container.decodeIfPresent(String.self, forKey: .tailscaleIpv4)
+        tailscaleIpv6 = try container.decodeIfPresent(String.self, forKey: .tailscaleIpv6)
+        tailscaleDnsName = try container.decodeIfPresent(String.self, forKey: .tailscaleDnsName)
+        tailscaleTailnet = try container.decodeIfPresent(String.self, forKey: .tailscaleTailnet)
 
         // `last_active` is a Unix epoch integer over the WS, an ISO string over
         // REST (`last_active_at`). Normalise to an ISO string. Using `try?` so a
@@ -294,6 +309,11 @@ extension ServerStatus {
         if let v = other.hasToken { hasToken = v }
         if let v = other.expiredAt { expiredAt = v }
         if let v = other.renewal { renewal = v }
+        if let v = other.features { features = v }
+        if let v = other.tailscaleIpv4 { tailscaleIpv4 = v }
+        if let v = other.tailscaleIpv6 { tailscaleIpv6 = v }
+        if let v = other.tailscaleDnsName { tailscaleDnsName = v }
+        if let v = other.tailscaleTailnet { tailscaleTailnet = v }
     }
 }
 

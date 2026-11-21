@@ -152,6 +152,10 @@ struct ServerConfig: Decodable, Identifiable, Hashable, Sendable {
     var outstandingEnrollment: OutstandingOffer?
     var createdAt: String?
     var updatedAt: String?
+    var tailscaleIpv4: String?
+    var tailscaleIpv6: String?
+    var tailscaleDnsName: String?
+    var tailscaleTailnet: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, region, currency, weight, hidden, remark, price, features, capabilities, virtualization
@@ -182,6 +186,10 @@ struct ServerConfig: Decodable, Identifiable, Hashable, Sendable {
         case outstandingEnrollment = "outstanding_enrollment"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case tailscaleIpv4 = "tailscale_ipv4"
+        case tailscaleIpv6 = "tailscale_ipv6"
+        case tailscaleDnsName = "tailscale_dns_name"
+        case tailscaleTailnet = "tailscale_tailnet"
     }
 
     var capabilitySet: CapabilitySet {
