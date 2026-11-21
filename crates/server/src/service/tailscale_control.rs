@@ -902,9 +902,17 @@ pub fn validate_api_base_url(raw: &str) -> Result<Url, AppError> {
 // Upstream JSON Parsers (Tailscale v2 & Headscale v1)
 // ---------------------------------------------------------------------------
 
+fn null_to_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(Deserialize)]
 struct TailscaleDevicesEnvelope {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     devices: Vec<TailscaleApiDevice>,
 }
 
@@ -915,32 +923,28 @@ struct TailscaleApiDevice {
     id: Option<String>,
     #[serde(default)]
     node_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     hostname: String,
     #[serde(default)]
     os: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     addresses: Vec<String>,
-    #[serde(default = "default_authorized")]
-    authorized: bool,
+    #[serde(default)]
+    authorized: Option<bool>,
     #[serde(default)]
     connected_to_control: Option<bool>,
     #[serde(default)]
     last_seen: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     key_expiry_disabled: bool,
     #[serde(default)]
     expires: Option<String>,
     #[serde(default)]
     client_version: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_to_default")]
     tags: Vec<String>,
-}
-
-fn default_authorized() -> bool {
-    true
 }
 
 pub fn parse_tailscale_devices_json(body: &str) -> Result<Vec<TailnetDeviceItem>, String> {
@@ -969,9 +973,9 @@ pub fn parse_tailscale_devices_json(body: &str) -> Result<Vec<TailnetDeviceItem>
                 hostname,
                 os: d.os,
                 addresses: d.addresses,
-                authorized: d.authorized,
+                authorized: d.authorized.unwrap_or(true),
                 online,
-                last_seen: d.last_seen,
+                last_seen: normalize_go_timestamp(d.last_seen),
                 key_expiry_disabled: d.key_expiry_disabled,
                 expires,
                 client_version: d.client_version,
@@ -1015,7 +1019,7 @@ struct HeadscaleNode {
     name: Option<String>,
     #[serde(default, alias = "givenName")]
     given_name: Option<String>,
-    #[serde(default, alias = "ipAddresses")]
+    #[serde(default, alias = "ipAddresses", deserialize_with = "null_to_default")]
     ip_addresses: Vec<String>,
     #[serde(default)]
     online: Option<bool>,
@@ -1023,9 +1027,11 @@ struct HeadscaleNode {
     last_seen: Option<String>,
     #[serde(default)]
     expiry: Option<String>,
-    #[serde(default, alias = "forcedTags")]
+    #[serde(default, deserialize_with = "null_to_default")]
+    tags: Vec<String>,
+    #[serde(default, alias = "forcedTags", deserialize_with = "null_to_default")]
     forced_tags: Vec<String>,
-    #[serde(default, alias = "validTags")]
+    #[serde(default, alias = "validTags", deserialize_with = "null_to_default")]
     valid_tags: Vec<String>,
 }
 
@@ -1062,9 +1068,15 @@ pub fn parse_headscale_devices_json(body: &str) -> Result<Vec<TailnetDeviceItem>
             };
 
             let mut tags = Vec::new();
-            for tag in node.forced_tags.into_iter().chain(node.valid_tags) {
-                if !tags.contains(&tag) {
-                    tags.push(tag);
+            for tag in node
+                .tags
+                .into_iter()
+                .chain(node.forced_tags)
+                .chain(node.valid_tags)
+            {
+                let trimmed = tag.trim();
+                if !trimmed.is_empty() && !tags.iter().any(|existing| existing == trimmed) {
+                    tags.push(trimmed.to_string());
                 }
             }
 
@@ -1076,7 +1088,7 @@ pub fn parse_headscale_devices_json(body: &str) -> Result<Vec<TailnetDeviceItem>
                 addresses: node.ip_addresses,
                 authorized: true,
                 online: node.online.unwrap_or(false),
-                last_seen: node.last_seen,
+                last_seen: normalize_go_timestamp(node.last_seen),
                 key_expiry_disabled,
                 expires,
                 client_version: None,
@@ -1088,11 +1100,16 @@ pub fn parse_headscale_devices_json(body: &str) -> Result<Vec<TailnetDeviceItem>
         .collect())
 }
 
+fn normalize_go_timestamp(val: Option<String>) -> Option<String> {
+    val.map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && !s.starts_with("0001-01-01"))
+}
+
 fn normalize_expiry(expires: Option<String>, disabled: bool) -> Option<String> {
     if disabled {
         return None;
     }
-    expires.filter(|exp| !exp.trim().is_empty() && !exp.starts_with("0001-01-01"))
+    normalize_go_timestamp(expires)
 }
 
 fn is_recently_seen(last_seen: Option<&str>, now: DateTime<Utc>) -> bool {
@@ -1302,11 +1319,11 @@ fn decode_chunked_body(mut input: &[u8]) -> Option<Vec<u8>> {
 
 #[derive(Deserialize)]
 struct LocalStatusSnippet {
-    #[serde(default, rename = "BackendState")]
+    #[serde(default, rename = "BackendState", deserialize_with = "null_to_default")]
     backend_state: String,
-    #[serde(default, rename = "TailscaleIPs")]
+    #[serde(default, rename = "TailscaleIPs", deserialize_with = "null_to_default")]
     tailscale_ips: Vec<String>,
-    #[serde(default, rename = "CertDomains")]
+    #[serde(default, rename = "CertDomains", deserialize_with = "null_to_default")]
     cert_domains: Vec<String>,
     #[serde(default, rename = "Self")]
     self_node: Option<LocalSelfNode>,
@@ -1314,8 +1331,47 @@ struct LocalStatusSnippet {
 
 #[derive(Deserialize)]
 struct LocalSelfNode {
-    #[serde(default, rename = "DNSName")]
+    #[serde(default, rename = "DNSName", deserialize_with = "null_to_default")]
     dns_name: String,
+    #[serde(default, rename = "TailscaleIPs", deserialize_with = "null_to_default")]
+    tailscale_ips: Vec<String>,
+}
+
+fn parse_local_tailscaled_url_hint(body: &str, port: u16) -> Option<String> {
+    let parsed = serde_json::from_str::<LocalStatusSnippet>(body).ok()?;
+    if !parsed.backend_state.is_empty() && parsed.backend_state != "Running" {
+        return None;
+    }
+    if let Some(dns) = parsed
+        .self_node
+        .as_ref()
+        .map(|s| s.dns_name.trim().trim_end_matches('.'))
+        .filter(|s| !s.is_empty())
+    {
+        let has_https_cert = parsed
+            .cert_domains
+            .iter()
+            .any(|d| d.trim().trim_end_matches('.').eq_ignore_ascii_case(dns));
+        if has_https_cert {
+            return Some(format!("https://{dns}"));
+        }
+        return Some(format!("http://{dns}:{port}"));
+    }
+    let ip_candidates = if !parsed.tailscale_ips.is_empty() {
+        &parsed.tailscale_ips
+    } else if let Some(ref me) = parsed.self_node {
+        &me.tailscale_ips
+    } else {
+        &parsed.tailscale_ips
+    };
+    if let Some(ip) = ip_candidates
+        .iter()
+        .filter_map(|s| s.trim().parse::<std::net::Ipv4Addr>().ok())
+        .find(|v4| is_cgnat_ipv4(*v4))
+    {
+        return Some(format!("http://{ip}:{port}"));
+    }
+    None
 }
 
 pub async fn probe_local_tailscaled_url_hint(
@@ -1336,34 +1392,8 @@ pub async fn probe_local_tailscaled_url_hint(
         let Some((200, body)) = localapi_get(sock, "/localapi/v0/status").await else {
             continue;
         };
-        let Ok(parsed) = serde_json::from_str::<LocalStatusSnippet>(&body) else {
-            continue;
-        };
-        if !parsed.backend_state.is_empty() && parsed.backend_state != "Running" {
-            continue;
-        }
-        if let Some(dns) = parsed
-            .self_node
-            .as_ref()
-            .map(|s| s.dns_name.trim().trim_end_matches('.'))
-            .filter(|s| !s.is_empty())
-        {
-            let has_https_cert = parsed
-                .cert_domains
-                .iter()
-                .any(|d| d.trim().trim_end_matches('.').eq_ignore_ascii_case(dns));
-            if has_https_cert {
-                return Some(format!("https://{dns}"));
-            }
-            return Some(format!("http://{dns}:{port}"));
-        }
-        if let Some(ip) = parsed
-            .tailscale_ips
-            .iter()
-            .filter_map(|s| s.trim().parse::<std::net::Ipv4Addr>().ok())
-            .find(|v4| is_cgnat_ipv4(*v4))
-        {
-            return Some(format!("http://{ip}:{port}"));
+        if let Some(url) = parse_local_tailscaled_url_hint(&body, port) {
+            return Some(url);
         }
     }
     None
@@ -1377,7 +1407,7 @@ struct LocalWhoIsSnippet {
 
 #[derive(Deserialize)]
 struct LocalUserProfile {
-    #[serde(default, rename = "LoginName")]
+    #[serde(default, rename = "LoginName", deserialize_with = "null_to_default")]
     login_name: String,
 }
 
@@ -1553,6 +1583,137 @@ mod tests {
         assert!(parsed[0].key_expiry_disabled);
         assert!(parsed[0].expires.is_none());
         assert_eq!(parsed[0].tags, vec!["tag:hs", "tag:extra"]);
+    }
+
+    #[test]
+    fn parses_headscale_v029_tags_and_go_null_slices() {
+        // Real payload from Headscale v0.29.7 GET /api/v1/node after `headscale nodes tag -i 1 -t tag:hub`,
+        // plus a second node exercising explicit Go `null` slices on ipAddresses/tags/forcedTags/validTags.
+        let hs_json = r#"{
+            "nodes": [
+                {
+                    "id": "1",
+                    "name": "sb-ts-hub",
+                    "givenName": "sb-ts-hub",
+                    "ipAddresses": ["100.64.0.1", "fd7a:115c:a1e0::1"],
+                    "online": true,
+                    "lastSeen": "2026-11-21T05:30:00.635496004Z",
+                    "expiry": null,
+                    "tags": ["tag:hub"],
+                    "forcedTags": ["tag:hub", "tag:forced"],
+                    "validTags": null
+                },
+                {
+                    "id": "2",
+                    "name": "sb-ts-nulls",
+                    "ipAddresses": null,
+                    "online": false,
+                    "lastSeen": "0001-01-01T00:00:00Z",
+                    "expiry": null,
+                    "tags": null,
+                    "forcedTags": null,
+                    "validTags": null
+                }
+            ]
+        }"#;
+        let hs_parsed = parse_headscale_devices_json(hs_json).expect("parse headscale v0.29 json");
+        assert_eq!(hs_parsed.len(), 2);
+        assert_eq!(hs_parsed[0].id, "1");
+        assert_eq!(hs_parsed[0].name, "sb-ts-hub");
+        assert_eq!(
+            hs_parsed[0].addresses,
+            vec!["100.64.0.1", "fd7a:115c:a1e0::1"]
+        );
+        assert!(hs_parsed[0].online);
+        assert!(hs_parsed[0].key_expiry_disabled);
+        assert!(hs_parsed[0].expires.is_none());
+        assert_eq!(hs_parsed[0].tags, vec!["tag:hub", "tag:forced"]);
+
+        assert_eq!(hs_parsed[1].id, "2");
+        assert!(hs_parsed[1].addresses.is_empty());
+        assert!(hs_parsed[1].tags.is_empty());
+        assert!(hs_parsed[1].last_seen.is_none());
+
+        // Also verify Tailscale v2 envelope/device handles Go `null` slices and fields cleanly.
+        let ts_null_envelope = r#"{"devices": null}"#;
+        assert!(
+            parse_tailscale_devices_json(ts_null_envelope)
+                .expect("null devices envelope")
+                .is_empty()
+        );
+
+        let ts_null_fields = r#"{
+            "devices": [
+                {
+                    "id": "n-null",
+                    "name": "null-node.tail.ts.net.",
+                    "hostname": null,
+                    "addresses": null,
+                    "authorized": null,
+                    "keyExpiryDisabled": null,
+                    "tags": null
+                }
+            ]
+        }"#;
+        let ts_parsed =
+            parse_tailscale_devices_json(ts_null_fields).expect("null slice fields in device");
+        assert_eq!(ts_parsed.len(), 1);
+        assert_eq!(ts_parsed[0].hostname, "null-node");
+        assert!(ts_parsed[0].addresses.is_empty());
+        assert!(ts_parsed[0].authorized);
+        assert!(!ts_parsed[0].key_expiry_disabled);
+        assert!(ts_parsed[0].tags.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn probe_local_tailscaled_url_hint_accepts_go_null_cert_domains_and_ips() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // Live payload captured from tailscaled 1.104.7 `/localapi/v0/status` (`"CertDomains": null`).
+        let live_body = r#"{"BackendState":"Running","TailscaleIPs":["100.64.0.1","fd7a:115c:a1e0::1"],"CertDomains":null,"Self":{"DNSName":"sb-ts-hub.tailtest.internal."}}"#;
+        assert_eq!(
+            parse_local_tailscaled_url_hint(live_body, 9527).as_deref(),
+            Some("http://sb-ts-hub.tailtest.internal:9527")
+        );
+
+        // Fallback when DNSName is absent/null and top-level TailscaleIPs is null, using Self.TailscaleIPs.
+        let self_ip_fallback = r#"{"BackendState":"Running","TailscaleIPs":null,"CertDomains":null,"Self":{"DNSName":null,"TailscaleIPs":["100.64.0.1"]}}"#;
+        assert_eq!(
+            parse_local_tailscaled_url_hint(self_ip_fallback, 8080).as_deref(),
+            Some("http://100.64.0.1:8080")
+        );
+
+        // End-to-end over a Unix domain socket via `probe_local_tailscaled_url_hint`.
+        let sock_path = std::env::temp_dir().join(format!(
+            "sb-ts-hint-{}.sock",
+            &uuid::Uuid::new_v4().to_string()[..8]
+        ));
+        let _ = std::fs::remove_file(&sock_path);
+        let listener =
+            tokio::net::UnixListener::bind(&sock_path).expect("bind mock tailscaled status sock");
+
+        let body_owned = live_body.to_string();
+        tokio::spawn(async move {
+            if let Ok((mut stream, _)) = listener.accept().await {
+                let mut buf = [0u8; 512];
+                let _ = stream.read(&mut buf).await;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                    body_owned.len(),
+                    body_owned
+                );
+                let _ = stream.write_all(resp.as_bytes()).await;
+            }
+        });
+
+        let sock_str = sock_path.to_string_lossy().to_string();
+        let resolved = probe_local_tailscaled_url_hint(&sock_str, "0.0.0.0:9527").await;
+        let _ = std::fs::remove_file(&sock_path);
+        assert_eq!(
+            resolved.as_deref(),
+            Some("http://sb-ts-hub.tailtest.internal:9527")
+        );
     }
 
     #[test]
