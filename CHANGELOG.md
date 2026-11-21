@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta.7] - 2026-11-21
+
 ### Added
 
 - **Tailscale and self-hosted Headscale support** -- Agents with `CAP_TAILSCALE` collect Tailnet node status, overlay addresses, peers, DERP relays, and advertised routes over the `tailscaled` LocalAPI socket with CLI fallback and offline cached snapshots. Administrators can connect Tailscale API v2 or Headscale API v1 control planes with outbound SSRF validation, correlate Tailnet devices with monitored servers across the Web dashboard, the `com.serverbee.tailscale-overview` built-in widget, and the native iOS app, and onboard Agents over a Tailnet Server URL
