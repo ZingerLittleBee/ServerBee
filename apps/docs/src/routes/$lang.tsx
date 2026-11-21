@@ -26,13 +26,12 @@ export const Route = createFileRoute('/$lang')({
     // location.pathname is decoded, and a Location header with a character above U+00FF throws (a 500) or goes out as
     // Latin-1.
     if (params.lang === 'docs') {
-      // The docs without a language, as / is the landing without one. Sending it to the default language is a guess,
-      // so the redirect is temporary.
+      // The docs without a language. Sending them to the default language is a guess, so the redirect is temporary.
       throw redirect({ href: `/${i18n.defaultLanguage}${location.href}` })
     }
     const lang = siteLanguage(params.lang)
     if (!lang) {
-      // A 404 rather than a redirect to the English landing, which crawlers report as a soft 404, and which answered
+      // A 404 rather than a redirect to the English docs, which crawlers report as a soft 404, and which answered
       // paths such as /apple-touch-icon.png with an HTML page.
       throw notFound()
     }

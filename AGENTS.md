@@ -7,6 +7,7 @@ ServerBee has a Rust Server and Agent, a React dashboard, a bilingual documentat
 - **Code exploration, authentication, WebSocket state, CI, deployment, or backups:** read the matching task row in [source navigation](docs/agents/navigation.md). It links current owners, related tests, and hidden dependencies.
 - **Enrollment or re-enrollment:** read [CONTEXT.md](CONTEXT.md) and [ADR-0004](docs/adr/0004-agent-authority-owns-enrollment-lifecycle.md) before changing authority, run tokens, or connection admission.
 - **Documentation or site branding:** start with [apps/docs/README.md](apps/docs/README.md). Keep the `en` and `zh` content in sync.
+- **Landing page:** start with [apps/landing/README.md](apps/landing/README.md). It is a standalone site, separate from the docs app.
 - **Release notes or version preparation:** use [release-docs](.claude/commands/release-docs.md). Prerelease validation follows [the release runbook](docs/agents/beta-release-validation.md); version cuts use `make publish`.
 - **iOS:** read [apps/ios/CLAUDE.md](apps/ios/CLAUDE.md) and the [wire-model guide](apps/ios/ServerBee/Models/README.md).
 - **Manual verification:** use [tests/README.md](tests/README.md) for local setup and the feature checklist index.

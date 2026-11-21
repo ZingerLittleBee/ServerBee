@@ -3,8 +3,6 @@ import { setTimeout as delay } from 'node:timers/promises'
 const baseUrl = process.env.SERVERBEE_DOCS_BASE_URL ?? 'http://127.0.0.1:4000'
 
 const routes = [
-  { path: '/en', lang: 'en', marker: 'Self-hosted VPS monitoring' },
-  { path: '/zh', lang: 'zh', marker: '自托管的 VPS 监控' },
   { path: '/en/docs', lang: 'en', marker: 'ServerBee has two core components' },
   { path: '/zh/docs', lang: 'zh', marker: 'ServerBee 由两个核心组件构成' },
   { path: '/en/docs/quick-start', lang: 'en', marker: 'Choose a deployment method' },
@@ -174,7 +172,7 @@ const misses = ['区块链', '企业微信']
 async function waitUntilReady(): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
     try {
-      const response = await fetch(`${baseUrl}/en`, { redirect: 'manual' })
+      const response = await fetch(`${baseUrl}/en/docs`, { redirect: 'manual' })
       if (response.status === 200) {
         return
       }
@@ -273,33 +271,31 @@ for (const route of routes) {
   expect(html.match(/<main\b|role="main"/g)?.length === 1, `${route.path} does not have exactly one main landmark`)
   // An svg exposed as an image needs a name, which fumadocs' GitHub link icon lacked (src/lib/layout.shared.tsx).
   expect(!/<svg\b[^>]*\brole="img"[^>]*>(?!<title>)/.test(html), `${route.path} renders an unnamed role="img" svg`)
-  if (route.path.includes('/docs')) {
-    const missing = docsLabels[route.lang].filter((label) => !html.includes(label))
-    if (missing.length > 0) {
-      throw new Error(`${route.path} did not render the labels: ${missing.join(', ')}`)
-    }
-    const english = route.lang === 'zh' ? englishLabels(html) : []
-    expect(english.length === 0, `${route.path} names controls in English: ${english.join(', ')}`)
-    const titles = [...html.matchAll(/<title>([^<]*)<\/title>/g)].map((match) => match[1])
-    expect(
-      titles.length === 1 && titles[0].endsWith(` | ${siteNames[route.lang]}`),
-      `${route.path} has the titles ${titles.join(', ') || '<none>'}`
-    )
-    expect(html.includes('<meta name="description" content="'), `${route.path} has no description`)
-    expect(!lowContrastTokens.test(html), `${route.path} renders a code token color under 4.5:1`)
-    const pagePath = route.path.slice(route.lang.length + 1)
-    for (const link of [
-      `<link rel="canonical" href="https://docs.serverbee.app${route.path}"/>`,
-      `hrefLang="en" href="https://docs.serverbee.app/en${pagePath}"`,
-      `hrefLang="zh-Hans" href="https://docs.serverbee.app/zh${pagePath}"`,
-      `hrefLang="x-default" href="https://docs.serverbee.app/en${pagePath}"`,
-      `property="og:image" content="https://docs.serverbee.app/og/landing-${route.lang}.png"`,
-      'property="og:image:alt" content="ServerBee',
-      'name="twitter:image:alt" content="ServerBee',
-      `type="text/markdown" href="${route.path}.mdx"`
-    ]) {
-      expect(html.includes(link), `${route.path} lacks ${link}`)
-    }
+  const missing = docsLabels[route.lang].filter((label) => !html.includes(label))
+  if (missing.length > 0) {
+    throw new Error(`${route.path} did not render the labels: ${missing.join(', ')}`)
+  }
+  const english = route.lang === 'zh' ? englishLabels(html) : []
+  expect(english.length === 0, `${route.path} names controls in English: ${english.join(', ')}`)
+  const titles = [...html.matchAll(/<title>([^<]*)<\/title>/g)].map((match) => match[1])
+  expect(
+    titles.length === 1 && titles[0].endsWith(` | ${siteNames[route.lang]}`),
+    `${route.path} has the titles ${titles.join(', ') || '<none>'}`
+  )
+  expect(html.includes('<meta name="description" content="'), `${route.path} has no description`)
+  expect(!lowContrastTokens.test(html), `${route.path} renders a code token color under 4.5:1`)
+  const pagePath = route.path.slice(route.lang.length + 1)
+  for (const link of [
+    `<link rel="canonical" href="https://docs.serverbee.app${route.path}"/>`,
+    `hrefLang="en" href="https://docs.serverbee.app/en${pagePath}"`,
+    `hrefLang="zh-Hans" href="https://docs.serverbee.app/zh${pagePath}"`,
+    `hrefLang="x-default" href="https://docs.serverbee.app/en${pagePath}"`,
+    `property="og:image" content="https://docs.serverbee.app/og/landing-${route.lang}.png"`,
+    'property="og:image:alt" content="ServerBee',
+    'name="twitter:image:alt" content="ServerBee',
+    `type="text/markdown" href="${route.path}.mdx"`
+  ]) {
+    expect(html.includes(link), `${route.path} lacks ${link}`)
   }
 }
 
@@ -379,7 +375,7 @@ for (const path of ['/en/docs/deployment', '/zh/docs/deployment']) {
   )
 }
 
-// Only the page itself is the current page: not the home and docs index links above it, and not for another query.
+// Only the page itself is the current page: not the docs index link above it, and not for another query.
 for (const path of ['/en/docs/quick-start', '/zh/docs/quick-start?ref=github', '/en/docs']) {
   const html = await (await fetch(`${baseUrl}${path}`)).text()
   const current = [...html.matchAll(/<a\b[^>]*\baria-current="page"[^>]*>/g)].map(
@@ -409,9 +405,8 @@ for (const { path, lang, heading } of [
   expect(html.includes(heading), `${path} did not render "${heading}"`)
   const title = `${heading} | ${siteNames[lang]}`
   expect(html.includes(`<title>${title}</title>`), `${path} is not titled ${title}`)
-  for (const href of [`/${lang}`, `/${lang}/docs`]) {
-    expect(html.includes(`href="${href}"`), `${path} does not link ${href}`)
-  }
+  expect(html.includes(`href="/${lang}/docs"`), `${path} does not link /${lang}/docs`)
+  expect(!html.includes(`href="/${lang}"`), `${path} links /${lang}, which redirects`)
   expect(!html.includes('aria-current="page"'), `${path} marks a link as the current page`)
   const english = lang === 'zh' ? englishLabels(html) : []
   expect(english.length === 0, `${path} names controls in English: ${english.join(', ')}`)
@@ -444,7 +439,10 @@ for (const path of missingExports) {
 
 // Old and language-less URLs keep their page and query. A first segment that names no language is a 404.
 for (const { path, status, to } of [
-  { path: '/?ref=github', status: 307, to: '/en?ref=github' },
+  { path: '/?ref=github', status: 307, to: '/en/docs?ref=github' },
+  // /<lang> was the landing page, which is now a site of its own (apps/landing): the docs home answers there.
+  { path: '/en', status: 307, to: '/en/docs' },
+  { path: '/zh?ref=github', status: 307, to: '/zh/docs?ref=github' },
   { path: '/docs/quick-start?ref=github', status: 307, to: '/en/docs/quick-start?ref=github' },
   // The Markdown export before it was localized.
   { path: '/docs/quick-start.mdx?ref=github', status: 308, to: '/en/docs/quick-start.mdx?ref=github' },
@@ -532,8 +530,8 @@ for (const { path, first, foreign } of [
 }
 expect((await fetch(`${baseUrl}/fr/llms-full.txt`)).status === 404, '/fr/llms-full.txt is not a 404')
 
-// The sitemap lists the landing and every docs page in each language, each with its hreflang alternates, and only
-// URLs that answer 200: a redirect or a 404 in a sitemap is a crawl error.
+// The sitemap lists every docs page in each language, each with its hreflang alternates, and only URLs that answer
+// 200: a redirect or a 404 in a sitemap is a crawl error, so /<lang>, which redirects to the docs home, is not listed.
 for (const method of ['GET', 'HEAD'] as const) {
   const response = await fetch(`${baseUrl}/sitemap.xml`, { method })
   expect(response.status === 200, `${method} /sitemap.xml returned ${response.status}`)
@@ -557,7 +555,7 @@ for (const { lang, index } of [
     pages.length > 0 && listed.length === pages.length && pages.every((page) => listed.includes(page)),
     `/sitemap.xml lists ${listed.length} ${lang} docs pages, ${index} links ${pages.length}`
   )
-  expect(sitemapUrls.includes(`https://docs.serverbee.app/${lang}`), `/sitemap.xml does not list the ${lang} landing`)
+  expect(!sitemapUrls.includes(`https://docs.serverbee.app/${lang}`), `/sitemap.xml lists /${lang}, which redirects`)
 }
 expect(
   entries.every((entry) => ['en', 'zh-Hans', 'x-default'].every((code) => entry[2].includes(`hreflang="${code}"`))),

@@ -1,0 +1,17 @@
+---
+import OutLink from '@/components/out-link.astro'
+import Base from '@/layouts/base.astro'
+import { docsUrl, homePath } from '@/lib/site'
+---
+
+<Base lang="en" title="Page not found | ServerBee" description="This page does not exist." noindex>
+  <main class="wrap lost">
+    <h1>Nothing on this route.</h1>
+    <p class="lede">The page you asked for does not exist. These do:</p>
+    <p class="hero-links">
+      <a class="out" href={homePath('en')}>ServerBee home</a>
+      <a class="out" href={homePath('zh')} lang="zh-CN">中文首页</a>
+      <OutLink href={docsUrl('en', 'quick-start')}>Documentation</OutLink>
+    </p>
+  </main>
+</Base>

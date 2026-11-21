@@ -33,14 +33,15 @@ browser's developer tools so that there is time to scroll before the page become
 
 ## Scrolling before hydration
 
-- [ ] A fresh visit to `/en` and to `/en/docs/quick-start` starts at the top.
-- [ ] Open `/en`, scroll down before hydration: once the page hydrates it stays where you scrolled.
+- [ ] A fresh visit to `/en/docs` and to `/en/docs/quick-start` starts at the top.
+- [ ] Open `/en/docs`, scroll down before hydration: once the page hydrates it stays where you scrolled.
 - [ ] Same on `/en/docs/quick-start` and `/zh/docs/quick-start`.
 - [ ] After scrolling before hydration, follow a link to another page and press Back: you return to that position.
 - [ ] Chrome: open `/en/docs/quick-start#:~:text=Verify%20the%20connection`. The highlighted text stays in view after
       hydration.
-- [ ] Reload a scrolled page, plain and with a fragment (`/en#faq`): it keeps its position.
-- [ ] Open `/en#faq` and `/en/docs/quick-start#manage-the-agent`: each lands on its target.
+- [ ] Reload a scrolled page, plain and with a fragment (`/en/docs/quick-start#manage-the-agent`): it keeps its
+      position.
+- [ ] Open `/en/docs/quick-start#manage-the-agent`: it lands on its target.
 
 ## Back to a long page
 
@@ -53,15 +54,12 @@ browser's developer tools so that there is time to scroll before the page become
 For each entry point: follow it, scroll on by about a screen, leave through a link to another page, then press Back.
 You must return to where you were, not to the fragment.
 
-- [ ] A note mark (the small numbers) in the landing's "Two commands and you're live" section.
-- [ ] A landing nav anchor, such as IP quality.
 - [ ] A docs table of contents entry, and a heading anchor.
 - [ ] A docs link to another page's heading: on `/en/docs/alerts`, "Capabilities → Temporary grants".
 - [ ] A search result for a heading (Cmd/Ctrl+K, "temporary grants"): Back, then Forward, each return to where you were.
 - [ ] The docs language switch on `/en/docs/quick-start#manage-the-agent` after scrolling: Back returns to the scrolled
       English page, and the same from Chinese to English.
 - [ ] Forward into a fragment entry you first reached by a jump lands on the fragment.
-- [ ] The landing's brand link (`#top`) while already at the top, then a docs link, then Back: the landing at the top.
 - [ ] Following the same table of contents entry twice, then Back, returns to where you were.
 
 ## Known limitations

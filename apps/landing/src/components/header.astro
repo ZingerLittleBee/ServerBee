@@ -1,0 +1,45 @@
+---
+import Moon from '@lucide/astro/icons/moon'
+import Radar from '@lucide/astro/icons/radar'
+import Sun from '@lucide/astro/icons/sun'
+import { landingCopy } from '@/i18n/copy'
+import { DOCS_SITE, homePath, type Lang, links } from '@/lib/site'
+import GithubMark from './github-mark.astro'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].nav
+const other: Lang = lang === 'en' ? 'zh' : 'en'
+const otherTag = other === 'zh' ? 'zh-CN' : 'en'
+---
+
+<header class="header">
+  <div class="wrap header-bar">
+    <a class="logo" href={homePath(lang)}><Radar aria-hidden="true" />ServerBee</a>
+    <nav class="nav" aria-label={copy.label}>
+      <ul>
+        {
+          copy.links.map((link) => (
+            <li class={link.href.startsWith(DOCS_SITE) ? 'nav-docs' : undefined}>
+              <a href={link.href}>{link.label}</a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+    <div class="header-tools">
+      <a class="tool tool-github" href={links.github} aria-label={copy.githubLabel}><GithubMark /></a>
+      <a class="tool" href={homePath(other)} hreflang={otherTag} lang={otherTag}>
+        {copy.langBtn}
+      </a>
+      <button class="tool" type="button" data-theme-toggle aria-label={copy.themeLabel}>
+        <Moon class="theme-light-icon" aria-hidden="true" />
+        <Sun class="theme-dark-icon" aria-hidden="true" />
+      </button>
+      <a class="btn" href="#install">{copy.cta}</a>
+    </div>
+  </div>
+</header>

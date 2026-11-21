@@ -1,0 +1,36 @@
+---
+import Check from '@lucide/astro/icons/check'
+import Copy from '@lucide/astro/icons/copy'
+import { landingCopy } from '@/i18n/copy'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  command: string
+  lang: Lang
+}
+
+const { command, lang } = Astro.props
+const copy = landingCopy[lang].hero
+// The installer URL is the longest and least interesting part of a command, so it is dimmed.
+const url = /https:\/\/\S+/.exec(command)?.[0] ?? ''
+const [before, after = ''] = url ? command.split(`${url} `, 2) : [command]
+---
+
+<div class="cmd">
+  <span class="cmd-prompt" aria-hidden="true">$</span>
+  <code>{before}<span class="cmd-dim">{url}</span>{' '}<span class="cmd-seg">{after}</span></code>
+  <button
+    class="copy"
+    type="button"
+    data-copy
+    data-idle={copy.copy}
+    data-copied={copy.copied}
+    data-failed={copy.copyFailed}
+    data-copied-status={copy.copiedStatus}
+    data-failed-status={copy.copyFailedStatus}
+  >
+    <Copy class="icon-copy" aria-hidden="true" /><Check class="icon-done" aria-hidden="true" /><span data-label
+      >{copy.copy}</span
+    >
+  </button>
+</div>

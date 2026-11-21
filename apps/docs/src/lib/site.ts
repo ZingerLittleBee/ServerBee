@@ -2,7 +2,7 @@ import { type DocsLanguage, i18n } from './i18n'
 
 /**
  * The canonical docs host, for page metadata and crawler-facing files rather than whichever host served a request.
- * /en/ redirects to /en, so page URLs carry no trailing slash.
+ * Page URLs carry no trailing slash.
  */
 export const SITE = 'https://docs.serverbee.app'
 
@@ -18,7 +18,10 @@ export function notFoundHead(lang: DocsLanguage) {
 
 export const ogLocale: Record<DocsLanguage, string> = { en: 'en_US', zh: 'zh_CN' }
 
-/** Alt text of the share image the landing and docs pages declare, public/og/landing-{lang}.png. */
+/**
+ * Alt text of the share image the docs pages declare, public/og/landing-{lang}.png. The file keeps the name it had
+ * while the landing page was part of this app, so that pages already shared keep their image.
+ */
 export const shareImageAlt: Record<DocsLanguage, string> = {
   en: 'ServerBee: Self-hosted VPS monitoring, down to every route. A radar shows each server’s latency to Shanghai.',
   zh: 'ServerBee：自托管的 VPS 监控，细到每一条线路。雷达图显示各服务器到上海的延迟。'

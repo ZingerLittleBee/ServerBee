@@ -1,0 +1,61 @@
+name: Landing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/landing.yml'
+      - 'apps/landing/**'
+      # scripts/check-contracts.ts checks the pages and headings the landing links to.
+      - 'apps/docs/content/docs/**'
+      # The page shows the workspace version and license, and the iOS deployment target.
+      - 'Cargo.toml'
+      - 'apps/ios/project.yml'
+      # The install commands on the page pass options to the installer.
+      - 'deploy/install.sh'
+      - 'bun.lock'
+      - 'package.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/landing.yml'
+      - 'apps/landing/**'
+      # scripts/check-contracts.ts checks the pages and headings the landing links to.
+      - 'apps/docs/content/docs/**'
+      # The page shows the workspace version and license, and the iOS deployment target.
+      - 'Cargo.toml'
+      - 'apps/ios/project.yml'
+      # The install commands on the page pass options to the installer.
+      - 'deploy/install.sh'
+      - 'bun.lock'
+      - 'package.json'
+
+concurrency:
+  group: landing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  landing:
+    name: Types, contracts, and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        working-directory: apps/landing
+        run: bun run types:check
+
+      - name: Check landing contracts
+        working-directory: apps/landing
+        run: bun run check:contracts
+
+      - name: Build
+        working-directory: apps/landing
+        run: bun run build

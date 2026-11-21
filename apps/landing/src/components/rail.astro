@@ -1,0 +1,39 @@
+---
+import { landingCopy } from '@/i18n/copy'
+import { featureOrder, type Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang]
+
+function navLabel(id: string): string {
+  const link = copy.nav.links.find((item) => item.href === `#${id}`)
+  if (!link) {
+    throw new Error(`landing: the ${lang} navigation has no link to #${id}, which the page rail names its stop after`)
+  }
+  return link.label
+}
+
+// The feature sections in page order, then the two sections that follow them.
+const hops = [
+  ...featureOrder[lang].map((id) => ({ id, label: navLabel(id) })),
+  { id: 'how', label: copy.scenes.rail.how },
+  { id: 'faq', label: copy.scenes.rail.faq }
+]
+---
+
+{/* A traceroute down the page. It repeats the header navigation for the eye, so assistive technology skips it. */}
+<div class="rail" aria-hidden="true">
+  <i class="rail-fill"></i>
+  <i class="rail-packet"></i>
+  {
+    hops.map((hop, index) => (
+      <a href={`#${hop.id}`} tabindex="-1" data-hop={hop.id} style={`--at:${index / (hops.length - 1)}`}>
+        <span>{String(index + 1).padStart(2, '0')}<b>{hop.label}</b></span>
+      </a>
+    ))
+  }
+</div>

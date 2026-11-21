@@ -1,0 +1,23 @@
+---
+import Heading from '@/components/heading.astro'
+import InstallCommand from '@/components/install-command.astro'
+import OutLink from '@/components/out-link.astro'
+import { landingCopy } from '@/i18n/copy'
+import { type Lang, links } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].final
+---
+
+<section id="final" class="final">
+  <div class="wrap">
+    <Heading text={copy.h2} lang={lang} />
+    <p class="lede">{copy.sub}</p>
+    <InstallCommand id="install-final" lang={lang} />
+    <p class="hero-links"><OutLink href={links.github}>{copy.cta2}</OutLink></p>
+  </div>
+</section>

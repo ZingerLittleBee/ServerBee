@@ -1,0 +1,111 @@
+---
+import { Font } from 'astro:assets'
+import '@/styles/global.css'
+import '@/styles/motion.css'
+import { landingCopy } from '@/i18n/copy'
+import { VERSION } from '@/lib/release'
+import { homePath, LANGS, type Lang, links } from '@/lib/site'
+
+interface Props {
+  description?: string
+  lang: Lang
+  /** Pages outside the two landing pages, such as 404, stay out of search results. */
+  noindex?: boolean
+  title?: string
+}
+
+const { lang, noindex = false } = Astro.props
+const copy = landingCopy[lang]
+const title = Astro.props.title ?? copy.meta.title
+const description = Astro.props.description ?? copy.meta.description
+const htmlLang: Record<Lang, string> = { en: 'en', zh: 'zh-CN' }
+const ogLocale: Record<Lang, string> = { en: 'en_US', zh: 'zh_CN' }
+const url = (path: string) => new URL(path, Astro.site).href
+const image = url(`/og/landing-${lang}.png`)
+
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'ServerBee',
+  description,
+  url: url(homePath(lang)),
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'Linux, macOS, Windows',
+  softwareVersion: VERSION,
+  license: 'https://www.gnu.org/licenses/agpl-3.0.html',
+  codeRepository: links.github,
+  offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
+}
+---
+
+<!doctype html>
+<html lang={htmlLang[lang]}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    {
+      !noindex && (
+        <>
+          <link rel="canonical" href={url(homePath(lang))} />
+          {LANGS.map((other) => <link rel="alternate" hreflang={htmlLang[other]} href={url(homePath(other))} />)}
+          <link rel="alternate" hreflang="x-default" href={url(homePath('en'))} />
+        </>
+      )
+    }
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ServerBee" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={url(homePath(lang))} />
+    <meta property="og:locale" content={ogLocale[lang]} />
+    <meta property="og:image" content={image} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={image} />
+    <meta name="theme-color" content="#fbfbfc" media="(prefers-color-scheme: light)" data-theme-color="light" />
+    <meta name="theme-color" content="#0d0e11" media="(prefers-color-scheme: dark)" data-theme-color="dark" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <Font cssVariable="--font-sofia" preload />
+    <Font cssVariable="--font-sofia-condensed" />
+    <Font cssVariable="--font-plex-mono" preload={[{ weight: 400 }]} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <!--
+      Runs before first paint, so a stored theme choice never flashes the other theme, and the entrance is decided
+      before anything shows: it plays unless the visitor asked for less motion or arrives through the language
+      switch's cross-fade, which is an entrance of its own.
+    -->
+    <script is:inline>
+      try {
+        const theme = localStorage.getItem('theme')
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.dataset.theme = theme
+        }
+      } catch {
+        // Storage is unavailable: follow the system theme.
+      }
+      if (matchMedia('(prefers-reduced-motion: no-preference)').matches) {
+        document.documentElement.classList.add('enter')
+        addEventListener('pagereveal', (event) => {
+          if (event.viewTransition) {
+            document.documentElement.classList.remove('enter')
+          }
+        })
+      }
+    </script>
+  </head>
+  <body>
+    <slot />
+    <p class="sr-only" role="status" id="copy-status"></p>
+    <script>
+      import '@/scripts/landing'
+    </script>
+  </body>
+</html>

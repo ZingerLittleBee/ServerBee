@@ -62,11 +62,11 @@ function holdScrollPosition(): () => void {
 }
 
 /**
- * Plain #fragment links (the docs' table of contents and heading anchors, the landing's nav and note marks) add
- * history entries without router state, so the router keys such an entry afresh on every visit and Back never finds
- * its saved position. On Back/Forward to any entry with a fragment, the router also scrolls to the fragment again
- * after restoring the position. Once an entry has rendered, store the router's key in it and mark its fragment as
- * handled, as the router itself does for a link with `hashScrollIntoView={false}`.
+ * Plain #fragment links (the docs' table of contents and heading anchors) add history entries without router state,
+ * so the router keys such an entry afresh on every visit and Back never finds its saved position. On Back/Forward to
+ * any entry with a fragment, the router also scrolls to the fragment again after restoring the position. Once an
+ * entry has rendered, store the router's key in it and mark its fragment as handled, as the router itself does for a
+ * link with `hashScrollIntoView={false}`.
  */
 export function keepFragmentEntries(router: AnyRouter): void {
   router.subscribe('onRendered', ({ toLocation }) => {

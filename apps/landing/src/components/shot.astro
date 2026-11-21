@@ -1,0 +1,76 @@
+---
+import type { ImageMetadata } from 'astro'
+import recorded from '@/assets/shots/regions.json'
+import { landingCopy, type ShotName } from '@/i18n/copy'
+import { themedPicture } from '@/lib/picture'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  /** Load with the page rather than lazily: for the capture above the fold. */
+  eager?: boolean
+  lang: Lang
+  /**
+   * How a narrow screen shows the capture: `zoom` times larger than fitted, starting `shiftX` of its width in from
+   * the left, in a frame of `ratio` (width / height) or as tall as the enlarged capture.
+   */
+  mobile?: { ratio?: string; shiftX?: number; zoom: number }
+  name: ShotName
+  /** The frame's layout width as a `sizes` value. */
+  sizes: string
+}
+
+const { eager = false, lang, mobile, name } = Astro.props
+const files = import.meta.glob<ImageMetadata>('../assets/shots/*.webp', { eager: true, import: 'default' })
+
+function file(theme: 'dark' | 'light'): ImageMetadata {
+  const found = files[`../assets/shots/${name}-${lang}-${theme}.webp`]
+  if (!found) {
+    throw new Error(`landing: missing capture ${name}-${lang}-${theme}.webp; run "bun run capture"`)
+  }
+  return found
+}
+
+/** Where the scenes find things in this capture, as percentages of it: [x, y, width, height, tag?]. */
+const regions = (recorded as Record<string, Record<string, (number | string)[][]>>)[`${name}-${lang}`]
+if (!regions) {
+  throw new Error(`landing: no regions recorded for ${name}-${lang}; run "bun run capture"`)
+}
+
+const light = file('light')
+const widths = [640, 960, 1440, 1920].filter((width) => width < light.width)
+const picture = await themedPicture(light, file('dark'), [...widths, light.width])
+// On a narrow screen an enlarged capture is laid out wider than the viewport, so it needs a larger source.
+const sizes = mobile
+  ? `(max-width: 640px) calc(${mobile.zoom} * (100vw - 40px)), ${Astro.props.sizes}`
+  : Astro.props.sizes
+const zoomStyle = mobile
+  ? `--zoom: ${mobile.zoom}; --shift-x: ${mobile.shiftX ?? 0}; --ratio: ${mobile.ratio ?? 'auto'}`
+  : undefined
+---
+
+<figure class:list={['shot', { 'shot-zoom': mobile }]} style={zoomStyle} data-regions={JSON.stringify(regions)}>
+  <picture>
+    {
+      picture.sources.map((source) => (
+        <source
+          type={source.type}
+          srcset={source.srcset}
+          sizes={sizes}
+          media={source.dark ? '(prefers-color-scheme: dark)' : undefined}
+          data-dark={source.dark ? '' : undefined}
+        />
+      ))
+    }
+    <img
+      src={picture.fallback.src}
+      srcset={picture.fallback.srcset}
+      sizes={sizes}
+      width={light.width}
+      height={light.height}
+      alt={landingCopy[lang].shots[name]}
+      loading={eager ? 'eager' : 'lazy'}
+      fetchpriority={eager ? 'high' : undefined}
+      decoding="async"
+    />
+  </picture>
+</figure>

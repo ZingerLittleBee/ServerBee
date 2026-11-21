@@ -1,0 +1,31 @@
+{
+  "name": "@serverbee/landing",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --port 4100",
+    "build": "astro build",
+    "preview": "astro preview --port 4100",
+    "types:check": "astro check",
+    "check:contracts": "bun scripts/check-contracts.ts",
+    "lint": "biome check",
+    "format": "biome format --write",
+    "capture": "node scripts/capture.ts",
+    "capture:ios": "node scripts/capture-ios.ts",
+    "capture:og": "node scripts/capture-og.ts"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.6",
+    "@lucide/astro": "^1.77.0",
+    "astro": "^7.4.13"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.12",
+    "@biomejs/biome": "^2.4.6",
+    "@types/node": "^25.4.0",
+    "github-slugger": "^2.0.0",
+    "playwright": "1.62.1",
+    "sharp": "^0.35.5",
+    "typescript": "^5.9.3"
+  }
+}

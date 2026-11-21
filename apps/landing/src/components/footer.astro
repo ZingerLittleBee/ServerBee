@@ -1,0 +1,35 @@
+---
+import Radar from '@lucide/astro/icons/radar'
+import { landingCopy } from '@/i18n/copy'
+import { homePath, type Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].footer
+---
+
+<footer class="footer">
+  <div class="wrap">
+    <div class="footer-bar">
+      <p class="footer-brand">
+        <a class="logo" href={homePath(lang)}><Radar aria-hidden="true" />ServerBee</a>
+        {copy.tagline}
+      </p>
+      <nav aria-label={copy.linksLabel}>
+        <ul class="footer-links">
+          {
+            copy.links.map((link) => (
+              <li>
+                <a href={link.href}>{link.label}</a>
+              </li>
+            ))
+          }
+        </ul>
+      </nav>
+    </div>
+    <p class="footer-legal">{copy.legal}</p>
+  </div>
+</footer>

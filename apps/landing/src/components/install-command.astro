@@ -1,0 +1,59 @@
+---
+import ArrowUpRight from '@lucide/astro/icons/arrow-up-right'
+import { type InstallTab, landingCopy } from '@/i18n/copy'
+import { installCommands, type Lang, links } from '@/lib/site'
+import Command from './command.astro'
+
+interface Props {
+  /** Prefixes the tab and panel ids, so the page can hold more than one of these. */
+  id: string
+  lang: Lang
+}
+
+const { id, lang } = Astro.props
+const copy = landingCopy[lang].hero
+const tabs: InstallTab[] = ['docker', 'binary', 'railway']
+---
+
+<install-command class="install" id={id}>
+  <div class="install-tabs" role="tablist" aria-label={copy.installLabel}>
+    {
+      tabs.map((tab, index) => (
+        <button
+          type="button"
+          role="tab"
+          id={`${id}-tab-${tab}`}
+          aria-controls={`${id}-panel-${tab}`}
+          aria-selected={index === 0 ? 'true' : 'false'}
+          tabindex={index === 0 ? 0 : -1}
+        >
+          {copy.tabs[tab]}
+        </button>
+      ))
+    }
+  </div>
+  {
+    tabs.map((tab, index) => (
+      <div
+        class="install-panel"
+        role="tabpanel"
+        id={`${id}-panel-${tab}`}
+        aria-labelledby={`${id}-tab-${tab}`}
+        hidden={index !== 0}
+      >
+        {tab === 'railway' ? (
+          <div class="railway">
+            <p>{copy.railwayText}</p>
+            <a class="copy" href={links.railway}>
+              {copy.railwayBtn}
+              <ArrowUpRight aria-hidden="true" />
+            </a>
+          </div>
+        ) : (
+          <Command command={installCommands[tab]} lang={lang} />
+        )}
+      </div>
+    ))
+  }
+  <p class="install-note">{copy.installNote}</p>
+</install-command>

@@ -1,0 +1,19 @@
+---
+import { pieces } from '@/lib/pieces'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+  /** The index of the first piece, when the heading continues from an earlier run. */
+  start?: number
+  text: string
+}
+
+// A heading names itself with aria-label, so its pieces stay out of the accessibility tree.
+const { lang, start = 0, text } = Astro.props
+let index = start
+// A piece keeps its white space as written, so each is built without any around it.
+const parts = pieces(text, lang).map((piece) => (piece.trim() ? { index: index++, piece } : piece))
+---
+
+{parts.map((part) => (typeof part === 'string' ? part : <span class="piece" aria-hidden="true" style={`--c:${part.index}`}>{part.piece}</span>))}
