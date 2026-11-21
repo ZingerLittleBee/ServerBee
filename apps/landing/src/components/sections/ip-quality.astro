@@ -1,5 +1,5 @@
 ---
-import Clauses from '@/components/clauses.astro'
+import Heading from '@/components/heading.astro'
 import OutLink from '@/components/out-link.astro'
 import Points from '@/components/points.astro'
 import Shot from '@/components/shot.astro'
@@ -16,7 +16,7 @@ const copy = landingCopy[lang].ipq
 
 <section id="ipq" class="feature">
   <div class="wrap headrow">
-    <h2><Clauses text={copy.h2} /></h2>
+    <Heading text={copy.h2} lang={lang} />
     <div class="feature-text">
       <p class="lede">{copy.lede}</p>
       <OutLink href={copy.link.href}>{copy.link.label}</OutLink>

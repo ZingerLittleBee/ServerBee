@@ -1,4 +1,10 @@
-/* The page's whole client runtime: the theme toggle, the install tabs and the copy buttons. */
+/*
+ * The page's client runtime: the theme toggle, the install tabs and the copy buttons, each with its feedback, and
+ * the motion in ./motion. The page reads the same without any of it.
+ */
+
+import { mountMotion } from './motion'
+import { EASE_OUT, reduced } from './motion/stage'
 
 type Theme = 'dark' | 'light'
 
@@ -56,9 +62,40 @@ function toggleTheme(): void {
   applyTheme()
 }
 
+/** Switches the theme. Where the browser can, the new theme grows out of the toggle instead of snapping in. */
+function switchTheme(toggle: Element): void {
+  if (reduced || !document.startViewTransition) {
+    toggleTheme()
+    return
+  }
+  const box = toggle.getBoundingClientRect()
+  const x = box.left + box.width / 2
+  const y = box.top + box.height / 2
+  root.style.setProperty('--theme-x', `${x}px`)
+  root.style.setProperty('--theme-y', `${y}px`)
+  root.style.setProperty('--theme-r', `${Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y))}px`)
+  root.classList.add('theming')
+  document.startViewTransition(toggleTheme).finished.finally(() => root.classList.remove('theming'))
+}
+
 class InstallCommand extends HTMLElement {
   connectedCallback(): void {
+    const tablist = this.querySelector<HTMLElement>('[role="tablist"]')
     const tabs = [...this.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    // One highlight for the whole row, clipped to the selected tab, so it slides from tab to tab.
+    const pill = document.createElement('span')
+    pill.className = 'tab-pill'
+    pill.setAttribute('aria-hidden', 'true')
+    const placePill = (): void => {
+      const tab = tabs.find((other) => other.getAttribute('aria-selected') === 'true')
+      if (!(tab && tablist)) {
+        return
+      }
+      const inset = pill.offsetLeft
+      const left = tab.offsetLeft - inset
+      pill.style.setProperty('--left', `${left}px`)
+      pill.style.setProperty('--right', `${pill.offsetWidth - left - tab.offsetWidth}px`)
+    }
     const select = (tab: HTMLButtonElement, focus: boolean): void => {
       for (const other of tabs) {
         const selected = other === tab
@@ -69,6 +106,9 @@ class InstallCommand extends HTMLElement {
           panel.hidden = !selected
         }
       }
+      // From here on a panel that appears was switched to, which is what its contents fade in for.
+      this.dataset.switched = ''
+      placePill()
       if (focus) {
         tab.focus()
       }
@@ -89,10 +129,43 @@ class InstallCommand extends HTMLElement {
         }
       })
     }
+    if (tablist) {
+      tablist.prepend(pill)
+      tablist.dataset.pill = ''
+      placePill()
+      addEventListener('resize', placePill)
+      document.fonts.ready.then(placePill)
+      // The highlight takes its first place without sliding there.
+      requestAnimationFrame(() => requestAnimationFrame(() => pill.setAttribute('data-ready', '')))
+    }
   }
 }
 
 const resetTimers = new WeakMap<HTMLButtonElement, number>()
+
+/**
+ * Changes a copy button's label. The button keeps its natural size for whichever label shows: its width eases to
+ * the new one instead of jumping, and the label fades in.
+ */
+function relabel(button: HTMLButtonElement, label: HTMLElement, text: string, state?: 'copied' | 'failed'): void {
+  const before = button.getBoundingClientRect().width
+  if (state) {
+    button.dataset.state = state
+  } else {
+    delete button.dataset.state
+  }
+  label.textContent = text
+  if (reduced) {
+    return
+  }
+  const after = button.getBoundingClientRect().width
+  const timing = { duration: 220, easing: EASE_OUT }
+  label.animate([{ opacity: 0 }, { opacity: 1 }], timing)
+  // The full-width button on a phone keeps its width, so there is nothing to ease there.
+  if (Math.abs(after - before) > 0.5) {
+    button.animate([{ width: `${before}px` }, { width: `${after}px` }], timing)
+  }
+}
 
 async function copyCommand(button: HTMLButtonElement): Promise<void> {
   const code = button.closest('.cmd')?.querySelector('code')
@@ -109,15 +182,13 @@ async function copyCommand(button: HTMLButtonElement): Promise<void> {
     state = 'failed'
     getSelection()?.selectAllChildren(code)
   }
-  button.dataset.state = state
-  label.textContent = (state === 'copied' ? button.dataset.copied : button.dataset.failed) ?? ''
+  relabel(button, label, (state === 'copied' ? button.dataset.copied : button.dataset.failed) ?? '', state)
   status.textContent = (state === 'copied' ? button.dataset.copiedStatus : button.dataset.failedStatus) ?? ''
   clearTimeout(resetTimers.get(button))
   resetTimers.set(
     button,
     window.setTimeout(() => {
-      delete button.dataset.state
-      label.textContent = button.dataset.idle ?? ''
+      relabel(button, label, button.dataset.idle ?? '')
       status.textContent = ''
     }, 2200)
   )
@@ -129,8 +200,9 @@ document.addEventListener('click', (event) => {
   if (!(event.target instanceof Element)) {
     return
   }
-  if (event.target.closest('[data-theme-toggle]')) {
-    toggleTheme()
+  const toggle = event.target.closest('[data-theme-toggle]')
+  if (toggle) {
+    switchTheme(toggle)
     return
   }
   const copy = event.target.closest<HTMLButtonElement>('button[data-copy]')
@@ -150,3 +222,5 @@ if (header) {
   window.addEventListener('scroll', markStuck, { passive: true })
   markStuck()
 }
+
+mountMotion()

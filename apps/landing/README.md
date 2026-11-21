@@ -12,21 +12,43 @@ every link from this page to the documentation is absolute.
 | Page structure | [Page](src/components/landing.astro), [sections](src/components/sections/) |
 | Colors, type, layout | [Stylesheet](src/styles/global.css) |
 | Theme toggle, install tabs, copy buttons | [Client script](src/scripts/landing.ts) |
+| Entrance, scroll reveal, animated scenes | [Motion styles](src/styles/motion.css), [motion runtime](src/scripts/motion/index.ts) |
+| Where a scene finds things inside a screenshot | [Capture regions](src/assets/shots/regions.json), written by the web capture script |
 | Head tags, fonts, canonical origin | [Layout](src/layouts/base.astro), [Astro configuration](astro.config.ts) |
 | Product screenshots | [Web captures](scripts/capture.ts), [iOS captures](scripts/capture-ios.ts), [link previews](scripts/capture-og.ts) |
 | Contracts with the rest of the repository | [Contract checker](scripts/check-contracts.ts), [Landing CI](../../.github/workflows/landing.yml) |
 
 ## Stack
 
-- Astro with static output and no UI framework. The page ships one small script for the theme toggle, the install
-  tabs and the copy buttons, and works without it.
-- Plain CSS in one stylesheet. Both themes come from `light-dark()` tokens; a stored choice sets `data-theme` on the
-  root element.
+- Astro with static output and no UI framework. The page ships one script, for the theme toggle, the install tabs,
+  the copy buttons and the motion, and works without it.
+- Plain CSS in two stylesheets: the page, and its motion. Both themes come from `light-dark()` tokens; a stored
+  choice sets `data-theme` on the root element.
 - Latin fonts are self-hosted through Astro's fonts API. Chinese text uses the reader's system fonts.
 - Screenshots are real captures of the product, kept lossless in `src/assets`. The build resizes them to AVIF, with
   WebP as the fallback, and each one has a light and a dark variant that follows the theme.
 - English is served at `/` and Simplified Chinese at `/zh/`. Both locales render the same components from one copy
   file, and TypeScript requires every string in both.
+
+## Motion
+
+The page animates without a library: CSS for whatever runs on its own, and the Web Animations API for what the
+script times.
+
+- The entrance is CSS. An inline script in the layout sets `enter` on the root element before the first paint, and
+  only for a reader who has not asked for reduced motion. Arriving through the cross-fade between the two
+  languages removes it again.
+- Nothing is hidden by a stylesheet alone. Scroll reveal and the scenes start from attributes the runtime sets, so
+  the page reads complete when the script never runs.
+- A scene animates a real screenshot. It lays a layer over the capture, covers a region with the color sampled
+  beside it, and moves a copy of that region. The regions come from `regions.json`, which the capture script
+  reads from the product's own DOM, so a scene stays aligned when its capture is retaken.
+- With reduced motion the hero's routes are drawn and still, the page rail follows the scroll, and nothing else
+  mounts.
+
+Check motion against `bun run build` and `bun run preview`, not the dev server: the entrance is timed from the
+first paint, and the production bundle is what readers get. The hero's frame is the largest element on the page,
+so its fade decides the largest contentful paint; keep it early.
 
 ## Develop and build
 
@@ -73,6 +95,9 @@ bun run capture                                                      # apps/land
 
 `capture` renames the demo fleet and builds a dashboard through the demo server's API, then serves the remaining data
 as fixtures; the header of [the script](scripts/capture.ts) lists which. `--only=<name>` recaptures one shot.
+
+Each run also rewrites `src/assets/shots/regions.json`, the positions the animated scenes read. Commit it with the
+captures it describes. `--regions-only` records the regions again without retaking any screenshot.
 
 The iOS captures come from the iOS Simulator, signed in to the same demo server. Install a Debug build of
 [apps/ios](../ios/) on a booted simulator, run `capture` first, then:

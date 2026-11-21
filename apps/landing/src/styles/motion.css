@@ -1,0 +1,1182 @@
+/*
+ * Motion: the hero's entrance, what appears on scroll, feedback on the controls, and the scenes that play inside
+ * the page's own content. src/scripts/motion drives the scenes.
+ *
+ * Nothing here is needed to read the page. Without scripts every element rests in its final state, and a visitor
+ * who asked for less motion gets the settled scenes: the runtime starts none of the movement, and the rules that
+ * move on their own sit behind prefers-reduced-motion.
+ */
+
+:root {
+  --trace: color-mix(in oklab, var(--ink) 20%, var(--bg));
+  --warn: light-dark(#b45309, #f5a524);
+  --warn-soft: light-dark(#fff3dd, #33250a);
+
+  /* A heading arrives a word at a time, or a character at a time in Chinese. */
+  --piece-step: 58ms;
+}
+
+:root:lang(zh) {
+  --piece-step: 30ms;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise, 14px));
+  }
+}
+
+@keyframes rise-shot {
+  from {
+    opacity: 0;
+    transform: translateY(var(--rise, 40px)) scale(0.98);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes piece-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translateY(0.42em);
+  }
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- Headings: one box per piece, so each can arrive on its own ---------- */
+
+.piece {
+  display: inline-block;
+  white-space: pre;
+}
+
+/* ---------- Hero entrance. The page sets .enter before first paint, unless it arrives through a cross-fade. ---------- */
+
+.enter .hero :is(.pill, .hero-sub, .hero-facts, .install, .hero-links) {
+  animation: rise 720ms var(--ease-out) var(--delay, 0ms) backwards;
+}
+
+.enter .hero .pill {
+  --rise: 8px;
+}
+
+.enter .hero-sub {
+  --delay: 240ms;
+}
+
+.enter .hero-facts {
+  --delay: 300ms;
+}
+
+.enter .hero .install {
+  --delay: 360ms;
+}
+
+.enter .hero .hero-links {
+  --delay: 430ms;
+}
+
+.enter .hero h1 .piece {
+  animation: piece-in 760ms var(--ease-out)
+    calc(80ms + var(--c) * var(--piece-step)) backwards;
+}
+
+/* The frame follows the headline's first words, and its server cards are dealt later by the routes that reach
+   them. It is the largest thing on the page, so the longer it waits, the later the largest contentful paint. */
+.enter .hero-shot {
+  animation: fade-in 520ms ease 480ms backwards;
+}
+
+/* ---------- Scroll reveal. The runtime marks what is still below the screen, then each group as it arrives. ---------- */
+
+[data-reveal]:not([data-in], [data-reveal="pieces"]) {
+  opacity: 0;
+}
+
+[data-reveal][data-in]:not([data-reveal="pieces"]) {
+  animation: rise var(--took, 650ms) var(--ease-out)
+    calc(var(--i, 0) * var(--stagger, 70ms)) backwards;
+}
+
+[data-reveal="text"] {
+  --rise: 16px;
+}
+
+[data-reveal="item"] {
+  --rise: 12px;
+  --took: 560ms;
+  --stagger: 60ms;
+}
+
+[data-reveal="shot"] {
+  --rise: 40px;
+  --took: 950ms;
+  --stagger: 90ms;
+}
+
+[data-reveal="shot"][data-in] {
+  animation-name: rise-shot;
+}
+
+[data-reveal="pieces"]:not([data-in]) .piece {
+  opacity: 0;
+}
+
+[data-reveal="pieces"][data-in] .piece {
+  animation: piece-in 700ms var(--ease-out) calc(var(--c) * var(--piece-step))
+    backwards;
+}
+
+/* ---------- Install tabs: one highlight, clipped to the selected tab ---------- */
+
+.tab-pill {
+  position: absolute;
+  inset: 3px;
+  pointer-events: none;
+  background: var(--cmd-control);
+  clip-path: inset(0 var(--right, 100%) 0 var(--left, 0) round 7px);
+}
+
+.tab-pill[data-ready] {
+  transition: clip-path 280ms var(--ease-out);
+}
+
+.install-tabs[data-pill] button {
+  position: relative;
+}
+
+.install-tabs[data-pill] button[aria-selected="true"] {
+  background: none;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateY(4px);
+  }
+}
+
+@keyframes shake {
+  20% {
+    transform: translateX(-4px);
+  }
+
+  40% {
+    transform: translateX(4px);
+  }
+
+  60% {
+    transform: translateX(-3px);
+  }
+
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+@keyframes ping {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(3.2);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* Only after a real switch, and only the box's contents: the dark box itself must not flash. */
+  .install[data-switched] .install-panel:not([hidden])
+    > :is(.cmd, .railway)
+    > :not(button) {
+    animation: panel-in 240ms var(--ease-out) backwards;
+  }
+
+  button.copy[data-state="failed"] {
+    animation: shake 380ms var(--ease-out);
+  }
+
+  /* An answer opens to its own height. Browsers without interpolate-size open it at once. */
+  .faq {
+    interpolate-size: allow-keywords;
+  }
+
+  .faq details::details-content {
+    block-size: 0;
+    overflow-y: clip;
+    transition:
+      block-size 320ms var(--ease-out),
+      content-visibility 320ms allow-discrete;
+  }
+
+  .faq details[open]::details-content {
+    block-size: auto;
+  }
+
+  .faq details[open] p {
+    --rise: -6px;
+    animation: rise 320ms var(--ease-out);
+  }
+
+  .out svg,
+  .pill-link svg,
+  a.copy svg {
+    transition: transform 200ms var(--ease-out);
+  }
+
+  .logo svg {
+    transition: rotate 800ms var(--ease-in-out);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .out:hover svg,
+    .pill:hover .pill-link svg,
+    a.copy:hover svg {
+      transform: translate(2px, -2px);
+    }
+
+    .logo:hover svg {
+      rotate: 360deg;
+    }
+  }
+
+  /* The release is live: its dot pings like a healthy probe. */
+  .pill-dot::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    background: var(--ok);
+    border-radius: 50%;
+    animation: ping 2400ms cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  /* Switching language cross-fades the two pages under a header that stays put. */
+  @view-transition {
+    navigation: auto;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 240ms;
+  }
+
+  .header {
+    view-transition-name: header;
+  }
+}
+
+/* ---------- Theme switch: the new theme grows out of the toggle ---------- */
+
+.theming .header {
+  view-transition-name: none;
+}
+
+.theming::view-transition-old(root),
+.theming::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation: none;
+}
+
+.theming::view-transition-new(root) {
+  animation: theme-circle 560ms var(--ease-in-out);
+}
+
+@keyframes theme-circle {
+  from {
+    clip-path: circle(0 at var(--theme-x) var(--theme-y));
+  }
+
+  to {
+    clip-path: circle(var(--theme-r) at var(--theme-x) var(--theme-y));
+  }
+}
+
+/* ---------- Scenes: a layer that sits exactly on a capture, addressed in percentages of it ---------- */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  /* Follow the enlarged, shifted capture a narrow screen shows. */
+  .shot-zoom > .overlay {
+    inset: 0 auto auto calc(var(--zoom) * var(--shift-x, 0) * -100%);
+    width: calc(var(--zoom) * 100%);
+    height: auto;
+    aspect-ratio: var(--capture-ratio);
+  }
+}
+
+/* A cover hides a region of the capture under the capture's own color; a tile is a movable copy of a region. */
+.cover,
+.tile {
+  position: absolute;
+  display: block;
+}
+
+.cover {
+  background: var(--cover, var(--surface));
+}
+
+.tile {
+  background-image: var(--capture);
+  background-repeat: no-repeat;
+}
+
+@keyframes deal {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.955);
+  }
+}
+
+/* ---------- Hero: the headline's routes run into the panel ---------- */
+
+.routes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.routes path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.route {
+  stroke: var(--trace);
+  stroke-width: 1.25;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+.routes[data-drawn] .route {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--draw, 1200ms) var(--ease-in-out);
+}
+
+/* One dash, and a gap longer than the route, so the pattern never puts a second packet on it. It waits before the
+   start and leaves past the end. */
+.route-packet {
+  opacity: 0;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-dasharray: 2.2 300;
+  stroke-dashoffset: 4;
+}
+
+.routes[data-live] .route-packet {
+  opacity: 1;
+  animation: travel var(--period, 3000ms) linear var(--delay, 0ms) infinite
+    backwards;
+}
+
+.routes[data-paused] .route-packet {
+  animation-play-state: paused;
+}
+
+@keyframes travel {
+  from {
+    stroke-dashoffset: 4;
+  }
+
+  to {
+    stroke-dashoffset: -101;
+  }
+}
+
+.route-plug {
+  opacity: 0;
+  fill: var(--bg);
+  stroke: var(--trace);
+  stroke-width: 1.25;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.route-plug[data-on] {
+  opacity: 1;
+  animation: pop 360ms var(--ease-out);
+}
+
+/* Settled routes are simply there: nothing is drawn or popped in. */
+.routes[data-settled] .route {
+  transition: none;
+}
+
+.routes[data-settled] .route-plug {
+  animation: none;
+}
+
+/* A carrier's latency, riding the stretch the routes share. */
+.route-tag {
+  position: absolute;
+  padding: 3px 9px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+  color: var(--ink-3);
+  white-space: nowrap;
+  background: var(--bg);
+  opacity: 0;
+  translate: -50% -50%;
+  transition: opacity 420ms ease;
+}
+
+.route-tag b {
+  display: inline-block;
+  min-width: 2ch;
+  font-weight: 500;
+  color: var(--ink);
+  text-align: right;
+}
+
+.route-tag[data-on] {
+  opacity: 1;
+}
+
+.route-tag[data-warn],
+.route-tag[data-warn] b {
+  color: var(--warn);
+}
+
+.fleet-layer .tile {
+  opacity: 0;
+}
+
+.fleet-layer .tile[data-in] {
+  opacity: 1;
+  animation: deal 620ms var(--ease-out);
+}
+
+.fleet-layer[data-settled] .tile {
+  animation: none;
+}
+
+/* The ring a card shows when a report reaches it. */
+.fleet-layer .tile::after {
+  position: absolute;
+  inset: 0.7cqw;
+  content: "";
+  border-radius: 0.9cqw;
+  box-shadow: 0 0 0 1.5px var(--accent);
+  opacity: 0;
+}
+
+/* ---------- Network: the three carriers are probed, then the latency chart plots itself ---------- */
+
+.plot-cover {
+  clip-path: inset(0 0 0 0);
+}
+
+.plot-cover[data-drawn] {
+  clip-path: inset(0 0 0 100%);
+  transition: clip-path 1900ms cubic-bezier(0.45, 0, 0.3, 1);
+}
+
+.plot-pen {
+  position: absolute;
+  width: 1.5px;
+  background: var(--accent);
+  box-shadow: 0 0 12px 1px color-mix(in srgb, var(--accent) 60%, transparent);
+  opacity: 0;
+}
+
+.probe {
+  position: absolute;
+  border-radius: 1.2cqw;
+  box-shadow: 0 0 0 1.5px var(--accent);
+  opacity: 0;
+}
+
+/* ---------- IP quality: the unlock matrix resolves check by check ---------- */
+
+.check {
+  display: grid;
+  place-items: center;
+}
+
+.check::before {
+  width: 78%;
+  height: 62%;
+  content: "";
+  background:
+    linear-gradient(
+      100deg,
+      transparent 30%,
+      color-mix(in srgb, var(--ink) 9%, transparent) 50%,
+      transparent 70%
+    )
+    0 0 / 300% 100%,
+    color-mix(in srgb, var(--ink) 9%, var(--cover, var(--surface)));
+  border-radius: 999px;
+}
+
+/* A pending check shimmers only while its table is on screen. */
+.overlay[data-visible] .check:not([data-done])::before {
+  animation: shimmer 1400ms linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position:
+      150% 0,
+      0 0;
+  }
+
+  to {
+    background-position:
+      -150% 0,
+      0 0;
+  }
+}
+
+.check::after {
+  position: absolute;
+  inset: 6% 4%;
+  content: "";
+  border-radius: 999px;
+  box-shadow: 0 0 0 1.5px var(--tone);
+  opacity: 0;
+}
+
+.check[data-tone="unlocked"] {
+  --tone: light-dark(#16a34a, #4ade80);
+}
+
+.check[data-tone="restricted"] {
+  --tone: light-dark(#d97706, #fbbf24);
+}
+
+.check[data-tone="blocked"] {
+  --tone: light-dark(#dc2626, #f87171);
+}
+
+.check[data-done] {
+  background: transparent;
+  transition: background-color 140ms ease;
+}
+
+.check[data-done]::before {
+  opacity: 0;
+  transform: scale(0.55);
+  transition:
+    opacity 160ms ease,
+    transform 200ms var(--ease-out);
+}
+
+.check[data-done]::after {
+  animation: check-ring 520ms var(--ease-out);
+}
+
+@keyframes check-ring {
+  0% {
+    opacity: 0.95;
+    transform: scale(0.8);
+  }
+
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+}
+
+/* ---------- Security: the grant command is typed, takes effect, counts down and lapses ---------- */
+
+.grant[data-armed] .key:not([data-on]) {
+  opacity: 0;
+}
+
+.caret {
+  position: relative;
+  display: none;
+  width: 0;
+}
+
+.grant[data-typing] .caret {
+  display: inline-block;
+}
+
+.caret::after {
+  position: absolute;
+  top: -1.02em;
+  left: 2px;
+  width: 0.55em;
+  height: 1.2em;
+  content: "";
+  background: var(--cmd-accent);
+  animation: blink 900ms steps(1) infinite;
+}
+
+.grant[data-armed] .grant-notes div {
+  opacity: 0.28;
+  transition:
+    opacity 420ms ease,
+    border-color 420ms ease;
+}
+
+.grant[data-armed] .grant-notes div[data-on] {
+  border-top-color: var(--cmd-accent);
+  opacity: 1;
+}
+
+.grant-cmd b {
+  border-radius: 4px;
+  box-shadow: 0 0 0 0 transparent;
+  transition:
+    background-color 420ms ease,
+    box-shadow 420ms ease;
+}
+
+.grant-cmd b[data-flash] {
+  background: color-mix(in srgb, var(--cmd-accent) 18%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cmd-accent) 18%, transparent);
+}
+
+/* The pill's room is reserved from the start, so the caption never moves when it appears. */
+.grant-status {
+  display: inline-flex;
+  visibility: hidden;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 11px 3px 9px;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--cmd-ink);
+  white-space: nowrap;
+  border: 1px solid #3a3d49;
+  border-radius: 999px;
+}
+
+.grant-status[data-state] {
+  visibility: visible;
+}
+
+.grant-status i {
+  width: 7px;
+  height: 7px;
+  background: #f5a524;
+  border-radius: 50%;
+}
+
+.grant-status[data-state="granted"] {
+  color: #ffd58a;
+  border-color: #6b4a12;
+}
+
+.grant-status[data-state="granted"] i {
+  animation: blink 1000ms steps(1) infinite;
+}
+
+.grant-status[data-state="revoked"] {
+  color: var(--cmd-dim);
+}
+
+.grant-status[data-state="revoked"] i {
+  background: #5d6170;
+}
+
+@media (max-width: 640px) {
+  .grant figcaption:has(.grant-status) {
+    flex-wrap: wrap;
+  }
+
+  .grant-status {
+    margin-left: 0;
+  }
+}
+
+/* The capability table's own cell for this grant, redrawn so its clock can run. */
+.grant-badge {
+  display: grid;
+  place-items: center;
+  font-size: 0.78cqw;
+  line-height: 1;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.grant-badge b {
+  padding: 0.28cqw 0.62cqw;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 0.5cqw;
+  animation: pop 380ms var(--ease-out);
+}
+
+.grant-badge::after {
+  position: absolute;
+  inset: -40% -8%;
+  content: "";
+  border-radius: 0.8cqw;
+  box-shadow: 0 0 0 1.5px var(--warn);
+  opacity: 0;
+}
+
+/* ---------- Dashboards: the wall is dealt out, then widgets are dragged to new places ---------- */
+
+.dash-layer .tile {
+  opacity: 0;
+}
+
+.dash-layer .tile[data-in] {
+  opacity: 1;
+  animation: deal 560ms var(--ease-out);
+}
+
+.dash-layer .tile[data-held] {
+  z-index: 3;
+  border-radius: 0.7cqw;
+  box-shadow:
+    0 1.4cqw 3cqw -0.8cqw rgb(0 0 0 / 0.35),
+    0 0 0 1.5px var(--accent);
+}
+
+.slot {
+  position: absolute;
+  border: 1.5px dashed var(--accent);
+  border-radius: 0.7cqw;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.slot[data-on] {
+  opacity: 0.7;
+}
+
+.cursor {
+  position: absolute;
+  z-index: 4;
+  width: 22px;
+  height: 22px;
+  margin: -3px 0 0 -5px;
+  opacity: 0;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35));
+}
+
+.cursor svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---------- iOS: an alert lands on the first phone ---------- */
+
+.push {
+  position: absolute;
+  top: 6.4%;
+  right: 4%;
+  left: 4%;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3cqw;
+  align-items: center;
+  padding: 3.2cqw 3.6cqw;
+  font-size: 4.5cqw;
+  line-height: 1.28;
+  color: light-dark(#111216, #f4f4f6);
+  background: light-dark(rgb(246 246 248 / 0.86), rgb(44 44 48 / 0.84));
+  border-radius: 7cqw;
+  box-shadow: 0 3cqw 8cqw -2cqw rgb(0 0 0 / 0.4);
+  opacity: 0;
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+  backdrop-filter: blur(14px) saturate(1.6);
+}
+
+.push[hidden] {
+  display: none;
+}
+
+.push img {
+  width: 11cqw;
+  height: 11cqw;
+  border-radius: 2.6cqw;
+}
+
+.push b {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.push b span {
+  font-weight: 400;
+  opacity: 0.55;
+}
+
+.push-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.push-tap {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 12cqw;
+  height: 12cqw;
+  margin: -6cqw 0 0 -6cqw;
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 50%;
+  opacity: 0;
+}
+
+/* ---------- Architecture: one report per interval, agents to server to clients ---------- */
+
+.wire-dots {
+  position: absolute;
+  top: calc(50% - 4px);
+  right: 9px;
+  left: 0;
+  height: 8px;
+  pointer-events: none;
+}
+
+.wire-dots i {
+  position: absolute;
+  top: 1px;
+  left: 0;
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  opacity: 0;
+}
+
+.wire-dots[data-alert] i {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent);
+}
+
+@media (max-width: 900px) {
+  .wire-dots {
+    top: 0;
+    right: auto;
+    bottom: 10px;
+    left: 24px;
+    width: 8px;
+    height: auto;
+  }
+
+  .wire-dots i {
+    top: 0;
+    left: 1px;
+  }
+}
+
+/* A client is a line of text, not a pill: a report marks it with a tick in the gutter. */
+.flow-clients li {
+  position: relative;
+}
+
+.row-tick {
+  position: absolute;
+  top: 3px;
+  bottom: 15px;
+  left: -11px;
+  width: 2px;
+  pointer-events: none;
+  border-radius: 2px;
+  opacity: 0;
+}
+
+.flow-clients li:last-child > .row-tick {
+  bottom: 3px;
+}
+
+/* The alert leaving for a notification channel. It straddles the box's bottom edge, clear of the rows' text. */
+.flow-alert {
+  position: absolute;
+  right: 14px;
+  bottom: -13px;
+  z-index: 2;
+  padding: 4px 9px;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--warn);
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: 6px;
+  box-shadow: 0 6px 16px -8px rgb(0 0 0 / 0.3);
+  opacity: 0;
+}
+
+/* ---------- Numbers: each figure draws what its number measures ---------- */
+
+.stat-fig {
+  display: flex;
+  align-items: center;
+  height: 22px;
+  margin-top: 8px;
+}
+
+.fig-bar {
+  position: relative;
+  width: min(100%, 190px);
+  height: 3px;
+  overflow: hidden;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.fig-bar i {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: 0 50%;
+}
+
+.fig-blocks,
+.fig-dots {
+  display: flex;
+  gap: 3px;
+  max-width: 100%;
+}
+
+/* One block per megabyte; on a narrow column the blocks give a little instead of wrapping. */
+.fig-blocks {
+  width: min(100%, calc(var(--blocks) * 12px - 3px));
+}
+
+.fig-blocks i {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 9px;
+  overflow: hidden;
+  background: var(--line);
+  border-radius: 2px;
+}
+
+.fig-blocks i::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: var(--ink);
+  transform: scaleX(var(--fill, 1));
+  transform-origin: 0 50%;
+  transition: transform 260ms var(--ease-out) calc(var(--c) * 45ms);
+}
+
+.fig-dots {
+  flex-wrap: wrap;
+  width: 136px;
+}
+
+.fig-dots i {
+  width: 4px;
+  height: 4px;
+  background: var(--ok);
+  border-radius: 50%;
+  transition: background-color 200ms ease calc(var(--c) * 22ms);
+}
+
+/* Before a figure plays it is empty; taking the mark away fills it in. */
+.stat-fig[data-empty] .fig-blocks i::after {
+  transform: scaleX(0);
+  transition: none;
+}
+
+.stat-fig[data-empty] .fig-dots i {
+  background: var(--line-strong);
+  transition: none;
+}
+
+.fig-spark {
+  width: min(100%, 190px);
+  padding-right: 4px;
+  overflow: hidden;
+}
+
+.fig-spark svg {
+  width: 100%;
+  height: 20px;
+  overflow: visible;
+}
+
+.fig-spark path {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.fig-spark circle {
+  fill: var(--accent);
+}
+
+/* ---------- A traceroute down the page: each section is a hop, the packet is where the reader is ---------- */
+
+.rail {
+  position: fixed;
+  top: calc(var(--header) + 56px);
+  bottom: 64px;
+  left: 30px;
+  z-index: 5;
+  display: none;
+  width: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1;
+  color: var(--ink-3);
+  /* Only the stops take the pointer: a label may reach over the page, and what is under it stays clickable. */
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.rail[data-live] {
+  opacity: 1;
+}
+
+/* Only where the margin beside the page is wide enough to hold it. */
+@media (min-width: 1380px) {
+  .rail {
+    display: block;
+  }
+}
+
+.rail::before,
+.rail-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1.25px;
+  content: "";
+  background: var(--line-strong);
+}
+
+.rail-fill {
+  background: var(--accent);
+  transform: scaleY(var(--progress, 0));
+  transform-origin: 50% 0;
+}
+
+.rail-packet {
+  position: absolute;
+  top: calc(var(--progress, 0) * 100%);
+  left: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.rail a {
+  position: absolute;
+  top: calc(var(--at) * 100%);
+  left: 0;
+  display: flex;
+  gap: 3px;
+  align-items: center;
+  /* Padding makes the stop easier to reach than its 7px dot. */
+  padding: 8px 8px 8px 12px;
+  margin: -16px 0 0 -12px;
+  white-space: nowrap;
+}
+
+.rail[data-live] a {
+  pointer-events: auto;
+}
+
+.rail a::before {
+  width: 7px;
+  height: 7px;
+  content: "";
+  background: var(--bg);
+  border: 1.25px solid var(--line-strong);
+  border-radius: 50%;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s;
+}
+
+.rail a[data-passed]::before {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.rail a span {
+  display: flex;
+  gap: 0.6em;
+  padding: 3px 6px;
+  border-radius: 5px;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity 0.2s,
+    transform 0.2s var(--ease-out);
+}
+
+.rail a[data-current] span,
+.rail:hover a span {
+  opacity: 1;
+  transform: none;
+}
+
+/* The margin holds a stop's number. Its name needs more room, so until there is some it shows on request, on a
+   chip that can sit over the page. */
+.rail a b {
+  font-weight: inherit;
+}
+
+@media (max-width: 1599px) {
+  .rail:not(:hover) a b {
+    display: none;
+  }
+
+  .rail:hover a span {
+    background: var(--bg);
+    box-shadow: 0 0 0 1px var(--line);
+  }
+}
+
+.rail a[data-current] {
+  color: var(--ink);
+}

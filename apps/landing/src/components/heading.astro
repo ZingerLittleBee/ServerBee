@@ -1,0 +1,21 @@
+---
+import Pieces from '@/components/pieces.astro'
+import { pieceCount } from '@/lib/pieces'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+  text: string
+}
+
+const { lang, text } = Astro.props
+// A Chinese heading wraps after a comma before it wraps inside a clause, so a line does not end mid-word.
+let start = 0
+const clauses = text.split(/(?<=，)/).map((clause) => {
+  const from = start
+  start += pieceCount(clause, lang)
+  return { clause, from }
+})
+---
+
+<h2 aria-label={text}>{clauses.length > 1 ? clauses.map(({ clause, from }) => <span class="clause"><Pieces text={clause} lang={lang} start={from} /></span>) : <Pieces text={text} lang={lang} />}</h2>

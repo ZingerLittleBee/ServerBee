@@ -53,6 +53,7 @@ interface HeroCopy {
   cta2: string
   facts: string[]
   h1a: string
+  /** The headline's second line. It ends in a full stop: the hero's routes are drawn leaving from it. */
   h1b: string
   /** Accessible name of the install method tabs. */
   installLabel: string
@@ -115,6 +116,28 @@ interface HowCopy {
   steps: [{ d: string; t: string }, { d: string; t: string }]
 }
 
+/**
+ * Text that only appears inside the animated scenes. It replays what the page already says in prose, so all of it
+ * is hidden from assistive technology.
+ */
+interface ScenesCopy {
+  /** The alert that leaves the architecture diagram through a notification channel. */
+  alert: string
+  /** The carriers whose latency rides the hero's routes, in the order of the network capture's columns. */
+  carriers: [string, string, string]
+  /** The temporary grant as it takes effect and lapses. `{left}` is the time remaining, as mm:ss. */
+  grant: {
+    /** The badge in the capability table. It repeats the product's own wording, as the capture shows it. */
+    badge: string
+    granted: string
+    revoked: string
+  }
+  /** The push notification that lands on the first phone, for the server the second phone shows. */
+  push: { body: string; time: string }
+  /** Stops of the page rail that the header navigation has no name for. */
+  rail: { faq: string; how: string }
+}
+
 export interface LandingCopy {
   dash: FeatureCopy
   faq: { h2: string; items: { q: string; a: string }[] }
@@ -129,6 +152,7 @@ export interface LandingCopy {
   more: { groups: { items: PointCopy[]; t: string }[]; h2: string }
   nav: NavCopy
   network: FeatureCopy
+  scenes: ScenesCopy
   security: SecurityCopy
   /** Alternative text of the product captures. */
   shots: Record<ShotName, string>
@@ -146,6 +170,23 @@ const zh: LandingCopy = {
     'ip-quality': 'IP 质量页面：每台服务器的出口 IP、风险评分，以及各项流媒体和 AI 服务的解锁矩阵。',
     capabilities: '能力开关页面：每台服务器已启用的能力，其中一台带有一条临时终端授权。',
     dashboard: '自定义仪表盘：统计数值、CPU 对比曲线、仪表、内存排行、可用时间线、流量柱状图和世界地图。'
+  },
+  scenes: {
+    carriers: ['电信', '联通', '移动'],
+    grant: {
+      granted: 'terminal 已授权 · 剩余 {left}',
+      revoked: 'terminal 已到期，自动收回',
+      badge: '临时 · {left}'
+    },
+    push: {
+      time: '现在',
+      body: 'HK · CN2 GIA 的 CPU 使用率 92%，已持续 10 分钟'
+    },
+    alert: '告警 → Telegram · CPU 92%',
+    rail: {
+      how: '部署',
+      faq: '常见问题'
+    }
   },
   nav: {
     links: [
@@ -555,6 +596,23 @@ const en: LandingCopy = {
       'The capabilities page: which capabilities each server has enabled, one of them holding a temporary terminal grant.',
     dashboard:
       'A custom dashboard with stat tiles, a CPU comparison chart, gauges, a memory ranking, uptime timelines, traffic bars and a world map.'
+  },
+  scenes: {
+    carriers: ['Telecom', 'Unicom', 'Mobile'],
+    grant: {
+      granted: 'terminal granted · {left} left',
+      revoked: 'terminal expired, taken back',
+      badge: 'Temporary · {left}'
+    },
+    push: {
+      time: 'now',
+      body: 'HK · CN2 GIA: CPU at 92% for 10 minutes'
+    },
+    alert: 'Alert → Telegram · CPU 92%',
+    rail: {
+      how: 'Install',
+      faq: 'FAQ'
+    }
   },
   nav: {
     links: [

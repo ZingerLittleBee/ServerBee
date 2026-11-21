@@ -1,5 +1,5 @@
 ---
-import Clauses from '@/components/clauses.astro'
+import Heading from '@/components/heading.astro'
 import InstallCommand from '@/components/install-command.astro'
 import OutLink from '@/components/out-link.astro'
 import { landingCopy } from '@/i18n/copy'
@@ -15,7 +15,7 @@ const copy = landingCopy[lang].final
 
 <section id="final" class="final">
   <div class="wrap">
-    <h2><Clauses text={copy.h2} /></h2>
+    <Heading text={copy.h2} lang={lang} />
     <p class="lede">{copy.sub}</p>
     <InstallCommand id="install-final" lang={lang} />
     <p class="hero-links"><OutLink href={links.github}>{copy.cta2}</OutLink></p>

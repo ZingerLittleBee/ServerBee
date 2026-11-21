@@ -1,5 +1,5 @@
 ---
-import Clauses from '@/components/clauses.astro'
+import Heading from '@/components/heading.astro'
 import { landingCopy } from '@/i18n/copy'
 import type { Lang } from '@/lib/site'
 
@@ -13,7 +13,7 @@ const copy = landingCopy[lang].more
 
 <section id="more" class="more">
   <div class="wrap">
-    <h2><Clauses text={copy.h2} /></h2>
+    <Heading text={copy.h2} lang={lang} />
     <div class="more-groups">
       {
         copy.groups.map((group) => (

@@ -1,6 +1,7 @@
 ---
 import { Font } from 'astro:assets'
 import '@/styles/global.css'
+import '@/styles/motion.css'
 import { landingCopy } from '@/i18n/copy'
 import { VERSION } from '@/lib/release'
 import { homePath, LANGS, type Lang, links } from '@/lib/site'
@@ -76,7 +77,11 @@ const jsonLd = {
     <Font cssVariable="--font-sofia-condensed" />
     <Font cssVariable="--font-plex-mono" preload={[{ weight: 400 }]} />
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
-    <!-- Runs before first paint so a stored theme choice never flashes the other theme. -->
+    <!--
+      Runs before first paint, so a stored theme choice never flashes the other theme, and the entrance is decided
+      before anything shows: it plays unless the visitor asked for less motion or arrives through the language
+      switch's cross-fade, which is an entrance of its own.
+    -->
     <script is:inline>
       try {
         const theme = localStorage.getItem('theme')
@@ -85,6 +90,14 @@ const jsonLd = {
         }
       } catch {
         // Storage is unavailable: follow the system theme.
+      }
+      if (matchMedia('(prefers-reduced-motion: no-preference)').matches) {
+        document.documentElement.classList.add('enter')
+        addEventListener('pagereveal', (event) => {
+          if (event.viewTransition) {
+            document.documentElement.classList.remove('enter')
+          }
+        })
       }
     </script>
   </head>

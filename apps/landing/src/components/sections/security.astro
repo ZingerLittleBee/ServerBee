@@ -1,6 +1,6 @@
 ---
 import Terminal from '@lucide/astro/icons/terminal'
-import Clauses from '@/components/clauses.astro'
+import Heading from '@/components/heading.astro'
 import OutLink from '@/components/out-link.astro'
 import Points from '@/components/points.astro'
 import Shot from '@/components/shot.astro'
@@ -14,18 +14,19 @@ interface Props {
 const { lang } = Astro.props
 const copy = landingCopy[lang].security
 const { grant } = copy
+const scene = landingCopy[lang].scenes.grant
 ---
 
 <section id="security" class="feature">
   <div class="wrap headrow">
-    <h2><Clauses text={copy.h2} /></h2>
+    <Heading text={copy.h2} lang={lang} />
     <div class="feature-text">
       <p class="lede">{copy.lede}</p>
       <OutLink href={copy.link.href}>{copy.link.label}</OutLink>
     </div>
   </div>
   <div class="wrap">
-    <figure class="grant">
+    <figure class="grant" data-granted={scene.granted} data-revoked={scene.revoked} data-badge={scene.badge}>
       <div>
         <figcaption><Terminal aria-hidden="true" />{grant.caption}</figcaption>
         <pre class="grant-cmd"><code><span class="cmd-dim">$ sudo serverbee-agent grant</span> <b>terminal</b> <b>--for 30m</b> <b>--reason "{grant.reason}"</b></code></pre>

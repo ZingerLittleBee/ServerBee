@@ -1,6 +1,7 @@
 ---
 import Footer from '@/components/footer.astro'
 import Header from '@/components/header.astro'
+import Rail from '@/components/rail.astro'
 import Dashboards from '@/components/sections/dashboards.astro'
 import Faq from '@/components/sections/faq.astro'
 import Final from '@/components/sections/final.astro'
@@ -39,5 +40,6 @@ const features = { dash: Dashboards, ios: Ios, ipq: IpQuality, network: Network,
     <Faq lang={lang} />
     <Final lang={lang} />
   </main>
+  <Rail lang={lang} />
   <Footer lang={lang} />
 </Base>

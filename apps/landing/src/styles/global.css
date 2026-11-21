@@ -42,6 +42,10 @@
   --r-m: 10px;
   --r-l: 14px;
 
+  /* Entrances and presses start fast and settle; movement across the page eases at both ends. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+
   --gutter: clamp(20px, 4vw, 40px);
   --wrap: 1240px;
   --section: clamp(80px, 10vw, 144px);
@@ -266,7 +270,7 @@ h3 {
   border-radius: var(--r-s);
   transition:
     background-color 0.15s,
-    transform 0.1s;
+    transform 0.12s var(--ease-out);
 }
 
 .btn:hover {
@@ -274,7 +278,7 @@ h3 {
 }
 
 .btn:active {
-  transform: translateY(1px);
+  transform: scale(0.96);
 }
 
 .btn:focus-visible {
@@ -368,12 +372,17 @@ h3 {
   border-radius: var(--r-s);
   transition:
     color 0.15s,
-    background-color 0.15s;
+    background-color 0.15s,
+    transform 0.12s var(--ease-out);
 }
 
 .tool:hover {
   color: var(--ink);
   background: var(--sunken);
+}
+
+.tool:active {
+  transform: scale(0.96);
 }
 
 .tool svg {
@@ -425,7 +434,14 @@ h3 {
 /* ---------- Hero ---------- */
 
 .hero {
+  position: relative;
   padding-top: clamp(40px, 6vw, 84px);
+}
+
+/* The routes of the hero scene are drawn across the section, behind its content. */
+.hero > .wrap {
+  position: relative;
+  z-index: 1;
 }
 
 .pill {
@@ -448,6 +464,7 @@ h3 {
 }
 
 .pill-dot {
+  position: relative;
   width: 7px;
   height: 7px;
   background: var(--ok);
@@ -472,7 +489,7 @@ h3 {
   height: 14px;
 }
 
-.hero h1 span {
+.hero h1 > span {
   display: block;
 }
 
@@ -545,6 +562,7 @@ h3 {
 }
 
 .install-tabs {
+  position: relative;
   display: inline-flex;
   gap: 2px;
   padding: 3px;
@@ -635,6 +653,7 @@ h3 {
   flex: none;
   gap: 7px;
   align-items: center;
+  justify-content: center;
   height: 38px;
   padding: 0 14px;
   font-size: 0.875rem;
@@ -647,7 +666,7 @@ h3 {
   border-radius: 7px;
   transition:
     background-color 0.15s,
-    transform 0.1s;
+    transform 0.12s var(--ease-out);
 }
 
 .copy:hover {
@@ -655,7 +674,7 @@ h3 {
 }
 
 .copy:active {
-  transform: translateY(1px);
+  transform: scale(0.97);
 }
 
 .copy:focus-visible {
@@ -667,14 +686,31 @@ h3 {
   height: 15px;
 }
 
+/* The check sits on the copy icon, and the two trade places when the command is copied. */
+.copy .icon-copy,
+.copy .icon-done {
+  transition:
+    opacity 0.2s var(--ease-out),
+    transform 0.2s var(--ease-out),
+    filter 0.2s var(--ease-out);
+}
+
+.copy .icon-done {
+  margin-left: -22px;
+  color: #5ee0a8;
+}
+
 .copy .icon-done,
 .copy[data-state="copied"] .icon-copy {
-  display: none;
+  opacity: 0;
+  filter: blur(3px);
+  transform: scale(0.5);
 }
 
 .copy[data-state="copied"] .icon-done {
-  display: block;
-  color: #5ee0a8;
+  opacity: 1;
+  filter: none;
+  transform: none;
 }
 
 .railway {
@@ -715,7 +751,6 @@ h3 {
 
   .cmd .copy {
     flex: 1 0 100%;
-    justify-content: center;
   }
 }
 
@@ -734,6 +769,7 @@ h3 {
 /* ---------- Product captures ---------- */
 
 .shot {
+  position: relative;
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -995,6 +1031,7 @@ section[id] {
 /* A bezel drawn in CSS around the simulator capture, with the Dynamic Island the capture leaves out. */
 .phone {
   position: relative;
+  container-type: inline-size;
   overflow: hidden;
   background: #0c0d10;
   border: 6px solid light-dark(#111216, #34373f);
@@ -1163,6 +1200,7 @@ section[id] {
 }
 
 .flow-box {
+  position: relative;
   padding: 18px 20px;
   background: var(--surface);
   border: 1px solid var(--line-strong);
@@ -1227,11 +1265,11 @@ section[id] {
   color: var(--ink);
 }
 
+/* The wire runs through the middle: its label sits above it and its note below, however many lines the note takes. */
 .flow-wire {
   position: relative;
   display: grid;
-  gap: 6px;
-  align-content: center;
+  grid-template-rows: 1fr 1fr;
   justify-items: center;
   padding: 0 14px;
   text-align: center;
@@ -1261,22 +1299,24 @@ section[id] {
 
 .flow-wire-label {
   position: relative;
+  align-self: end;
   padding: 2px 10px;
+  margin-bottom: 10px;
   font-family: var(--font-mono);
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--accent-text);
   background: var(--accent-soft);
   border-radius: 999px;
-  translate: 0 -19px;
 }
 
 .flow-wire-note {
   position: relative;
+  align-self: start;
+  margin-top: 10px;
   font-size: 0.8125rem;
   line-height: 1.35;
   color: var(--ink-3);
-  translate: 0 -8px;
 }
 
 .stats {
@@ -1364,6 +1404,9 @@ section[id] {
   }
 
   .flow-wire {
+    grid-template-rows: none;
+    gap: 6px;
+    align-content: center;
     min-height: 92px;
     padding: 0;
   }
@@ -1388,10 +1431,10 @@ section[id] {
 
   .flow-wire-label,
   .flow-wire-note {
+    align-self: auto;
     justify-self: start;
-    margin-left: 52px;
+    margin: 0 0 0 52px;
     text-align: left;
-    translate: 0;
   }
 
   .stats {

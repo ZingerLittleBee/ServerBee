@@ -1,7 +1,7 @@
 ---
 import { Image } from 'astro:assets'
 import appIcon from '@/assets/app-icon.png'
-import Clauses from '@/components/clauses.astro'
+import Heading from '@/components/heading.astro'
 import OutLink from '@/components/out-link.astro'
 import Phone from '@/components/phone.astro'
 import Points from '@/components/points.astro'
@@ -15,13 +15,14 @@ interface Props {
 
 const { lang } = Astro.props
 const copy = landingCopy[lang].ios
+const { push } = landingCopy[lang].scenes
 ---
 
 <section id="ios" class="feature">
   <div class="wrap ios-grid">
     <div class="feature-text">
       <Image class="ios-icon" src={appIcon} alt="" width={64} height={64} densities={[1, 2, 3]} />
-      <h2><Clauses text={copy.h2} /></h2>
+      <Heading text={copy.h2} lang={lang} />
       <ul class="facts">
         {copy.facts.map((fact) => <li>{fill(fact)}</li>)}
       </ul>
@@ -29,7 +30,13 @@ const copy = landingCopy[lang].ios
       <OutLink href={copy.link.href}>{copy.link.label}</OutLink>
     </div>
     <div class="phones" role="group" aria-label={copy.phonesLabel} tabindex="0">
-      <Phone name="servers" lang={lang} />
+      <Phone name="servers" lang={lang}>
+        <div class="push" aria-hidden="true" hidden>
+          <Image src={appIcon} alt="" width={64} height={64} densities={[1, 2, 3]} loading="lazy" />
+          <div><b>ServerBee<span>{push.time}</span></b><p class="push-body">{push.body}</p></div>
+          <i class="push-tap"></i>
+        </div>
+      </Phone>
       <Phone name="detail" lang={lang} />
       <Phone name="insights" lang={lang} />
     </div>
