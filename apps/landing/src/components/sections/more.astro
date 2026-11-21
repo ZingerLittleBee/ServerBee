@@ -1,0 +1,35 @@
+---
+import Clauses from '@/components/clauses.astro'
+import { landingCopy } from '@/i18n/copy'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].more
+---
+
+<section id="more" class="more">
+  <div class="wrap">
+    <h2><Clauses text={copy.h2} /></h2>
+    <div class="more-groups">
+      {
+        copy.groups.map((group) => (
+          <section class="more-group">
+            <h3>{group.t}</h3>
+            <dl>
+              {group.items.map((item) => (
+                <div>
+                  <dt>{item.t}</dt>
+                  <dd>{item.d}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))
+      }
+    </div>
+  </div>
+</section>

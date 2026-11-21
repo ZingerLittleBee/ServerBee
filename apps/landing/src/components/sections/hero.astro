@@ -1,0 +1,56 @@
+---
+import ArrowUpRight from '@lucide/astro/icons/arrow-up-right'
+import Check from '@lucide/astro/icons/check'
+import InstallCommand from '@/components/install-command.astro'
+import OutLink from '@/components/out-link.astro'
+import Shot from '@/components/shot.astro'
+import { landingCopy } from '@/i18n/copy'
+import { fill } from '@/lib/release'
+import { type Lang, links } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang]
+const hero = copy.hero
+---
+
+<section id="hero" class="hero">
+  <div class="wrap">
+    <a class="pill" href={links.releases}>
+      <span class="pill-dot" aria-hidden="true"></span>
+      <b>{fill(hero.release)}</b>
+      <span class="pill-link">{hero.releaseLink}<ArrowUpRight aria-hidden="true" /></span>
+    </a>
+    <h1><span>{hero.h1a}</span> <span>{hero.h1b}</span></h1>
+    <div class="hero-row">
+      <p class="hero-sub">{hero.sub}</p>
+      <ul class="hero-facts">
+        {
+          hero.facts.map((fact) => (
+            <li>
+              <Check aria-hidden="true" />
+              {fact}
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+    <InstallCommand id="install" lang={lang} />
+    <p class="hero-links">
+      <OutLink href={links.status}>{hero.cta2}</OutLink>
+      <OutLink href={links.github}>{copy.final.cta2}</OutLink>
+    </p>
+  </div>
+  <div class="wrap hero-shot">
+    <Shot
+      name="fleet"
+      lang={lang}
+      sizes="min(100vw - 40px, 1240px)"
+      mobile={{ zoom: 2.3, shiftX: 0.185, ratio: '5 / 6' }}
+      eager
+    />
+  </div>
+</section>

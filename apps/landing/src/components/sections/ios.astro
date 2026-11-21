@@ -1,0 +1,38 @@
+---
+import { Image } from 'astro:assets'
+import appIcon from '@/assets/app-icon.png'
+import Clauses from '@/components/clauses.astro'
+import OutLink from '@/components/out-link.astro'
+import Phone from '@/components/phone.astro'
+import Points from '@/components/points.astro'
+import { landingCopy } from '@/i18n/copy'
+import { fill } from '@/lib/release'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].ios
+---
+
+<section id="ios" class="feature">
+  <div class="wrap ios-grid">
+    <div class="feature-text">
+      <Image class="ios-icon" src={appIcon} alt="" width={64} height={64} densities={[1, 2, 3]} />
+      <h2><Clauses text={copy.h2} /></h2>
+      <ul class="facts">
+        {copy.facts.map((fact) => <li>{fill(fact)}</li>)}
+      </ul>
+      <p class="lede">{copy.lede}</p>
+      <OutLink href={copy.link.href}>{copy.link.label}</OutLink>
+    </div>
+    <div class="phones" role="group" aria-label={copy.phonesLabel} tabindex="0">
+      <Phone name="servers" lang={lang} />
+      <Phone name="detail" lang={lang} />
+      <Phone name="insights" lang={lang} />
+    </div>
+  </div>
+  <div class="wrap"><Points items={copy.points} /></div>
+</section>

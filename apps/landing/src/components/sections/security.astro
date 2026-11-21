@@ -1,0 +1,51 @@
+---
+import Terminal from '@lucide/astro/icons/terminal'
+import Clauses from '@/components/clauses.astro'
+import OutLink from '@/components/out-link.astro'
+import Points from '@/components/points.astro'
+import Shot from '@/components/shot.astro'
+import { landingCopy } from '@/i18n/copy'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].security
+const { grant } = copy
+---
+
+<section id="security" class="feature">
+  <div class="wrap headrow">
+    <h2><Clauses text={copy.h2} /></h2>
+    <div class="feature-text">
+      <p class="lede">{copy.lede}</p>
+      <OutLink href={copy.link.href}>{copy.link.label}</OutLink>
+    </div>
+  </div>
+  <div class="wrap">
+    <figure class="grant">
+      <div>
+        <figcaption><Terminal aria-hidden="true" />{grant.caption}</figcaption>
+        <pre class="grant-cmd"><code><span class="cmd-dim">$ sudo serverbee-agent grant</span> <b>terminal</b> <b>--for 30m</b> <b>--reason "{grant.reason}"</b></code></pre>
+      </div>
+      <dl class="grant-notes">
+        <div>
+          <dt>terminal</dt>
+          <dd>{grant.notes.capability}</dd>
+        </div>
+        <div>
+          <dt>--for 30m</dt>
+          <dd>{grant.notes.duration}</dd>
+        </div>
+        <div>
+          <dt>--reason</dt>
+          <dd>{grant.notes.reason}</dd>
+        </div>
+      </dl>
+    </figure>
+    <Shot name="capabilities" lang={lang} sizes="min(100vw - 40px, 1240px)" mobile={{ zoom: 2.6 }} />
+    <Points items={copy.points} />
+  </div>
+</section>

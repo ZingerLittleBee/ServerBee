@@ -1,0 +1,32 @@
+---
+import Clauses from '@/components/clauses.astro'
+import OutLink from '@/components/out-link.astro'
+import Points from '@/components/points.astro'
+import Shot from '@/components/shot.astro'
+import { landingCopy } from '@/i18n/copy'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].network
+---
+
+<section id="network" class="feature">
+  <div class="wrap split">
+    <div class="feature-text">
+      <h2><Clauses text={copy.h2} /></h2>
+      <p class="lede">{copy.lede}</p>
+      <OutLink href={copy.link.href}>{copy.link.label}</OutLink>
+    </div>
+    <Shot
+      name="network"
+      lang={lang}
+      sizes="(max-width: 900px) calc(100vw - 40px), min(56vw, 700px)"
+      mobile={{ zoom: 1.75 }}
+    />
+  </div>
+  <div class="wrap"><Points items={copy.points} /></div>
+</section>

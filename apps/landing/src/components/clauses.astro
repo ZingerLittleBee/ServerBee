@@ -1,0 +1,10 @@
+---
+interface Props {
+  text: string
+}
+
+// A Chinese heading wraps after a comma before it wraps inside a clause, so a line does not end mid-word.
+const clauses = Astro.props.text.split(/(?<=，)/)
+---
+
+{clauses.length > 1 ? clauses.map((clause) => <span class="clause">{clause}</span>) : Astro.props.text}

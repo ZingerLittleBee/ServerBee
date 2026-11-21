@@ -1,0 +1,52 @@
+---
+import type { ImageMetadata } from 'astro'
+import { landingCopy, type PhoneName } from '@/i18n/copy'
+import { themedPicture } from '@/lib/picture'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+  name: PhoneName
+}
+
+const { lang, name } = Astro.props
+const files = import.meta.glob<ImageMetadata>('../assets/phones/*.webp', { eager: true, import: 'default' })
+
+function file(theme: 'dark' | 'light'): ImageMetadata {
+  const found = files[`../assets/phones/${name}-${lang}-${theme}.webp`]
+  if (!found) {
+    throw new Error(`landing: missing capture ${name}-${lang}-${theme}.webp; run "bun run capture:ios"`)
+  }
+  return found
+}
+
+const light = file('light')
+const picture = await themedPicture(light, file('dark'), [light.width / 2, light.width])
+const sizes = '(max-width: 900px) min(62vw, 260px), 250px'
+---
+
+<figure class="phone">
+  <picture>
+    {
+      picture.sources.map((source) => (
+        <source
+          type={source.type}
+          srcset={source.srcset}
+          sizes={sizes}
+          media={source.dark ? '(prefers-color-scheme: dark)' : undefined}
+          data-dark={source.dark ? '' : undefined}
+        />
+      ))
+    }
+    <img
+      src={picture.fallback.src}
+      srcset={picture.fallback.srcset}
+      sizes={sizes}
+      width={light.width}
+      height={light.height}
+      alt={landingCopy[lang].ios.phones[name]}
+      loading="lazy"
+      decoding="async"
+    />
+  </picture>
+</figure>

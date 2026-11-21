@@ -1,0 +1,23 @@
+---
+import type { PointCopy } from '@/i18n/copy'
+
+interface Props {
+  /** Columns on a wide screen. Defaults to one per point. */
+  cols?: number
+  items: PointCopy[]
+}
+
+const { items } = Astro.props
+const cols = Astro.props.cols ?? items.length
+---
+
+<dl class="points" style={`--cols: ${cols}`}>
+  {
+    items.map((item) => (
+      <div>
+        <dt>{item.t}</dt>
+        <dd>{item.d}</dd>
+      </div>
+    ))
+  }
+</dl>

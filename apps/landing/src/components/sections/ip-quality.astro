@@ -1,0 +1,29 @@
+---
+import Clauses from '@/components/clauses.astro'
+import OutLink from '@/components/out-link.astro'
+import Points from '@/components/points.astro'
+import Shot from '@/components/shot.astro'
+import { landingCopy } from '@/i18n/copy'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].ipq
+---
+
+<section id="ipq" class="feature">
+  <div class="wrap headrow">
+    <h2><Clauses text={copy.h2} /></h2>
+    <div class="feature-text">
+      <p class="lede">{copy.lede}</p>
+      <OutLink href={copy.link.href}>{copy.link.label}</OutLink>
+    </div>
+  </div>
+  <div class="wrap">
+    <Shot name="ip-quality" lang={lang} sizes="min(100vw - 40px, 1240px)" mobile={{ zoom: 2.2, ratio: '1 / 1' }} />
+    <Points items={copy.points} />
+  </div>
+</section>

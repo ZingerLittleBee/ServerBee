@@ -1,0 +1,98 @@
+---
+import Clauses from '@/components/clauses.astro'
+import Command from '@/components/command.astro'
+import { landingCopy } from '@/i18n/copy'
+import { installCommands, type Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].how
+const { diagram } = copy
+const commands = [installCommands.docker, installCommands.agent]
+---
+
+<section id="how" class="how">
+  <div class="wrap">
+    <h2><Clauses text={copy.h2} /></h2>
+    <ol class="steps">
+      {
+        copy.steps.map((step, index) => (
+          <li>
+            <div class="step-text">
+              <h3>{step.t}</h3>
+              <p>{step.d}</p>
+            </div>
+            <Command command={commands[index]} lang={lang} />
+          </li>
+        ))
+      }
+    </ol>
+
+    <div class="flow">
+      <div class="flow-box">
+        <p class="flow-title">{diagram.agents}</p>
+        <ul class="flow-list">
+          {[1, 2, 3].map(() => <li><code>{diagram.agentBin}</code></li>)}
+        </ul>
+      </div>
+      <div class="flow-wire">
+        <span class="flow-wire-label">{diagram.wire}</span>
+        <span class="flow-wire-note">{diagram.wireNote}</span>
+      </div>
+      <div class="flow-box">
+        <p class="flow-title">{diagram.server}</p>
+        <p class="flow-sub">{diagram.serverNote}</p>
+        <ul class="flow-list">
+          {diagram.serverRows.map((row) => <li>{row}</li>)}
+        </ul>
+      </div>
+      <div class="flow-wire" aria-hidden="true"></div>
+      <div class="flow-box">
+        <ul class="flow-list flow-clients">
+          {
+            diagram.clients.map((client) => (
+              <li>
+                <b>{client.t}</b>
+                {client.d}
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </div>
+
+    <dl class="stats">
+      {
+        copy.stats.map((stat, index) => (
+          <div>
+            <dt>{stat.l}</dt>
+            <dd>
+              {stat.v}<sup><a href={`#note-${index + 1}`} aria-label={`${copy.noteRef} ${index + 1}`}>{index + 1}</a></sup>
+            </dd>
+          </div>
+        ))
+      }
+    </dl>
+    <div class="notes">
+      <h3>{copy.notesTitle}</h3>
+      <ol>
+        {
+          copy.notes.map((note, index) => (
+            <li id={`note-${index + 1}`}>
+              {typeof note === 'string' ? (
+                note
+              ) : (
+                <>
+                  {note.text}<a href={note.link.href}>{note.link.label}</a>{note.after}
+                </>
+              )}
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </div>
+</section>

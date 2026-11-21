@@ -1,0 +1,29 @@
+---
+import Clauses from '@/components/clauses.astro'
+import { landingCopy } from '@/i18n/copy'
+import { fill } from '@/lib/release'
+import type { Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const copy = landingCopy[lang].faq
+---
+
+<section id="faq" class="faq">
+  <div class="wrap faq-grid">
+    <h2><Clauses text={copy.h2} /></h2>
+    <div>
+      {
+        copy.items.map((item) => (
+          <details>
+            <summary>{item.q}</summary>
+            <p>{fill(item.a)}</p>
+          </details>
+        ))
+      }
+    </div>
+  </div>
+</section>

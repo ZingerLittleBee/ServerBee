@@ -1,0 +1,43 @@
+---
+import Footer from '@/components/footer.astro'
+import Header from '@/components/header.astro'
+import Dashboards from '@/components/sections/dashboards.astro'
+import Faq from '@/components/sections/faq.astro'
+import Final from '@/components/sections/final.astro'
+import Hero from '@/components/sections/hero.astro'
+import How from '@/components/sections/how.astro'
+import Ios from '@/components/sections/ios.astro'
+import IpQuality from '@/components/sections/ip-quality.astro'
+import More from '@/components/sections/more.astro'
+import Network from '@/components/sections/network.astro'
+import Security from '@/components/sections/security.astro'
+import { landingCopy } from '@/i18n/copy'
+import Base from '@/layouts/base.astro'
+import { featureOrder, type Lang } from '@/lib/site'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const features = { dash: Dashboards, ios: Ios, ipq: IpQuality, network: Network, security: Security }
+---
+
+<Base lang={lang}>
+  <a class="skip" href="#main">{landingCopy[lang].nav.skip}</a>
+  <Header lang={lang} />
+  <main id="main">
+    <Hero lang={lang} />
+    {
+      featureOrder[lang].map((key) => {
+        const Feature = features[key]
+        return <Feature lang={lang} />
+      })
+    }
+    <More lang={lang} />
+    <How lang={lang} />
+    <Faq lang={lang} />
+    <Final lang={lang} />
+  </main>
+  <Footer lang={lang} />
+</Base>
