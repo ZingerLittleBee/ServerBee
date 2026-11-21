@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use reqwest::redirect::Policy;
 use serverbee_common::protocol::UnlockRequest;
 use serverbee_common::ssrf;
@@ -20,8 +20,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Browser-like User-Agent string used for all unlock checks unless overridden.
-pub const DEFAULT_USER_AGENT: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+pub const DEFAULT_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
      AppleWebKit/537.36 (KHTML, like Gecko) \
      Chrome/124.0.0.0 Safari/537.36";
 
@@ -203,11 +202,7 @@ mod tests {
             .redirect(Policy::none())
             .build()
             .unwrap();
-        let response = client
-            .get(format!("http://{addr}/"))
-            .send()
-            .await
-            .unwrap();
+        let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         let buf = read_capped(response, MAX_BODY_BYTES).await.unwrap();
         assert_eq!(
@@ -226,11 +221,7 @@ mod tests {
             .redirect(Policy::none())
             .build()
             .unwrap();
-        let response = client
-            .get(format!("http://{addr}/"))
-            .send()
-            .await
-            .unwrap();
+        let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         let buf = read_capped(response, MAX_BODY_BYTES).await.unwrap();
         assert_eq!(buf.len(), body_len, "small body must be read in full");
@@ -268,7 +259,11 @@ mod tests {
         let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         let buf = read_capped(response, cap).await.unwrap();
-        assert_eq!(buf.len(), cap, "body exactly at the cap must be kept in full");
+        assert_eq!(
+            buf.len(),
+            cap,
+            "body exactly at the cap must be kept in full"
+        );
     }
 
     #[tokio::test]
@@ -292,7 +287,10 @@ mod tests {
     #[test]
     fn build_client_succeeds() {
         // The dedicated client must build with the configured redirect/UA/timeouts.
-        assert!(build_client().is_ok(), "build_client must construct a client");
+        assert!(
+            build_client().is_ok(),
+            "build_client must construct a client"
+        );
     }
 
     #[test]
@@ -317,7 +315,9 @@ mod tests {
     async fn fetch_rejects_invalid_scheme() {
         // `validate_url` rejects non-http(s) schemes before any request is made.
         let client = build_client().unwrap();
-        let err = fetch(&client, &req("ftp://example.com/file")).await.unwrap_err();
+        let err = fetch(&client, &req("ftp://example.com/file"))
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("scheme"),
             "expected scheme rejection, got: {err}"
@@ -328,7 +328,9 @@ mod tests {
     async fn fetch_rejects_non_default_port() {
         // The strict validator rejects ports other than 80/443.
         let client = build_client().unwrap();
-        let err = fetch(&client, &req("http://example.com:8080/")).await.unwrap_err();
+        let err = fetch(&client, &req("http://example.com:8080/"))
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("port"),
             "expected port rejection, got: {err}"
@@ -338,7 +340,9 @@ mod tests {
     #[tokio::test]
     async fn fetch_rejects_embedded_credentials() {
         let client = build_client().unwrap();
-        let err = fetch(&client, &req("http://user:pass@example.com/")).await.unwrap_err();
+        let err = fetch(&client, &req("http://user:pass@example.com/"))
+            .await
+            .unwrap_err();
         assert!(
             err.to_string().contains("credentials"),
             "expected credentials rejection, got: {err}"
@@ -525,7 +529,11 @@ mod tests {
     /// Spawn a one-shot server that replies with `status` (and reason `reason`),
     /// a `Location: location` header, and an empty body. Models the redirect
     /// response `fetch()` inspects before following a hop.
-    async fn spawn_redirect_server(status: u16, reason: &str, location: &str) -> std::net::SocketAddr {
+    async fn spawn_redirect_server(
+        status: u16,
+        reason: &str,
+        location: &str,
+    ) -> std::net::SocketAddr {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let reason = reason.to_string();
@@ -584,7 +592,10 @@ mod tests {
     /// only writes `sent_len` of them, then closes the socket. The truncated body
     /// makes `reqwest`'s `chunk()` surface an "incomplete body" error, exercising
     /// the `?` error-propagation arm of `read_capped`.
-    async fn spawn_truncated_body_server(claimed_len: usize, sent_len: usize) -> std::net::SocketAddr {
+    async fn spawn_truncated_body_server(
+        claimed_len: usize,
+        sent_len: usize,
+    ) -> std::net::SocketAddr {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -646,17 +657,26 @@ mod tests {
         // the Location header; reading its (empty) body must yield no bytes.
         let addr = spawn_redirect_server(301, "Moved Permanently", "http://example.com/next").await;
 
-        let client = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
         let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         assert_eq!(response.status().as_u16(), 301, "server must report a 301");
         assert_eq!(
-            response.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok()),
+            response
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok()),
             Some("http://example.com/next"),
             "the Location header `fetch()` follows must be present"
         );
         let buf = read_capped(response, MAX_BODY_BYTES).await.unwrap();
-        assert!(buf.is_empty(), "an empty redirect body must read as zero bytes");
+        assert!(
+            buf.is_empty(),
+            "an empty redirect body must read as zero bytes"
+        );
     }
 
     #[tokio::test]
@@ -665,7 +685,10 @@ mod tests {
         // identically to 301 (anything in 300..=399 enters the redirect branch).
         let addr = spawn_redirect_server(302, "Found", "/relative/path").await;
 
-        let client = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
         let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         assert_eq!(response.status().as_u16(), 302);
@@ -682,7 +705,10 @@ mod tests {
         let body = "Not Found: unavailable in your region";
         let addr = spawn_status_server(404, "Not Found", body).await;
 
-        let client = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
         let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         assert_eq!(response.status().as_u16(), 404, "server must report a 404");
@@ -701,7 +727,10 @@ mod tests {
         let body = "Internal Server Error";
         let addr = spawn_status_server(500, "Internal Server Error", body).await;
 
-        let client = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
         let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         assert_eq!(response.status().as_u16(), 500);
@@ -716,12 +745,19 @@ mod tests {
         let body = "B".repeat(MAX_BODY_BYTES + 4096);
         let addr = spawn_status_server(403, "Forbidden", &body).await;
 
-        let client = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
         let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         assert_eq!(response.status().as_u16(), 403);
         let buf = read_capped(response, MAX_BODY_BYTES).await.unwrap();
-        assert_eq!(buf.len(), MAX_BODY_BYTES, "the cap bounds non-2xx bodies too");
+        assert_eq!(
+            buf.len(),
+            MAX_BODY_BYTES,
+            "the cap bounds non-2xx bodies too"
+        );
     }
 
     // ── read_capped: chunk() error propagation (incomplete body) ─────────────
@@ -733,7 +769,10 @@ mod tests {
         // incomplete-body error, which `read_capped` propagates via `?`.
         let addr = spawn_truncated_body_server(64 * 1024, 1024).await;
 
-        let client = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
         let response = client.get(format!("http://{addr}/")).send().await.unwrap();
 
         let result = read_capped(response, MAX_BODY_BYTES).await;
@@ -755,7 +794,10 @@ mod tests {
         let wrapper_budget = Duration::from_millis(150);
         let addr = spawn_slow_server(server_delay).await;
 
-        let client = reqwest::Client::builder().redirect(Policy::none()).build().unwrap();
+        let client = reqwest::Client::builder()
+            .redirect(Policy::none())
+            .build()
+            .unwrap();
         let send_fut = client.get(format!("http://{addr}/")).send();
 
         let outcome = tokio::time::timeout(wrapper_budget, send_fut).await;
@@ -764,9 +806,9 @@ mod tests {
             "a response slower than the wrapper budget must elapse the timeout"
         );
         // Mirror `fetch()`'s error-mapping so the asserted shape matches production.
-        let mapped: Result<()> = outcome
-            .map(|_| ())
-            .map_err(|_| anyhow::anyhow!("request timed out after {}ms", wrapper_budget.as_millis()));
+        let mapped: Result<()> = outcome.map(|_| ()).map_err(|_| {
+            anyhow::anyhow!("request timed out after {}ms", wrapper_budget.as_millis())
+        });
         assert!(mapped.unwrap_err().to_string().contains("timed out"));
     }
 

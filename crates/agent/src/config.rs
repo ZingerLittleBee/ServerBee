@@ -25,6 +25,17 @@ pub struct AgentConfig {
     pub security: SecurityConfig,
     #[serde(default)]
     pub capabilities: CapabilitiesConfig,
+    #[serde(default)]
+    pub tailscale: TailscaleConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct TailscaleConfig {
+    #[serde(default)]
+    pub socket_path: String,
+    #[cfg(test)]
+    #[serde(skip)]
+    pub disable_cli_fallback_for_test: bool,
 }
 
 /// Agent-local capability policy, authored exclusively on the agent host
@@ -167,6 +178,8 @@ pub struct CollectorConfig {
     pub enable_gpu: bool,
     #[serde(default = "default_true")]
     pub enable_temperature: bool,
+    #[serde(default = "default_true")]
+    pub exclude_tailscale_traffic: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
@@ -291,6 +304,7 @@ impl Default for CollectorConfig {
             interval: 3,
             enable_gpu: false,
             enable_temperature: true,
+            exclude_tailscale_traffic: true,
         }
     }
 }
@@ -601,6 +615,29 @@ enable_temperature = false
         assert_eq!(c.interval, 3);
         assert!(!c.enable_gpu);
         assert!(c.enable_temperature);
+        assert!(c.exclude_tailscale_traffic);
+    }
+
+    #[test]
+    fn tailscale_and_collector_tailscale_traffic_config_parse_from_toml() {
+        let defaults = AgentConfig::default();
+        assert!(defaults.collector.exclude_tailscale_traffic);
+        assert_eq!(defaults.tailscale.socket_path, "");
+
+        let c: AgentConfig = figment::Figment::new()
+            .merge(figment::providers::Toml::string(
+                r#"
+server_url = "ws://localhost:9527"
+[collector]
+exclude_tailscale_traffic = false
+[tailscale]
+socket_path = "/custom/run/tailscaled.sock"
+"#,
+            ))
+            .extract()
+            .expect("AgentConfig with tailscale overrides");
+        assert!(!c.collector.exclude_tailscale_traffic);
+        assert_eq!(c.tailscale.socket_path, "/custom/run/tailscaled.sock");
     }
 
     #[test]
@@ -671,7 +708,10 @@ interval_secs = 60
             .extract()
             .expect("AgentConfig with ip_change overrides");
         assert!(!c.ip_change.enabled);
-        assert_eq!(c.ip_change.external_ip_urls, vec!["https://example.test/ip"]);
+        assert_eq!(
+            c.ip_change.external_ip_urls,
+            vec!["https://example.test/ip"]
+        );
         assert_eq!(c.ip_change.interval_secs, 60);
     }
 

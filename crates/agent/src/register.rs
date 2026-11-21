@@ -239,6 +239,7 @@ mod tests {
             upgrade: UpgradeConfig::default(),
             security: SecurityConfig::default(),
             capabilities: CapabilitiesConfig::default(),
+            tailscale: crate::config::TailscaleConfig::default(),
         }
     }
 

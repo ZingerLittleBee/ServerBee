@@ -205,9 +205,8 @@ mod tests {
     fn single_user_hammering_triggers_medium() {
         let now = Arc::new(Mutex::new(Instant::now()));
         let nowc = now.clone();
-        let mut det = SshDetector::with_clock(Duration::from_secs(60), 10, move || {
-            *nowc.lock().unwrap()
-        });
+        let mut det =
+            SshDetector::with_clock(Duration::from_secs(60), 10, move || *nowc.lock().unwrap());
         for _ in 0..9 {
             assert!(matches!(
                 det.observe(attempt("root", "1.2.3.4", false)),
@@ -278,9 +277,8 @@ mod tests {
     fn window_expiry_resets() {
         let now = Arc::new(Mutex::new(Instant::now()));
         let nowc = now.clone();
-        let mut det = SshDetector::with_clock(Duration::from_secs(60), 3, move || {
-            *nowc.lock().unwrap()
-        });
+        let mut det =
+            SshDetector::with_clock(Duration::from_secs(60), 3, move || *nowc.lock().unwrap());
         det.observe(attempt("root", "1.2.3.4", false));
         det.observe(attempt("root", "1.2.3.4", false));
         *now.lock().unwrap() += Duration::from_secs(120);
@@ -327,9 +325,8 @@ mod tests {
     fn sweep_evicts_fully_aged_ips() {
         let now = Arc::new(Mutex::new(Instant::now()));
         let nowc = now.clone();
-        let mut det = SshDetector::with_clock(Duration::from_secs(60), 10, move || {
-            *nowc.lock().unwrap()
-        });
+        let mut det =
+            SshDetector::with_clock(Duration::from_secs(60), 10, move || *nowc.lock().unwrap());
         det.observe(attempt("root", "1.2.3.4", false));
         det.observe(attempt("root", "5.6.7.8", false));
         assert_eq!(det.per_ip.len(), 2);
@@ -344,9 +341,8 @@ mod tests {
     fn sweep_retains_ip_with_recent_entries() {
         let now = Arc::new(Mutex::new(Instant::now()));
         let nowc = now.clone();
-        let mut det = SshDetector::with_clock(Duration::from_secs(60), 10, move || {
-            *nowc.lock().unwrap()
-        });
+        let mut det =
+            SshDetector::with_clock(Duration::from_secs(60), 10, move || *nowc.lock().unwrap());
         det.observe(attempt("root", "1.2.3.4", false));
         // Advance only a little — entry is still inside the window.
         *now.lock().unwrap() += Duration::from_secs(5);
@@ -366,9 +362,8 @@ mod tests {
     fn expiry_partially_drops_then_refills_to_fire() {
         let now = Arc::new(Mutex::new(Instant::now()));
         let nowc = now.clone();
-        let mut det = SshDetector::with_clock(Duration::from_secs(60), 3, move || {
-            *nowc.lock().unwrap()
-        });
+        let mut det =
+            SshDetector::with_clock(Duration::from_secs(60), 3, move || *nowc.lock().unwrap());
         // Two failures at t0.
         det.observe(attempt("root", "1.2.3.4", false));
         det.observe(attempt("root", "1.2.3.4", false));
@@ -398,9 +393,8 @@ mod tests {
     fn started_and_ended_at_reflect_window_bounds() {
         let now = Arc::new(Mutex::new(Instant::now()));
         let nowc = now.clone();
-        let mut det = SshDetector::with_clock(Duration::from_secs(600), 3, move || {
-            *nowc.lock().unwrap()
-        });
+        let mut det =
+            SshDetector::with_clock(Duration::from_secs(600), 3, move || *nowc.lock().unwrap());
         let t0 = *now.lock().unwrap();
         det.observe(attempt("root", "1.2.3.4", false)); // at t0
         *now.lock().unwrap() += Duration::from_secs(10);
@@ -483,7 +477,9 @@ mod tests {
         }
         let last = det.observe(attempt("f", "1.2.3.4", false));
         match last {
-            DetectorEmit::BruteForce { evidence, severity, .. } => {
+            DetectorEmit::BruteForce {
+                evidence, severity, ..
+            } => {
                 assert_eq!(severity, Severity::Critical);
                 if let SecurityEvidence::SshBruteForce {
                     sample_users,

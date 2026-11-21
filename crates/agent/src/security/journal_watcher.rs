@@ -155,9 +155,7 @@ fn strip_syslog_prefix(line: &str) -> Option<&str> {
     // OpenSSH ≥9.8 logs auth lines from the per-connection "sshd-session"
     // process (`sshd-session[PID]: ...`); older releases use `sshd[PID]: ...`.
     // Match the longer name first so we don't accidentally split inside it.
-    let idx = line
-        .find("sshd-session[")
-        .or_else(|| line.find("sshd["))?;
+    let idx = line.find("sshd-session[").or_else(|| line.find("sshd["))?;
     let rest = &line[idx..];
     let bracket = rest.find("]: ")?;
     Some(&rest[bracket + 3..])
@@ -280,9 +278,7 @@ fn extract_blocked_ip(msg: &str) -> Option<String> {
     }
     let idx = msg.find("SRC=")?;
     let rest = &msg[idx + 4..];
-    let end = rest
-        .find(|c: char| c.is_whitespace())
-        .unwrap_or(rest.len());
+    let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
     let ip = &rest[..end];
     if ip.is_empty() {
         None
@@ -421,19 +417,22 @@ mod tests {
 
     #[test]
     fn strip_syslog_prefix_works() {
-        let l = "Mar 12 13:14:15 host sshd[1234]: Failed password for root from 1.2.3.4 port 22 ssh2";
+        let l =
+            "Mar 12 13:14:15 host sshd[1234]: Failed password for root from 1.2.3.4 port 22 ssh2";
         assert_eq!(
             strip_syslog_prefix(l),
             Some("Failed password for root from 1.2.3.4 port 22 ssh2")
         );
-        assert_eq!(strip_syslog_prefix("Mar 12 13:14:15 host kernel: foo"), None);
+        assert_eq!(
+            strip_syslog_prefix("Mar 12 13:14:15 host kernel: foo"),
+            None
+        );
     }
 
     #[test]
     fn strip_syslog_prefix_handles_sshd_session() {
         // OpenSSH ≥9.8 emits auth lines from the "sshd-session" helper.
-        let l =
-            "Jun 14 01:23:18 host sshd-session[957410]: Failed password for invalid user qa from 127.0.0.1 port 2850 ssh2";
+        let l = "Jun 14 01:23:18 host sshd-session[957410]: Failed password for invalid user qa from 127.0.0.1 port 2850 ssh2";
         assert_eq!(
             strip_syslog_prefix(l),
             Some("Failed password for invalid user qa from 127.0.0.1 port 2850 ssh2")

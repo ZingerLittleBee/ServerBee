@@ -53,17 +53,13 @@ pub struct CliNftExecutor;
 #[async_trait]
 impl NftExecutor for CliNftExecutor {
     async fn run(&self, args: &[&str], op: NftOp) -> Result<(), NftError> {
-        let out = Command::new("nft")
-            .args(args)
-            .output()
-            .await
-            .map_err(|e| {
-                if matches!(e.kind(), std::io::ErrorKind::NotFound) {
-                    NftError::BinaryMissing
-                } else {
-                    NftError::Other(e.to_string())
-                }
-            })?;
+        let out = Command::new("nft").args(args).output().await.map_err(|e| {
+            if matches!(e.kind(), std::io::ErrorKind::NotFound) {
+                NftError::BinaryMissing
+            } else {
+                NftError::Other(e.to_string())
+            }
+        })?;
         if out.status.success() {
             return Ok(());
         }
@@ -155,7 +151,15 @@ pub async fn ensure_resources(exec: &dyn NftExecutor) -> Result<(), NftError> {
     if !chain_has_set_drop_rule(&listing, "block_v4") {
         exec.run(
             &[
-                "add", "rule", "inet", "serverbee", "input", "ip", "saddr", "@block_v4", "drop",
+                "add",
+                "rule",
+                "inet",
+                "serverbee",
+                "input",
+                "ip",
+                "saddr",
+                "@block_v4",
+                "drop",
             ],
             NftOp::AddRule,
         )
@@ -164,7 +168,15 @@ pub async fn ensure_resources(exec: &dyn NftExecutor) -> Result<(), NftError> {
     if !chain_has_set_drop_rule(&listing, "block_v6") {
         exec.run(
             &[
-                "add", "rule", "inet", "serverbee", "input", "ip6", "saddr", "@block_v6", "drop",
+                "add",
+                "rule",
+                "inet",
+                "serverbee",
+                "input",
+                "ip6",
+                "saddr",
+                "@block_v6",
+                "drop",
             ],
             NftOp::AddRule,
         )
@@ -376,7 +388,10 @@ mod tests {
     fn delete_op_with_file_exists_is_not_idempotent() {
         // ENOENT is the only idempotent signal for delete ops; a stray
         // "File exists" must not be mistaken for one.
-        assert!(!is_idempotent_signal("Error: File exists", NftOp::DeleteElement));
+        assert!(!is_idempotent_signal(
+            "Error: File exists",
+            NftOp::DeleteElement
+        ));
     }
 
     #[test]
@@ -482,9 +497,16 @@ mod tests {
         ensure_resources(&exec).await.unwrap();
         let calls = exec.calls.lock().await;
         let added_rule = calls.iter().any(|c| c.join(" ").contains("add rule"));
-        assert!(!added_rule, "drop rules already present must not be re-added");
+        assert!(
+            !added_rule,
+            "drop rules already present must not be re-added"
+        );
         // Table/set/chain bootstrap still happens.
-        assert!(calls.iter().any(|c| c.join(" ").contains("add table inet serverbee")));
+        assert!(
+            calls
+                .iter()
+                .any(|c| c.join(" ").contains("add table inet serverbee"))
+        );
     }
 
     /// Mock whose first `run` (add table) fails, so `ensure_resources`
@@ -536,7 +558,10 @@ mod tests {
 
     #[test]
     fn chain_has_set_drop_rule_missing_nftables_key() {
-        assert!(!super::chain_has_set_drop_rule(r#"{"other":[]}"#, "block_v4"));
+        assert!(!super::chain_has_set_drop_rule(
+            r#"{"other":[]}"#,
+            "block_v4"
+        ));
     }
 
     #[test]
