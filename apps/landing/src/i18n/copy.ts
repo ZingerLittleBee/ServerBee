@@ -437,7 +437,7 @@ const zh: LandingCopy = {
         items: [
           {
             t: '安全事件与防火墙',
-            d: '识别 SSH 爆破、新来源登录和端口扫描，支持把攻击源 IP 写入主机 nftables 黑名单。'
+            d: '识别 SSH 爆破和新来源登录，开启后还能识别端口扫描，支持把攻击源 IP 写入主机 nftables 黑名单。'
           },
           {
             t: '账号与权限',
@@ -545,7 +545,7 @@ const zh: LandingCopy = {
       },
       {
         q: 'iOS App 在哪下载？',
-        a: '即将上架 App Store。上架前可以用 Xcode 从仓库的 apps/ios 目录自行构建，支持 iOS {ios} 及以上版本的 iPhone。'
+        a: '即将上架 App Store。上架前可用 XcodeGen 和 Xcode 从仓库的 apps/ios 目录自行构建，支持 iOS {ios} 及以上版本的 iPhone。签名需使用你自己的 Apple 开发者团队。'
       }
     ]
   },
@@ -868,7 +868,7 @@ const en: LandingCopy = {
         items: [
           {
             t: 'Security events & firewall',
-            d: 'Catches SSH brute force, logins from new IPs and port scans, and can drop offending IPs into an nftables blocklist.'
+            d: 'Catches SSH brute force and logins from new IPs, plus port scans when enabled, and can drop offending IPs into an nftables blocklist.'
           },
           {
             t: 'Accounts & access',
@@ -976,7 +976,7 @@ const en: LandingCopy = {
       },
       {
         q: 'Where do I get the iOS app?',
-        a: 'It’s heading to the App Store. Until then, build it from apps/ios in the repository with Xcode for any iPhone running iOS {ios} or later.'
+        a: 'It’s heading to the App Store. Until then, build it from apps/ios in the repository using XcodeGen and Xcode, signed with your own Apple development team. It runs on iOS {ios} or later.'
       }
     ]
   },
