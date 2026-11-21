@@ -25,9 +25,9 @@ fn matches_rule(outcome: &HttpOutcome, m: &UnlockMatch) -> bool {
     match m {
         UnlockMatch::StatusEquals { code } => outcome.status == *code,
         UnlockMatch::StatusInRange { min, max } => outcome.status >= *min && outcome.status <= *max,
-        UnlockMatch::BodyRegex { pattern } => {
-            Regex::new(pattern).map(|re| re.is_match(&outcome.body)).unwrap_or(false)
-        }
+        UnlockMatch::BodyRegex { pattern } => Regex::new(pattern)
+            .map(|re| re.is_match(&outcome.body))
+            .unwrap_or(false),
         UnlockMatch::RedirectMatches { pattern } => {
             let re = match Regex::new(pattern) {
                 Ok(r) => r,
@@ -64,40 +64,76 @@ mod tests {
 
     #[test]
     fn status_equals_matches_exact_code() {
-        let rules = vec![rule(UnlockMatch::StatusEquals { code: 200 }, UnlockStatus::Unlocked)];
-        assert_eq!(apply_rules(&outcome(200, "", "http://x.com/", vec![]), &rules), UnlockStatus::Unlocked);
+        let rules = vec![rule(
+            UnlockMatch::StatusEquals { code: 200 },
+            UnlockStatus::Unlocked,
+        )];
+        assert_eq!(
+            apply_rules(&outcome(200, "", "http://x.com/", vec![]), &rules),
+            UnlockStatus::Unlocked
+        );
     }
 
     #[test]
     fn status_equals_no_match_returns_failed() {
-        let rules = vec![rule(UnlockMatch::StatusEquals { code: 200 }, UnlockStatus::Unlocked)];
-        assert_eq!(apply_rules(&outcome(404, "", "http://x.com/", vec![]), &rules), UnlockStatus::Failed);
+        let rules = vec![rule(
+            UnlockMatch::StatusEquals { code: 200 },
+            UnlockStatus::Unlocked,
+        )];
+        assert_eq!(
+            apply_rules(&outcome(404, "", "http://x.com/", vec![]), &rules),
+            UnlockStatus::Failed
+        );
     }
 
     // ── StatusInRange ─────────────────────────────────────────────────────────
 
     #[test]
     fn status_in_range_matches_boundary_min() {
-        let rules = vec![rule(UnlockMatch::StatusInRange { min: 200, max: 299 }, UnlockStatus::Unlocked)];
-        assert_eq!(apply_rules(&outcome(200, "", "http://x.com/", vec![]), &rules), UnlockStatus::Unlocked);
+        let rules = vec![rule(
+            UnlockMatch::StatusInRange { min: 200, max: 299 },
+            UnlockStatus::Unlocked,
+        )];
+        assert_eq!(
+            apply_rules(&outcome(200, "", "http://x.com/", vec![]), &rules),
+            UnlockStatus::Unlocked
+        );
     }
 
     #[test]
     fn status_in_range_matches_boundary_max() {
-        let rules = vec![rule(UnlockMatch::StatusInRange { min: 200, max: 299 }, UnlockStatus::Unlocked)];
-        assert_eq!(apply_rules(&outcome(299, "", "http://x.com/", vec![]), &rules), UnlockStatus::Unlocked);
+        let rules = vec![rule(
+            UnlockMatch::StatusInRange { min: 200, max: 299 },
+            UnlockStatus::Unlocked,
+        )];
+        assert_eq!(
+            apply_rules(&outcome(299, "", "http://x.com/", vec![]), &rules),
+            UnlockStatus::Unlocked
+        );
     }
 
     #[test]
     fn status_in_range_no_match_below() {
-        let rules = vec![rule(UnlockMatch::StatusInRange { min: 200, max: 299 }, UnlockStatus::Unlocked)];
-        assert_eq!(apply_rules(&outcome(199, "", "http://x.com/", vec![]), &rules), UnlockStatus::Failed);
+        let rules = vec![rule(
+            UnlockMatch::StatusInRange { min: 200, max: 299 },
+            UnlockStatus::Unlocked,
+        )];
+        assert_eq!(
+            apply_rules(&outcome(199, "", "http://x.com/", vec![]), &rules),
+            UnlockStatus::Failed
+        );
     }
 
     #[test]
     fn status_in_range_no_match_above() {
-        let rules = vec![rule(UnlockMatch::StatusInRange { min: 200, max: 299 }, UnlockStatus::Unlocked)];
-        assert_eq!(apply_rules(&outcome(300, "", "http://x.com/", vec![]), &rules), UnlockStatus::Failed);
+        let rules = vec![rule(
+            UnlockMatch::StatusInRange { min: 200, max: 299 },
+            UnlockStatus::Unlocked,
+        )];
+        assert_eq!(
+            apply_rules(&outcome(300, "", "http://x.com/", vec![]), &rules),
+            UnlockStatus::Failed
+        );
     }
 
     // ── BodyRegex ────────────────────────────────────────────────────────────
@@ -105,12 +141,19 @@ mod tests {
     #[test]
     fn body_regex_matches_pattern() {
         let rules = vec![rule(
-            UnlockMatch::BodyRegex { pattern: "unavailable in your region".to_string() },
+            UnlockMatch::BodyRegex {
+                pattern: "unavailable in your region".to_string(),
+            },
             UnlockStatus::Blocked,
         )];
         assert_eq!(
             apply_rules(
-                &outcome(200, "This content is unavailable in your region.", "http://x.com/", vec![]),
+                &outcome(
+                    200,
+                    "This content is unavailable in your region.",
+                    "http://x.com/",
+                    vec![]
+                ),
                 &rules
             ),
             UnlockStatus::Blocked
@@ -120,7 +163,9 @@ mod tests {
     #[test]
     fn body_regex_no_match() {
         let rules = vec![rule(
-            UnlockMatch::BodyRegex { pattern: "unavailable in your region".to_string() },
+            UnlockMatch::BodyRegex {
+                pattern: "unavailable in your region".to_string(),
+            },
             UnlockStatus::Blocked,
         )];
         assert_eq!(
@@ -133,11 +178,16 @@ mod tests {
     fn body_regex_case_sensitive() {
         // Pattern should not match with different case unless (?i) is in pattern
         let rules = vec![rule(
-            UnlockMatch::BodyRegex { pattern: "BLOCKED".to_string() },
+            UnlockMatch::BodyRegex {
+                pattern: "BLOCKED".to_string(),
+            },
             UnlockStatus::Blocked,
         )];
         assert_eq!(
-            apply_rules(&outcome(200, "blocked content", "http://x.com/", vec![]), &rules),
+            apply_rules(
+                &outcome(200, "blocked content", "http://x.com/", vec![]),
+                &rules
+            ),
             UnlockStatus::Failed
         );
     }
@@ -147,7 +197,9 @@ mod tests {
     #[test]
     fn redirect_matches_final_url() {
         let rules = vec![rule(
-            UnlockMatch::RedirectMatches { pattern: "geo-block".to_string() },
+            UnlockMatch::RedirectMatches {
+                pattern: "geo-block".to_string(),
+            },
             UnlockStatus::Blocked,
         )];
         assert_eq!(
@@ -162,7 +214,9 @@ mod tests {
     #[test]
     fn redirect_matches_intermediate_redirect() {
         let rules = vec![rule(
-            UnlockMatch::RedirectMatches { pattern: "not-available".to_string() },
+            UnlockMatch::RedirectMatches {
+                pattern: "not-available".to_string(),
+            },
             UnlockStatus::Blocked,
         )];
         assert_eq!(
@@ -182,11 +236,16 @@ mod tests {
     #[test]
     fn redirect_matches_no_match() {
         let rules = vec![rule(
-            UnlockMatch::RedirectMatches { pattern: "geo-block".to_string() },
+            UnlockMatch::RedirectMatches {
+                pattern: "geo-block".to_string(),
+            },
             UnlockStatus::Blocked,
         )];
         assert_eq!(
-            apply_rules(&outcome(200, "", "https://example.com/home", vec![]), &rules),
+            apply_rules(
+                &outcome(200, "", "https://example.com/home", vec![]),
+                &rules
+            ),
             UnlockStatus::Failed
         );
     }
@@ -196,14 +255,26 @@ mod tests {
     #[test]
     fn first_matching_rule_wins() {
         let rules = vec![
-            rule(UnlockMatch::StatusEquals { code: 200 }, UnlockStatus::Unlocked),
-            rule(UnlockMatch::StatusEquals { code: 200 }, UnlockStatus::Blocked),
+            rule(
+                UnlockMatch::StatusEquals { code: 200 },
+                UnlockStatus::Unlocked,
+            ),
+            rule(
+                UnlockMatch::StatusEquals { code: 200 },
+                UnlockStatus::Blocked,
+            ),
         ];
-        assert_eq!(apply_rules(&outcome(200, "", "http://x.com/", vec![]), &rules), UnlockStatus::Unlocked);
+        assert_eq!(
+            apply_rules(&outcome(200, "", "http://x.com/", vec![]), &rules),
+            UnlockStatus::Unlocked
+        );
     }
 
     #[test]
     fn no_rules_returns_failed() {
-        assert_eq!(apply_rules(&outcome(200, "", "http://x.com/", vec![]), &[]), UnlockStatus::Failed);
+        assert_eq!(
+            apply_rules(&outcome(200, "", "http://x.com/", vec![]), &[]),
+            UnlockStatus::Failed
+        );
     }
 }

@@ -37,6 +37,7 @@ export const docsPages = [
   'mobile',
   'monitoring',
   'quick-start',
+  'tailscale',
   'testing'
 ] as const
 type DocsPage = (typeof docsPages)[number]
@@ -168,6 +169,7 @@ export type CapabilityId =
   | 'securityEvents'
   | 'firewall'
   | 'ipQuality'
+  | 'tailscale'
 
 /** Unlock-matrix states; `none` (no data) renders as a dash instead of a label. */
 export type UnlockStatus = 'ok' | 'lim' | 'blk' | 'fail'
@@ -422,7 +424,7 @@ const zh: LandingCopy = {
     points: [
       {
         t: '高危能力默认关闭',
-        d: '默认只开启探测、安全事件、防火墙黑名单、IP 质量和升级。'
+        d: '默认只开启探测、安全事件、防火墙黑名单、IP 质量、Tailscale 和升级。'
       },
       {
         t: '只有主机能打开',
@@ -446,7 +448,7 @@ const zh: LandingCopy = {
   },
   dash: {
     h2: '监控墙，按你的习惯摆。',
-    lede: '17 种内置小组件，在 12 列网格上拖拽、缩放、锁定。运维总览、客户看板、机房大屏，想建几个就建几个。',
+    lede: '18 种内置小组件，在 12 列网格上拖拽、缩放、锁定。运维总览、客户看板、机房大屏，想建几个就建几个。',
     points: [
       {
         t: '实时、图表、状态三类',
@@ -469,7 +471,7 @@ const zh: LandingCopy = {
   ios: {
     h2: '整个机群，装进 iPhone。',
     chip: '开源 · App Store 即将上架 · iOS 17+',
-    lede: '原生 SwiftUI 应用，只用 Apple 自家框架，没有第三方 SDK，也不做统计。服务器、告警、网络质量、IP 质量和 Docker 都能在手机上看。',
+    lede: '原生 SwiftUI 应用，只用 Apple 自家框架，没有第三方 SDK，也不做统计。服务器、告警、网络质量、IP 质量、Tailscale 和 Docker 都能在手机上看。',
     points: [
       {
         t: '扫码登录',
@@ -530,7 +532,7 @@ const zh: LandingCopy = {
       },
       {
         t: '账号与权限',
-        d: '管理员与只读成员，GitHub、Google、OIDC 登录，TOTP 两步验证，API 密钥。'
+        d: '管理员与只读成员，GitHub、Google、OIDC 与 Tailscale Serve 回环登录，TOTP 两步验证，API 密钥。'
       },
       {
         t: '升级与运维',
@@ -785,7 +787,8 @@ const zh: LandingCopy = {
       http: 'HTTP 探测',
       securityEvents: '安全事件',
       firewall: '防火墙封禁',
-      ipQuality: 'IP 质量'
+      ipQuality: 'IP 质量',
+      tailscale: 'Tailscale'
     }
   }
 }
@@ -912,7 +915,7 @@ const en: LandingCopy = {
     points: [
       {
         t: 'High-risk off by default',
-        d: 'The default set covers probes, security events, the firewall blocklist, IP quality and upgrades.'
+        d: 'The default set covers probes, security events, the firewall blocklist, IP quality, Tailscale and upgrades.'
       },
       {
         t: 'Only the host can turn them on',
@@ -936,7 +939,7 @@ const en: LandingCopy = {
   },
   dash: {
     h2: 'Build the wall you actually want to look at.',
-    lede: '17 built-in widgets on a 12-column grid: drag, resize, lock. Build an ops overview, a customer board or a wallboard, as many as you need.',
+    lede: '18 built-in widgets on a 12-column grid: drag, resize, lock. Build an ops overview, a customer board or a wallboard, as many as you need.',
     points: [
       {
         t: 'Real-time, charts, status',
@@ -959,7 +962,7 @@ const en: LandingCopy = {
   ios: {
     h2: 'Your whole fleet, in your pocket.',
     chip: 'Open source · App Store soon · iOS 17+',
-    lede: 'A native SwiftUI app built only on Apple frameworks, with no third-party SDKs and no analytics. Servers, alerts, network quality, IP quality and Docker, all on your phone.',
+    lede: 'A native SwiftUI app built only on Apple frameworks, with no third-party SDKs and no analytics. Servers, alerts, network quality, IP quality, Tailscale and Docker, all on your phone.',
     points: [
       {
         t: 'Scan to sign in',
@@ -1020,7 +1023,7 @@ const en: LandingCopy = {
       },
       {
         t: 'Accounts & access',
-        d: 'Admins and read-only members, GitHub, Google and OIDC sign-in, TOTP 2FA and API keys.'
+        d: 'Admins and read-only members, GitHub, Google, OIDC and Tailscale Serve loopback sign-in, TOTP 2FA and API keys.'
       },
       {
         t: 'Upgrades & ops',
@@ -1279,7 +1282,8 @@ const en: LandingCopy = {
       http: 'HTTP probe',
       securityEvents: 'Security events',
       firewall: 'Firewall block',
-      ipQuality: 'IP quality'
+      ipQuality: 'IP quality',
+      tailscale: 'Tailscale'
     }
   }
 }

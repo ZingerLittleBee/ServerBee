@@ -24,7 +24,7 @@ ServerBee watches all your servers from one place. A central **server** receives
 - 🪶 **Tiny footprint** — agents use ~4.3 MB at cold start and ~27 MB in steady state, and the server stays lightweight as your fleet grows.
 - ⚡ **Real-time** — live WebSocket dashboard for CPU, memory, disk, network, load, temperature, disk I/O, and optional NVIDIA GPU metrics from a self-built Agent (`--features gpu`; prebuilt binaries exclude GPU support).
 - 📦 **Single binary** — server + embedded web UI in one file. Deploy with Docker, a one-line script, or Railway.
-- 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, status pages, and more.
+- 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, Tailscale & Headscale, status pages, and more.
 - 🔒 **Secure by default** — OAuth + 2FA, RBAC, audit logs, one-time agent enrollment, agent-owned capability gates.
 - ✅ **Battle-tested** — 3,800+ automated tests and over 91% measured Rust region coverage, including integration suites that drive the real router over HTTP + WebSocket via a mock-agent harness; green on every CI run.
 
@@ -62,10 +62,10 @@ The Agent generates and persists its run token before claiming the offer, then r
 |---|---|
 | **📊 Monitoring** | Real-time metrics (CPU/mem/disk/network/load/temp/disk I/O, plus optional self-built NVIDIA GPU support) · historical charts (1h–30d) · Docker container stats, logs & events · monthly traffic statistics with billing-cycle prediction · cost insights (burn rate, per-resource unit cost, 0–100 value score) |
 | **🔔 Alerts** | 14+ metric types · threshold / offline / traffic / expiration rules · Webhook, Telegram, Bark, Email & APNs channels with notification groups |
-| **🌐 Network** | Ping monitoring (ICMP/TCP/HTTP) · network-quality probing (96 China 3-ISP + international presets) · service monitors (SSL/DNS/HTTP-keyword/TCP/WHOIS) · IP-quality & streaming-unlock detection with fraud scoring |
+| **🌐 Network** | Ping monitoring (ICMP/TCP/HTTP) · network-quality probing (96 China 3-ISP + international presets) · Tailscale & Headscale mesh monitoring (`Direct` vs `DERP`, MagicDNS, key expiry) · service monitors (SSL/DNS/HTTP-keyword/TCP/WHOIS) · IP-quality & streaming-unlock detection with fraud scoring |
 | **🛠️ Remote management** | Browser web terminal (PTY over WS) · sandboxed file manager with Monaco editor · firewall blocklist via nftables · agent-owned capability gates with host-local temporary grants · agent auto-update |
-| **🔐 Security & access** | SSH login / brute-force / port-scan detection · OAuth (GitHub/Google/OIDC) + TOTP 2FA · Admin/Member RBAC · audit logs · one-time agent enrollment codes |
-| **🖥️ Dashboards & sharing** | Drag-and-drop custom dashboards (17 widget types) · public status pages with 90-day uptime timelines · custom OKLCH themes · server groups with country flags · native iOS companion app |
+| **🔐 Security & access** | SSH login / brute-force / port-scan detection · OAuth (GitHub/Google/OIDC) + TOTP 2FA · Tailscale Serve loopback identity auth · Admin/Member RBAC · audit logs · one-time agent enrollment codes |
+| **🖥️ Dashboards & sharing** | Drag-and-drop custom dashboards (18 widget types, incl. Tailscale overview) · public status pages with 90-day uptime timelines · custom OKLCH themes · server groups with country flags · native iOS companion app |
 | **⚙️ Ops** | `serverbee` management CLI · backup & restore · GeoIP region detection · OpenAPI/Swagger docs (180+ endpoints) |
 
 ## Configuration
@@ -114,9 +114,9 @@ sudo serverbee config         # view / set config
 sudo serverbee uninstall agent -y
 ```
 
-### Reverse proxy
+### Reverse proxy & Tailscale sidecar
 
-Behind Nginx/Caddy, proxy `/` to `127.0.0.1:9527` and make sure the WebSocket routes `/api/ws/` and `/api/agent/ws` forward the `Upgrade`/`Connection` headers with a long read timeout. See the [deployment docs](https://docs.serverbee.app/en/docs/deployment) for a ready-to-use Nginx config.
+Behind Nginx/Caddy, proxy `/` to `127.0.0.1:9527` and make sure the WebSocket routes `/api/ws/` and `/api/agent/ws` forward the `Upgrade`/`Connection` headers with a long read timeout. See the [deployment docs](https://docs.serverbee.app/en/docs/deployment) for a ready-to-use Nginx config. To publish privately on a Tailnet with automatic `*.ts.net` HTTPS and optional loopback identity auth, use [`deploy/docker-compose.tailscale.yml`](deploy/docker-compose.tailscale.yml) — see the [Tailscale guide](https://docs.serverbee.app/en/docs/tailscale).
 
 ## Development
 

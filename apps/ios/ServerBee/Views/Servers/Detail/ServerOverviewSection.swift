@@ -42,13 +42,22 @@ struct ServerOverviewSection: View {
                         OverviewInfoCard(rows: system)
                     }
                 }
+                if showsTailscaleCard {
+                    ServerTailscaleNavigationCard(
+                        serverId: serverId,
+                        serverName: config?.name ?? live?.name ?? String(localized: "Server"),
+                        tailscaleIpv4: rawTailscaleIpv4,
+                        dnsName: rawTailscaleDns,
+                        tailnet: config?.tailscaleTailnet ?? live?.tailscaleTailnet
+                    )
+                }
                 if hasBilling {
                     OverviewInfoGroup(title: String(localized: "Billing")) {
                         billingCard
                     }
                 }
                 OverviewInfoGroup(title: String(localized: "Agent capabilities")) {
-                    capabilitiesCard
+                    ServerCapabilitiesCard(capabilities: capabilities)
                 }
                 if isAdmin {
                     AdvancedToolsCard(capabilities: capabilities)
@@ -317,24 +326,38 @@ private extension ServerOverviewSection {
         return rows
     }
 
+    var rawTailscaleIpv4: String? {
+        let ip = config?.tailscaleIpv4 ?? live?.tailscaleIpv4
+        return (ip?.isEmpty == false) ? ip : nil
+    }
+
+    var rawTailscaleDns: String? { TailscaleFormatting.cleanDNSName(config?.tailscaleDnsName ?? live?.tailscaleDnsName) }
+
+    var showsTailscaleCard: Bool {
+        TailscaleVisibility.shouldShow(
+            capabilities: capabilities, sectionCapabilities: config?.capabilitySet,
+            isOnline: isOnline, features: config?.features ?? live?.features, tailscaleIpv4: rawTailscaleIpv4
+        )
+    }
+
     var systemRows: [OverviewInfoRow] {
-        let candidates: [(String, String?)] = [
-            (String(localized: "IPv4"), (config?.ipv4 ?? live?.ipv4)?.maskingIPs(privacyMode)),
-            (String(localized: "IPv6"), (config?.ipv6 ?? live?.ipv6)?.maskingIPs(privacyMode)),
-            (String(localized: "Location"), locationText),
-            (String(localized: "OS"), config?.os ?? live?.os),
-            (String(localized: "Kernel"), config?.kernelVersion),
-            (String(localized: "Architecture"), config?.cpuArch),
-            (String(localized: "CPU"), config?.cpuName ?? live?.cpuName),
-            (String(localized: "Cores"), (config?.cpuCores ?? live?.cpuCores).map { "\($0)" }),
-            (String(localized: "Virtualization"), config?.virtualization),
-            (String(localized: "Agent"), config?.agentVersion),
-            (String(localized: "Last boot"), lastBootText)
+        let coresText = (config?.cpuCores ?? live?.cpuCores).map { "\($0)" }
+        let items: [OverviewInfoRow?] = [
+            OverviewInfoRow.optional(label: String(localized: "IPv4"), value: (config?.ipv4 ?? live?.ipv4)?.maskingIPs(privacyMode)),
+            OverviewInfoRow.optional(label: String(localized: "IPv6"), value: (config?.ipv6 ?? live?.ipv6)?.maskingIPs(privacyMode)),
+            OverviewInfoRow.optional(label: String(localized: "Tailscale IPv4"), value: rawTailscaleIpv4?.maskingIPs(privacyMode), copyValue: rawTailscaleIpv4),
+            OverviewInfoRow.optional(label: String(localized: "MagicDNS"), value: rawTailscaleDns?.maskingIPs(privacyMode), copyValue: rawTailscaleDns),
+            OverviewInfoRow.optional(label: String(localized: "Location"), value: locationText),
+            OverviewInfoRow.optional(label: String(localized: "OS"), value: config?.os ?? live?.os),
+            OverviewInfoRow.optional(label: String(localized: "Kernel"), value: config?.kernelVersion),
+            OverviewInfoRow.optional(label: String(localized: "Architecture"), value: config?.cpuArch),
+            OverviewInfoRow.optional(label: String(localized: "CPU"), value: config?.cpuName ?? live?.cpuName),
+            OverviewInfoRow.optional(label: String(localized: "Cores"), value: coresText),
+            OverviewInfoRow.optional(label: String(localized: "Virtualization"), value: config?.virtualization),
+            OverviewInfoRow.optional(label: String(localized: "Agent"), value: config?.agentVersion),
+            OverviewInfoRow.optional(label: String(localized: "Last boot"), value: lastBootText)
         ]
-        return candidates.compactMap { label, value in
-            guard let value, !value.isEmpty else { return nil }
-            return OverviewInfoRow(label: label, value: value)
-        }
+        return items.compactMap { $0 }
     }
 
     var locationText: String? {
@@ -470,47 +493,5 @@ private extension ServerOverviewSection {
         case "yearly": String(localized: "/ year")
         default: "/ \(cycle)"
         }
-    }
-
-    var capabilitiesCard: some View {
-        let enabled = Capability.allCases.filter { capabilities.isEnabled($0) }
-        let disabled = Capability.allCases.filter { !capabilities.isEnabled($0) }
-        let gaps = capabilities.configuredButUnavailable
-        // With no mask at all (config not loaded / fetch failed) nothing is
-        // known, so don't list every capability as "off".
-        let isKnown = capabilities.configured != nil || capabilities.agentLocal != nil || capabilities.effective != nil
-        return VStack(alignment: .leading, spacing: 10) {
-            if enabled.isEmpty {
-                Text(String(localized: "No capabilities enabled."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            if isKnown {
-                FlexibleWrap(items: enabled + disabled) { cap in
-                    if enabled.contains(cap) {
-                        Chip(text: cap.label, color: .accentColor)
-                    } else {
-                        Chip(text: String(localized: "\(cap.label) · off"), color: .secondary)
-                    }
-                }
-            }
-            if !gaps.isEmpty {
-                Label {
-                    Text(String(
-                        format: String(localized: "Configured but unavailable: %@"),
-                        gaps.map(\.label).joined(separator: ", ")
-                    ))
-                } icon: {
-                    Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(Color.warningAmber)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-            Text(String(localized: "Set on the agent host. Read-only here."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .cardSurface()
     }
 }

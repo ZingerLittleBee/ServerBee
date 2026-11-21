@@ -375,10 +375,7 @@ mod tests {
         assert_eq!(result.task_id, "dns1");
         assert!(!result.success);
         assert!((result.latency - 0.0).abs() < f64::EPSILON);
-        assert_eq!(
-            result.error.as_deref(),
-            Some("Unknown probe type: dns")
-        );
+        assert_eq!(result.error.as_deref(), Some("Unknown probe type: dns"));
         handle.abort();
     }
 
@@ -435,7 +432,10 @@ mod tests {
         // first immediate tick and actively running the loop (mirrors the
         // sibling interval tests, which `recv` to let the spawned task progress).
         tokio::time::advance(Duration::from_secs(5)).await;
-        let _ = rx.recv().await.expect("first result before the channel is closed");
+        let _ = rx
+            .recv()
+            .await
+            .expect("first result before the channel is closed");
 
         // Now close the channel; the NEXT interval tick produces a result whose
         // send fails, so the task returns instead of looping.

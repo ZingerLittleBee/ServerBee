@@ -1,4 +1,4 @@
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 
 use serverbee_common::constants::CapabilityKey;
 
@@ -23,7 +23,10 @@ pub fn run_grant(
 ) -> anyhow::Result<String> {
     let key: CapabilityKey = args.cap.parse().map_err(|e: String| anyhow::anyhow!(e))?;
     if base & key.to_bit() != 0 {
-        bail!("'{}' is already enabled in agent.toml; nothing to grant", key.as_str());
+        bail!(
+            "'{}' is already enabled in agent.toml; nothing to grant",
+            key.as_str()
+        );
     }
     let dur = parse_duration_secs(&args.for_duration)?;
     let max = config.capabilities.temporary_max_duration_secs()?;
@@ -121,7 +124,11 @@ mod tests {
         let out = run_grant(
             &config,
             CAP_DEFAULT,
-            &GrantArgs { cap: "terminal".into(), for_duration: "30m".into(), reason: Some("x".into()) },
+            &GrantArgs {
+                cap: "terminal".into(),
+                for_duration: "30m".into(),
+                reason: Some("x".into()),
+            },
             1000,
             "root".into(),
         )
@@ -146,7 +153,11 @@ mod tests {
         let err = run_grant(
             &config,
             CAP_DEFAULT | CAP_TERMINAL,
-            &GrantArgs { cap: "terminal".into(), for_duration: "30m".into(), reason: None },
+            &GrantArgs {
+                cap: "terminal".into(),
+                for_duration: "30m".into(),
+                reason: None,
+            },
             0,
             "root".into(),
         )
@@ -161,7 +172,11 @@ mod tests {
         let err = run_grant(
             &config,
             CAP_DEFAULT,
-            &GrantArgs { cap: "terminal".into(), for_duration: "2d".into(), reason: None },
+            &GrantArgs {
+                cap: "terminal".into(),
+                for_duration: "2d".into(),
+                reason: None,
+            },
             0,
             "root".into(),
         )
@@ -176,7 +191,11 @@ mod tests {
         let err = run_grant(
             &config,
             CAP_DEFAULT,
-            &GrantArgs { cap: "not_a_real_cap".into(), for_duration: "30m".into(), reason: None },
+            &GrantArgs {
+                cap: "not_a_real_cap".into(),
+                for_duration: "30m".into(),
+                reason: None,
+            },
             0,
             "root".into(),
         )
@@ -193,7 +212,11 @@ mod tests {
         let err = run_grant(
             &config,
             CAP_DEFAULT,
-            &GrantArgs { cap: "terminal".into(), for_duration: "notaduration".into(), reason: None },
+            &GrantArgs {
+                cap: "terminal".into(),
+                for_duration: "notaduration".into(),
+                reason: None,
+            },
             0,
             "root".into(),
         )
@@ -254,7 +277,11 @@ mod tests {
         run_grant(
             &config,
             CAP_DEFAULT,
-            &GrantArgs { cap: "file".into(), for_duration: "30m".into(), reason: None },
+            &GrantArgs {
+                cap: "file".into(),
+                for_duration: "30m".into(),
+                reason: None,
+            },
             1000,
             "alice".into(),
         )
@@ -286,7 +313,11 @@ mod tests {
         run_grant(
             &config,
             CAP_DEFAULT,
-            &GrantArgs { cap: "terminal".into(), for_duration: "30m".into(), reason: None },
+            &GrantArgs {
+                cap: "terminal".into(),
+                for_duration: "30m".into(),
+                reason: None,
+            },
             1000,
             "root".into(),
         )

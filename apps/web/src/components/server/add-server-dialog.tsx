@@ -16,13 +16,15 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { api } from '@/lib/api-client'
 import type {
   CreateServerRequest,
   CreateServerResponse,
   EnrollmentIssueResponse,
   EnrollmentOfferResponse,
-  ServerGroup
+  ServerGroup,
+  TailnetOverviewResponse
 } from '@/lib/api-schema'
 import { refreshServerCatalog } from '@/lib/server-catalog'
 import { cn } from '@/lib/utils'
@@ -30,6 +32,7 @@ import { randomUUID } from '@/lib/uuid'
 
 const TAG_SPLIT_RE = /[\s,]+/
 const TAG_VALID_RE = /^[A-Za-z0-9_.-]+$/
+const TRAILING_SLASHES_RE = /\/+$/
 
 function formatIsoDate(date: Date): string {
   const year = date.getFullYear()
@@ -154,6 +157,7 @@ interface AddServerFormState {
   tagsInput: string
   trafficLimit: string
   trafficLimitType: string
+  useTailnetUrl: boolean
 }
 
 type AddServerFormAction =
@@ -179,7 +183,8 @@ function initialAddServerFormState(): AddServerFormState {
     selectedCaps: new Set(DEFAULT_AGENT_CAPABILITY_KEYS),
     tagsInput: '',
     trafficLimit: '',
-    trafficLimitType: 'sum'
+    trafficLimitType: 'sum',
+    useTailnetUrl: false
   }
 }
 
@@ -213,14 +218,20 @@ function AddServerIssuedView({
   onAnother,
   onClose,
   onCopy,
-  t
+  onToggleTailnetUrl,
+  t,
+  tailnetServerUrl,
+  useTailnetUrl
 }: {
-  installCommand: string
   enrollment: EnrollmentIssueResponse
+  installCommand: string
   onAnother: () => void
   onClose: () => void
   onCopy: (value: string) => void
+  onToggleTailnetUrl: (checked: boolean) => void
   t: TFunction
+  tailnetServerUrl: string
+  useTailnetUrl: boolean
 }) {
   return (
     <>
@@ -247,6 +258,28 @@ function AddServerIssuedView({
               </Button>
             </div>
           </div>
+
+          {tailnetServerUrl && (
+            <div className="flex items-center justify-between gap-3 rounded-md border bg-background/70 px-3 py-2">
+              <div className="min-w-0">
+                <label className="cursor-pointer font-medium text-xs" htmlFor="add-server-use-tailnet-url">
+                  {t('add_server.use_tailnet_url', { defaultValue: 'Use Tailnet Server URL' })}
+                </label>
+                <p className="truncate font-mono text-[11px] text-muted-foreground">
+                  {t('add_server.use_tailnet_url_hint', {
+                    defaultValue: 'Enroll agent over Tailscale ({{url}})',
+                    url: tailnetServerUrl
+                  })}
+                </p>
+              </div>
+              <Switch
+                aria-label={t('add_server.use_tailnet_url', { defaultValue: 'Use Tailnet Server URL' })}
+                checked={useTailnetUrl}
+                id="add-server-use-tailnet-url"
+                onCheckedChange={(checked) => onToggleTailnetUrl(Boolean(checked))}
+              />
+            </div>
+          )}
 
           <div>
             <p className="mb-1 font-medium text-muted-foreground text-xs">{t('add_server.install_command')}</p>
@@ -526,6 +559,13 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
     enabled: open
   })
 
+  const { data: tailscaleOverview } = useQuery<TailnetOverviewResponse>({
+    queryKey: ['tailscale', 'overview'],
+    queryFn: () => api.get<TailnetOverviewResponse>('/api/tailscale/overview'),
+    staleTime: 60_000,
+    enabled: open
+  })
+
   const mutation = useMutation({
     mutationFn: (body: CreateServerRequest) => api.post<CreateServerResponse>('/api/servers', body),
     onSuccess: async (data) => {
@@ -575,13 +615,18 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
   })
 
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const tailnetServerUrl =
+    typeof tailscaleOverview?.server_tailnet_url === 'string'
+      ? tailscaleOverview.server_tailnet_url.trim().replace(TRAILING_SLASHES_RE, '')
+      : ''
+  const effectiveServerUrl = state.useTailnetUrl && tailnetServerUrl ? tailnetServerUrl : origin
   // Emit --caps only when the selection differs from the default set; an
   // omitted flag means "use install.sh's built-in defaults", which keeps the
   // copy/paste command short for the common case.
   const capabilitySelection = resolveAgentCapabilitySelection(state.selectedCaps)
   const issued = state.issued
   const installCommand = issued?.enrollment
-    ? `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --server-url '${origin}' --enrollment-code '${issued.enrollment.code}'${capabilitySelection.installArgument}`
+    ? `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo bash -s -- agent --server-url '${effectiveServerUrl}' --enrollment-code '${issued.enrollment.code}'${capabilitySelection.installArgument}`
     : ''
 
   const toggleCap = (key: string) => {
@@ -667,7 +712,10 @@ export function AddServerDialog({ open, onClose }: { onClose: () => void; open: 
             onAnother={reset}
             onClose={handleClose}
             onCopy={copy}
+            onToggleTailnetUrl={(checked) => dispatch({ type: 'patch', value: { useTailnetUrl: checked } })}
             t={t}
+            tailnetServerUrl={tailnetServerUrl}
+            useTailnetUrl={state.useTailnetUrl}
           />
         )}
         {!issued?.enrollment && issued?.replayed && (

@@ -230,7 +230,13 @@ pub fn spawn_traceroute(
             };
 
             // Try privileged → fallback to unprivileged on privilege errors.
-            match try_trace(addr, max_hops, proto, PrivilegeMode::Privileged, make_callback()) {
+            match try_trace(
+                addr,
+                max_hops,
+                proto,
+                PrivilegeMode::Privileged,
+                make_callback(),
+            ) {
                 Ok(()) => Ok(()),
                 Err(e) if is_privilege_error(&e) => {
                     tracing::info!("traceroute privileged failed ({e}); retrying unprivileged");
@@ -330,7 +336,10 @@ mod tests {
 
     #[test]
     fn test_port_direction_for_icmp_is_none() {
-        assert!(matches!(port_direction_for(Protocol::Icmp), PortDirection::None));
+        assert!(matches!(
+            port_direction_for(Protocol::Icmp),
+            PortDirection::None
+        ));
     }
 
     #[test]
@@ -469,7 +478,10 @@ mod tests {
             let dir = port_direction_for(proto);
             match wire {
                 TraceProtocol::Icmp => {
-                    assert!(matches!(dir, PortDirection::None), "ICMP wants no port direction")
+                    assert!(
+                        matches!(dir, PortDirection::None),
+                        "ICMP wants no port direction"
+                    )
                 }
                 TraceProtocol::Udp | TraceProtocol::Tcp => {
                     assert!(
@@ -489,7 +501,10 @@ mod tests {
     fn test_is_privilege_error_bad_config_is_false() {
         // BadConfig is a plain configuration error, never a privilege failure.
         let e = trippy_core::Error::BadConfig("nope".to_string());
-        assert!(!is_privilege_error(&e), "BadConfig must not be classified as privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "BadConfig must not be classified as privilege error"
+        );
     }
 
     #[test]
@@ -507,25 +522,37 @@ mod tests {
     #[test]
     fn test_is_privilege_error_invalid_packet_size_is_false() {
         let e = trippy_core::Error::InvalidPacketSize(9999);
-        assert!(!is_privilege_error(&e), "InvalidPacketSize is not a privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "InvalidPacketSize is not a privilege error"
+        );
     }
 
     #[test]
     fn test_is_privilege_error_unknown_interface_is_false() {
         let e = trippy_core::Error::UnknownInterface("eth-nope".to_string());
-        assert!(!is_privilege_error(&e), "UnknownInterface is not a privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "UnknownInterface is not a privilege error"
+        );
     }
 
     #[test]
     fn test_is_privilege_error_insufficient_capacity_is_false() {
         let e = trippy_core::Error::InsufficientCapacity;
-        assert!(!is_privilege_error(&e), "InsufficientCapacity is not a privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "InsufficientCapacity is not a privilege error"
+        );
     }
 
     #[test]
     fn test_is_privilege_error_missing_addr_is_false() {
         let e = trippy_core::Error::MissingAddr;
-        assert!(!is_privilege_error(&e), "MissingAddr is not a privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "MissingAddr is not a privilege error"
+        );
     }
 
     // ---------------------------------------------------------------------
@@ -612,8 +639,13 @@ mod tests {
         // "localhost" resolves via the system resolver but is essentially
         // guaranteed to map to a loopback address in any sane environment.
         match resolve_target("localhost").await {
-            Ok(ip) => assert!(ip.is_loopback(), "localhost should resolve to loopback, got {ip}"),
-            Err(e) => eprintln!("WARN: localhost did not resolve ({e}); skipping (broken resolver)"),
+            Ok(ip) => assert!(
+                ip.is_loopback(),
+                "localhost should resolve to loopback, got {ip}"
+            ),
+            Err(e) => {
+                eprintln!("WARN: localhost did not resolve ({e}); skipping (broken resolver)")
+            }
         }
     }
 
@@ -694,28 +726,40 @@ mod tests {
         // AddressInUse is a distinct, non-IoError variant, so it is never
         // reached by the string-matching arm and falls through to false.
         let e = trippy_core::Error::AddressInUse("127.0.0.1:80".parse().unwrap());
-        assert!(!is_privilege_error(&e), "AddressInUse is not a privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "AddressInUse is not a privilege error"
+        );
     }
 
     #[test]
     fn test_is_privilege_error_invalid_source_addr_is_false() {
         // InvalidSourceAddr is a binding/config failure, not a privilege failure.
         let e = trippy_core::Error::InvalidSourceAddr("10.0.0.1".parse().unwrap());
-        assert!(!is_privilege_error(&e), "InvalidSourceAddr is not a privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "InvalidSourceAddr is not a privilege error"
+        );
     }
 
     #[test]
     fn test_is_privilege_error_invalid_source_addr_ipv6_is_false() {
         // IPv6 source-bind failures are likewise plain config errors.
         let e = trippy_core::Error::InvalidSourceAddr("2001:db8::1".parse().unwrap());
-        assert!(!is_privilege_error(&e), "IPv6 InvalidSourceAddr is not a privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "IPv6 InvalidSourceAddr is not a privilege error"
+        );
     }
 
     #[test]
     fn test_is_privilege_error_address_in_use_ipv6_is_false() {
         // IPv6 AddressInUse must also fall through to false.
         let e = trippy_core::Error::AddressInUse("[2001:db8::1]:443".parse().unwrap());
-        assert!(!is_privilege_error(&e), "IPv6 AddressInUse is not a privilege error");
+        assert!(
+            !is_privilege_error(&e),
+            "IPv6 AddressInUse is not a privilege error"
+        );
     }
 
     // ---------------------------------------------------------------------
@@ -727,7 +771,10 @@ mod tests {
     fn test_platform_guidance_macos_mentions_sudo() {
         // On macOS the guidance steers the operator toward running under sudo.
         let g = platform_guidance();
-        assert!(g.to_lowercase().contains("sudo"), "macOS guidance should mention sudo: {g}");
+        assert!(
+            g.to_lowercase().contains("sudo"),
+            "macOS guidance should mention sudo: {g}"
+        );
     }
 
     #[tokio::test]
@@ -744,8 +791,13 @@ mod tests {
                 .expect("should emit within 5s")
                 .expect("channel should yield a message");
             match msg {
-                AgentMessage::TracerouteRoundUpdate { completed, error, .. } => {
-                    assert!(completed, "DNS failure update must be terminal for {proto:?}");
+                AgentMessage::TracerouteRoundUpdate {
+                    completed, error, ..
+                } => {
+                    assert!(
+                        completed,
+                        "DNS failure update must be terminal for {proto:?}"
+                    );
                     assert!(
                         error.is_some_and(|e| e.contains("DNS error")),
                         "expected DNS error for {proto:?}"

@@ -23,6 +23,7 @@ Source builds require your Apple development team. The official-app design keeps
 - **QR Code Pairing** -- Scan a QR code from the web app to authenticate instantly, no manual token entry required
 - **Verified Notification Setup** -- Explicit permission and subscription setup with authenticated registration; final task outcomes for administrator owners, with success opt-in; encrypted alert triggers and recoveries without a notification group; administrator security-rule matches
 - **Real-time Metrics** -- Live server status, CPU, memory, disk, and network metrics streamed via WebSocket
+- **Tailscale & Headscale Views** -- Native per-server WireGuard peer diagnostics (`ServerTailscaleView`) and Tailnet control-plane administration (`TailscaleAdminView` + `TailnetOverviewSection`) with Privacy Mode IP masking
 - **Alert History** -- View recent alerts and their status (triggered/resolved) with detailed information
 - **Secure Authentication** -- Bearer token-based auth with automatic refresh (15-min access token, 30-day refresh token)
 
@@ -83,6 +84,14 @@ To remove a device's access:
 3. Confirm the action
 
 The device will be immediately logged out and all its tokens invalidated.
+
+## Tailscale & Headscale Support
+
+The iOS app provides native views for per-host Tailscale observability and fleet-wide Tailnet management:
+
+- **Server Detail → Tailscale (`ServerTailscaleView`)**: Shown whenever a server has `CAP_TAILSCALE` enabled and either reports live `tailscaled` status or has persisted Tailscale addresses (`GET /api/servers/{id}/tailscale/status`). Displays backend state (`Running`, `NeedsLogin`, `Stopped`), one-tap copyable Tailscale IPv4/IPv6 and MagicDNS rows, DERP home region, key expiry warnings, Exit Node and subnet route chips, ACL tags, health warnings, and per-peer connection mode badges (`Direct`, `DERP`, `Peer Relay`, `Idle`) with endpoints, Rx/Tx byte totals, handshake timestamps, and cached offline snapshots.
+- **Settings → Administration → Tailscale (`TailscaleAdminView` & `TailnetOverviewSection`)**: Administrators can configure Tailscale or self-hosted Headscale API credentials, saved API keys, preferred Server URL, and Tailscale Serve loopback auth (`GET/PUT /api/tailscale/config`), run **Test Connection** (`POST /api/tailscale/test`), and browse `TailnetOverviewSection` (`GET /api/tailscale/overview`) showing online/total devices, linked ServerBee servers, expiring keys, and direct navigation from matched Tailnet devices to `ServerDetailView`.
+- **Privacy Mode & `*.ts.net` HTTPS**: Enabling **Settings → Privacy Mode** masks Tailscale IPs, peer endpoints, subnet routes, DNS/device labels containing IPs, and Tailnet URLs across both screens while preserving unmasked values for copy actions and edit fields. Deploying ServerBee with `deploy/docker-compose.tailscale.yml` provisions Let's Encrypt `*.ts.net` HTTPS certificates trusted by iOS App Transport Security (ATS); see [Tailscale Integration](/en/docs/tailscale).
 
 ## Verified Notification Setup
 

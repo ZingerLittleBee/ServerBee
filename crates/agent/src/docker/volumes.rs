@@ -98,8 +98,14 @@ mod tests {
         };
         let mapped = map_volume(v);
         assert_eq!(mapped.labels.len(), 3);
-        assert_eq!(mapped.labels.get("com.docker.compose.project"), Some(&"app".to_string()));
-        assert_eq!(mapped.labels.get("com.docker.compose.volume"), Some(&"db".to_string()));
+        assert_eq!(
+            mapped.labels.get("com.docker.compose.project"),
+            Some(&"app".to_string())
+        );
+        assert_eq!(
+            mapped.labels.get("com.docker.compose.volume"),
+            Some(&"db".to_string())
+        );
         assert_eq!(mapped.labels.get("team"), Some(&"platform".to_string()));
     }
 

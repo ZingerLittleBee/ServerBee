@@ -37,6 +37,10 @@ Run ICMP, TCP, and HTTP probes from multiple agents to measure target reachabili
 
 When the Docker capability is enabled, view the container list, live stats, lifecycle events, log streams, networks, and volumes, and perform container actions.
 
+### Firewall, IP quality, and Tailscale mesh
+
+Detect SSH brute-force logins and port scans with optional nftables blocklists, check per-server egress IP risk scores and streaming/AI unlocks, and connect or observe hosts over Tailscale and self-hosted Headscale (`Direct` vs `DERP` peer paths, MagicDNS, key expiry, global Tailnet correlation, and private `*.ts.net` HTTPS sidecar deployment).
+
 ### Public status page, themes, and branding
 
 Publish a single public status page at `/status`—no authentication required—covering a selected server scope, live metrics, 90-day uptime timelines, availability thresholds, incidents, and maintenance windows. Appearance settings support preset and custom OKLCH themes plus white-label title, logo, favicon, and footer text.
@@ -94,6 +98,9 @@ All agent-to-server communication uses WebSocket with JSON-encoded messages. Ter
   <Card title="Web Terminal" href="/en/docs/terminal" />
   <Card title="File Manager" href="/en/docs/file-manager" />
   <Card title="Ping Monitoring" href="/en/docs/ping" />
+  <Card title="Firewall Blocklist" href="/en/docs/firewall" />
+  <Card title="IP Quality" href="/en/docs/ip-quality" />
+  <Card title="Tailscale Integration" href="/en/docs/tailscale" />
   <Card title="Capabilities" href="/en/docs/capabilities" />
   <Card title="Status Page" href="/en/docs/status-page" />
   <Card title="Custom Widgets" href="/en/docs/custom-widgets" />

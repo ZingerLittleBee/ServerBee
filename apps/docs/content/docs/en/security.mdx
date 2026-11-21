@@ -1,10 +1,10 @@
 ---
 title: Security
-description: Configure two-factor authentication, OAuth login, password management, and login security policies.
+description: Configure two-factor authentication, OAuth login, Tailscale Serve loopback auth, password management, and login security policies.
 icon: Shield
 ---
 
-ServerBee layers several security controls: two-factor authentication (2FA), OAuth social login, password policies, and login rate limiting.
+ServerBee layers several security controls: two-factor authentication (2FA), OAuth social login (including Tailscale `tsidp` OIDC), optional Tailscale Serve loopback identity authentication, password policies, and login rate limiting.
 
 ## Two-Factor Authentication (2FA)
 
@@ -81,6 +81,18 @@ Enable `allow_registration = true` only when the OAuth provider itself is access
 5. If not linked and `allow_registration = true`, create a new Member user and log in
 6. If not linked and `allow_registration = false`, return an error
 
+## Tailscale Serve Loopback Authentication
+
+When `tailscale serve` runs on the same host or container network namespace as `serverbee-server`, enabling `tailscale.auth_enabled = true` (`SERVERBEE_TAILSCALE__AUTH_ENABLED=true` or **Settings → Tailscale**) allows passwordless browser sign-in via the `Tailscale-User-Login` identity header for both REST API calls and browser WebSocket upgrades.
+
+To prevent header spoofing, ServerBee enforces strict boundary checks before trusting `Tailscale-User-Login`:
+
+- **Disabled by default**: `tailscale.auth_enabled` defaults to `false`.
+- **Loopback-only without proxy forwarding headers**: Requests carrying `Tailscale-User-Login` are accepted **only** when the TCP peer (`ConnectInfo`) is strictly `127.0.0.1` or `::1` **and** neither `X-Forwarded-For` nor `Forwarded` is present. When `tailscale.socket_path` points to a reachable local `tailscaled` Unix socket, ServerBee also cross-checks the peer identity via `/localapi/v0/whois`.
+- **Account mapping and role safety**: ServerBee resolves existing users by exact username, unique case-insensitive username, linked OAuth account, or unique email local-part, and preserves `must_change_password` enforcement. Unknown Tailnet users are rejected unless `tailscale.auto_provision_role = "member"` (`admin` is never auto-provisioned). Long-lived WebSocket connections re-check `auth_enabled` and user roles continuously.
+
+Bind `server.listen` to `127.0.0.1:9527` when using this mode so all external traffic passes through `tailscale serve`. For Tailscale OIDC (`tsidp`) and sidecar setup details, see [Tailscale Integration](/en/docs/tailscale).
+
 ## Password Management
 
 ### Changing Password
@@ -119,6 +131,7 @@ Agent registration endpoints are also rate limited:
 
 <Cards>
   <Card title="Server Setup" href="/en/docs/server" />
+  <Card title="Tailscale Integration" href="/en/docs/tailscale" />
   <Card title="Admin Guide" href="/en/docs/admin" />
   <Card title="Configuration" href="/en/docs/configuration" />
 </Cards>

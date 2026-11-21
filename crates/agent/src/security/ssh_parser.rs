@@ -32,8 +32,10 @@ pub struct AuthAttempt {
 }
 
 static RE_ACCEPTED: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^Accepted (publickey|password|keyboard-interactive|\S+) for (\S+) from (\S+) port (\d+)")
-        .expect("RE_ACCEPTED")
+    Regex::new(
+        r"^Accepted (publickey|password|keyboard-interactive|\S+) for (\S+) from (\S+) port (\d+)",
+    )
+    .expect("RE_ACCEPTED")
 });
 static RE_FAILED: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^Failed \S+ for (invalid user )?(\S+) from (\S+) port (\d+)").expect("RE_FAILED")

@@ -13,6 +13,7 @@ pub const FIREWALL_MIN_PROTOCOL: u32 = 2;
 pub const PROTECTED_CIDRS: &[&str] = &[
     "127.0.0.0/8",
     "10.0.0.0/8",
+    "100.64.0.0/10",
     "172.16.0.0/12",
     "192.168.0.0/16",
     "169.254.0.0/16",
@@ -82,5 +83,13 @@ mod tests {
         };
         let json = serde_json::to_string(&item).unwrap();
         assert!(!json.contains("reason"));
+    }
+
+    #[test]
+    fn protected_cidrs_includes_tailscale_cgnat() {
+        assert!(
+            PROTECTED_CIDRS.contains(&"100.64.0.0/10"),
+            "PROTECTED_CIDRS must include RFC 6598 Tailscale CGNAT range"
+        );
     }
 }

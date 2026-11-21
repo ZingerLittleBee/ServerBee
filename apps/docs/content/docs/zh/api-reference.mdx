@@ -76,6 +76,10 @@ curl https://your-server/api/auth/me \
   -H "Authorization: Bearer <session-token>"
 ```
 
+### Tailscale Serve 回环身份认证
+
+当 `tailscale.auth_enabled = true`（`SERVERBEE_TAILSCALE__AUTH_ENABLED=true`）时，ServerBee 支持解析本机 `tailscale serve` 注入的 `Tailscale-User-Login` 请求头，用于浏览器 REST 请求与 `/api/ws/*` WebSocket 升级。为防止身份伪造，服务端**仅在同时满足以下条件时**信任该请求头：底层 TCP 对端严格为回环地址（`127.0.0.1` 或 `::1`），**且**请求不含 `X-Forwarded-For` 或 `Forwarded` 转发头（若 `tailscale.socket_path` 指向可达的本地 Socket，还会通过 `/localapi/v0/whois` 交叉核验）。请求同时携带有效 Session Cookie、API Key 或 Bearer Token 时优先按前者认证；持久 WebSocket 连接期间会持续重验 `auth_enabled` 与用户当前角色。详见 [Tailscale 集成](/zh/docs/tailscale#方案二tailscale-serve-回环身份认证)。
+
 ## 公开端点
 
 | 方法 | 路径 | 说明 |
@@ -119,7 +123,8 @@ curl https://your-server/api/auth/me \
 | 当前用户和凭据 | `GET /api/auth/me`、`PUT /api/auth/password`、`GET /api/auth/api-keys`、`DELETE /api/auth/api-keys/{id}` |
 | 2FA 和 OAuth 账号 | `/api/auth/2fa/*`、`GET/DELETE /api/auth/oauth/accounts/*` |
 | 移动端会话和设备 | `POST /api/mobile/auth/logout`、`GET /api/mobile/auth/devices`、`DELETE /api/mobile/auth/devices/{id}`、`POST /api/mobile/pair`、`POST /api/mobile/push/register`、`POST /api/mobile/push/unregister` |
-| 服务器 | `GET /api/servers`、`GET /api/servers/{id}`、`GET /api/servers/{id}/records`、`GET /api/servers/{id}/gpu-records` |
+| 服务器 | `GET /api/servers`、`GET /api/servers/{id}`（含持久化的 `tailscale_ipv4`、`tailscale_ipv6`、`tailscale_dns_name`、`tailscale_tailnet`）、`GET /api/servers/{id}/records`、`GET /api/servers/{id}/gpu-records` |
+| Tailscale | `GET /api/servers/{id}/tailscale/status`（需 `CAP_TAILSCALE`）、`GET /api/tailscale/overview` |
 | Agent Authority | `GET /api/servers/{id}/agent-authority`、`GET /api/agent-authority/events?server_id={id}` |
 | 分组和标签 | `GET /api/server-groups`、`GET /api/servers/{id}/tags` |
 | 可用性和流量 | `GET /api/servers/{id}/uptime-daily`、`GET /api/servers/{id}/traffic` |
@@ -158,6 +163,7 @@ curl https://your-server/api/auth/me \
 | 任务 | `GET/POST /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`GET /api/tasks/{id}/results`、`POST /api/tasks/{id}/run` |
 | 用户 | `GET/POST /api/users`、`GET/PUT/DELETE /api/users/{id}` |
 | 审计和设置 | `GET/DELETE /api/audit-logs`、`GET/PUT /api/settings`、`POST /api/settings/backup`、`POST /api/settings/restore` |
+| Tailscale 控制面 | `GET /api/tailscale/config`（`api_key` 脱敏为 `has_api_key`）、`PUT /api/tailscale/config`、`POST /api/tailscale/test` |
 | GeoIP | `POST /api/geoip/download` |
 
 备份端点返回原始 SQLite 下载；恢复端点接受 `Content-Type: application/octet-stream` 的原始 SQLite body，并要求重启 Server。两者都是仅限 Admin 的高风险操作，已验证命令与保护措施见[备份与恢复](/zh/docs/deployment#备份与恢复)。
@@ -210,8 +216,8 @@ curl https://your-server/api/auth/me \
 
 | 路径 | 认证 | 说明 |
 |------|------|------|
-| `/api/agent/ws` | Agent Bearer token（兼容旧 Agent 的 `?token=`） | Agent 指标、命令、Ping、文件、Docker、Traceroute |
-| `/api/ws/servers` | Session cookie、API Key 或 Bearer token | 浏览器/移动端实时服务器更新 |
+| `/api/agent/ws` | Agent Bearer token（兼容旧 Agent 的 `?token=`） | Agent 指标、命令、Ping、文件、Docker、Traceroute、Tailscale 状态 |
+| `/api/ws/servers` | Session cookie、API Key、Bearer token 或 Tailscale Serve 回环身份 | 浏览器/移动端实时服务器更新（`FullSync` 包含 `tailscale_*` 字段） |
 | `/api/ws/terminal/{server_id}` | 已认证 Admin + `CAP_TERMINAL` | Web 终端代理；JSON 文本消息，终端数据 base64 编码 |
 | `/api/ws/docker/logs/{server_id}` | 已认证 Admin + `CAP_DOCKER` | 按容器流式传输 Docker 日志 |
 
@@ -230,6 +236,7 @@ curl https://your-server/api/auth/me \
 
 <Cards>
   <Card title="功能开关" href="/zh/docs/capabilities" />
+  <Card title="Tailscale 集成" href="/zh/docs/tailscale" />
   <Card title="管理员指南" href="/zh/docs/admin" />
   <Card title="架构设计" href="/zh/docs/architecture" />
 </Cards>

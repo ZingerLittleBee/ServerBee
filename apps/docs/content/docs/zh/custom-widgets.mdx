@@ -4,7 +4,7 @@ description: 用 React + Zod 编写自定义仪表盘组件，通过单文件或
 icon: Puzzle
 ---
 
-ServerBee 的仪表盘原生支持自定义组件（Widget Module）。每个组件就是一个独立的 ES 模块，由管理员安装后即可像内置组件一样拖拽到任意仪表盘上。本指南介绍两种安装方式：
+ServerBee 的仪表盘除内置 18 种组件（含基于同一 SDK 构建的 `com.serverbee.tailscale-overview` —— **Tailscale Overview**）外，还原生支持自定义组件（Widget Module）。每个组件就是一个独立的 ES 模块，由管理员安装后即可像内置组件一样拖拽到任意仪表盘上。本指南介绍两种安装方式：
 
 - **方式 B** — 单个 `.js` 文件（一个组件 = 一个文件）
 - **方式 C** — `.zip` 集合包（一次安装多个组件，可共享同一份发布产物）
@@ -272,7 +272,7 @@ curl -X DELETE "https://your-host/api/widget-modules/com.example.hello" \
   -H "X-API-Key: $SERVERBEE_API_KEY"
 ```
 
-内置组件（如 `com.serverbee.hello-world`）不能被卸载，对其调用 DELETE 会返回 `400`。
+内置组件模块（如 `com.serverbee.tailscale-overview` 和 `com.serverbee.hello-world`）不能被卸载，对其调用 DELETE 会返回 `400`。
 
 ## 限制与安全
 

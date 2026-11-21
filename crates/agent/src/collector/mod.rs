@@ -28,8 +28,16 @@ pub struct Collector<S: MetricsSource = SysinfoSource> {
 }
 
 impl Collector<SysinfoSource> {
-    pub fn new(enable_temperature: bool, enable_gpu: bool) -> Self {
-        Self::with_source(SysinfoSource::new(), enable_temperature, enable_gpu)
+    pub fn new(
+        enable_temperature: bool,
+        enable_gpu: bool,
+        exclude_tailscale_traffic: bool,
+    ) -> Self {
+        Self::with_source(
+            SysinfoSource::new(exclude_tailscale_traffic),
+            enable_temperature,
+            enable_gpu,
+        )
     }
 
     pub fn system_info(&self) -> SystemInfo {

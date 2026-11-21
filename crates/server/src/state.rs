@@ -23,6 +23,7 @@ use crate::service::high_risk_audit::{
 use crate::service::monitor_check::MonitorCheckRunner;
 use crate::service::security::SecurityService;
 use crate::service::server_onboarding::ServerOnboarding;
+use crate::service::tailscale_control::TailscaleControlService;
 use crate::service::task_scheduler::TaskScheduler;
 use crate::service::upgrade_release::UpgradeReleaseService;
 use crate::service::upgrade_tracker::UpgradeJobTracker;
@@ -131,6 +132,8 @@ pub struct AppState {
     /// record/state write, maintenance gate, notifications) for both the
     /// scheduler and the manual HTTP trigger.
     pub monitor_check_runner: MonitorCheckRunner,
+    /// Global Tailscale / Headscale control-plane client & runtime config store.
+    pub tailscale_control: Arc<TailscaleControlService>,
 }
 
 static RATE_CHECK_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -277,6 +280,10 @@ impl AppState {
         let asn_arc = Arc::new(std::sync::RwLock::new(asn));
         let traceroute_enricher =
             crate::service::traceroute_enrich::TracerouteEnricher::new().with_asn(asn_arc.clone());
+        let tailscale_control = Arc::new(TailscaleControlService::new(
+            config.tailscale.clone(),
+            config.server.listen.clone(),
+        ));
         Ok(Arc::new(Self {
             db,
             renewal_clock,
@@ -310,6 +317,7 @@ impl AppState {
             exec_audit_contexts: DashMap::new(),
             traceroute_enricher,
             monitor_check_runner: MonitorCheckRunner::new(),
+            tailscale_control,
         }))
     }
 }

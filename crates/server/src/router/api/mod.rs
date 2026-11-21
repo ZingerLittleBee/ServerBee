@@ -29,6 +29,7 @@ pub mod service_monitor;
 pub mod setting;
 pub mod status;
 pub mod status_page;
+pub mod tailscale;
 pub mod task;
 pub mod traceroute;
 pub mod traffic;
@@ -82,6 +83,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                 .merge(asn::read_router())
                 .merge(security::read_router())
                 .merge(firewall::read_router())
+                .merge(tailscale::read_router())
                 // Admin-only routes (write operations + management)
                 .merge(
                     Router::new()
@@ -120,6 +122,7 @@ pub fn router(state: Arc<AppState>) -> Router<Arc<AppState>> {
                         .merge(security::write_router())
                         .merge(firewall::write_router())
                         .merge(status_page::write_router())
+                        .merge(tailscale::write_router())
                         .layer(middleware::from_fn(require_admin)),
                 )
                 .layer(middleware::from_fn_with_state(

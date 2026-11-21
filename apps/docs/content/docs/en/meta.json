@@ -20,6 +20,7 @@
     "security-events",
     "firewall",
     "ip-quality",
+    "tailscale",
     "capabilities",
     "status-page",
     "custom-widgets",

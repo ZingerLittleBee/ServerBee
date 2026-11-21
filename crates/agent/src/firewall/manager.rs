@@ -479,10 +479,10 @@ mod tests {
     async fn reset_failure_returns_not_ok_ack() {
         let mgr = FirewallManager::new(Arc::new(FailWipe));
         // Seed some desired state to confirm it is NOT cleared on failure.
-        mgr.desired.lock().await.insert(
-            "keep".into(),
-            entry("keep", "8.8.8.8/32", 4),
-        );
+        mgr.desired
+            .lock()
+            .await
+            .insert("keep".into(), entry("keep", "8.8.8.8/32", 4));
         let ack = mgr.handle_reset().await;
         match ack {
             AgentMessage::BlocklistResetAck { ok, reason } => {
@@ -624,7 +624,8 @@ mod tests {
     #[tokio::test]
     async fn add_blocked_by_own_external_ip_after_set() {
         let mgr = FirewallManager::new(Arc::new(OkExec));
-        mgr.set_external_ip(Some("203.0.113.7".parse().unwrap())).await;
+        mgr.set_external_ip(Some("203.0.113.7".parse().unwrap()))
+            .await;
         let ack = mgr.handle_add(entry("b1", "203.0.113.7/32", 4)).await;
         match ack {
             AgentMessage::BlocklistAck { results } => {

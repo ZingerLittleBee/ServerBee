@@ -19,7 +19,8 @@ use serverbee_common::types::{NetworkProbeResultData, PingResult};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::docker_subsystem::DockerSubsystem;
+use super::docker_subsystem::{DockerSubsystem, DockerTick};
+use super::tailscale_subsystem::{TailscaleStep, TailscaleSubsystem, TailscaleTick};
 use super::wire::send_msg;
 use super::{emit_upgrade_failure, file_ops, perform_upgrade};
 use crate::capability_grants::CapabilityAuthority;
@@ -29,6 +30,7 @@ use crate::firewall::FirewallManager;
 use crate::ip_quality::{RunResult, UnlockChecker};
 use crate::network_prober::NetworkProber;
 use crate::pinger::PingManager;
+use crate::tailscale::SystemTailscaleProbe;
 use crate::terminal::{TerminalEvent, TerminalManager};
 
 /// Process-wide single-flight latch for binary self-upgrade. A duplicate
@@ -59,6 +61,7 @@ pub(super) struct ConnectionRuntime {
     pub(super) cmd_result_tx: mpsc::Sender<AgentMessage>,
     file_tx: mpsc::Sender<FileEvent>,
     pub(super) docker: DockerSubsystem,
+    pub(super) tailscale: TailscaleSubsystem,
     upgrade_cfg: UpgradeConfig,
     firewall_manager: Arc<FirewallManager>,
 }
@@ -96,6 +99,9 @@ impl ConnectionRuntime {
         let (docker_tx, docker_rx) = mpsc::channel::<AgentMessage>(256);
         let docker = DockerSubsystem::new(docker_tx, Arc::clone(&capabilities));
 
+        let tailscale_probe = Arc::new(SystemTailscaleProbe::from_config(&config.tailscale));
+        let tailscale = TailscaleSubsystem::new(tailscale_probe, Arc::clone(&capabilities));
+
         let (cmd_result_tx, cmd_result_rx) = mpsc::channel::<AgentMessage>(32);
 
         let runtime = Self {
@@ -108,6 +114,7 @@ impl ConnectionRuntime {
             cmd_result_tx,
             file_tx,
             docker,
+            tailscale,
             upgrade_cfg: config.upgrade.clone(),
             firewall_manager,
         };
@@ -132,6 +139,67 @@ impl ConnectionRuntime {
         self.unlock_checker.stop();
         self.file_manager.cancel_all_transfers();
         self.docker.cleanup();
+    }
+
+    /// Probe all optional host subsystems concurrently before `SystemInfo` is sent.
+    pub(super) async fn probe_subsystems(&mut self) {
+        tokio::join!(self.docker.probe(), self.tailscale.probe());
+    }
+
+    /// Combined feature flags across all live subsystems (`docker` + `tailscale`).
+    /// Every `SystemInfo` and `FeaturesUpdate` frame MUST source its `features`
+    /// list from here so one subsystem's retry/demotion never erases the other.
+    pub(super) fn features(&self) -> Vec<String> {
+        let mut features = self.docker.features();
+        features.extend(self.tailscale.features());
+        features
+    }
+
+    /// Consume the startup-probed Tailscale status report, if available and
+    /// permitted by `CAP_TAILSCALE`.
+    pub(super) fn take_initial_tailscale_status(&mut self) -> Option<AgentMessage> {
+        self.tailscale.take_initial_status_message()
+    }
+
+    fn with_combined_features(&self, msg: AgentMessage) -> AgentMessage {
+        match msg {
+            AgentMessage::FeaturesUpdate { .. } => AgentMessage::FeaturesUpdate {
+                features: self.features(),
+            },
+            other => other,
+        }
+    }
+
+    fn materialize_tailscale_step(&self, step: TailscaleStep) -> Vec<AgentMessage> {
+        let mut out = Vec::new();
+        if step.features_changed && step.emit_features_first {
+            out.push(AgentMessage::FeaturesUpdate {
+                features: self.features(),
+            });
+        }
+        out.extend(step.messages);
+        if step.features_changed && !step.emit_features_first {
+            out.push(AgentMessage::FeaturesUpdate {
+                features: self.features(),
+            });
+        }
+        out
+    }
+
+    pub(super) async fn on_docker_tick(&mut self, tick: DockerTick) -> Option<AgentMessage> {
+        let reply = match tick {
+            DockerTick::PollStats => self.docker.poll_stats().await,
+            DockerTick::Retry => self.docker.retry().await,
+        };
+        reply.map(|msg| self.with_combined_features(msg))
+    }
+
+    pub(super) async fn on_tailscale_tick(&mut self, tick: TailscaleTick) -> Vec<AgentMessage> {
+        let step = match tick {
+            TailscaleTick::Refresh => self.tailscale.refresh().await,
+            TailscaleTick::Retry => self.tailscale.retry().await,
+        };
+        self.materialize_tailscale_step(step)
     }
 
     /// Parse and execute one server text frame against this connection's
@@ -361,6 +429,13 @@ impl ConnectionRuntime {
             | ServerMessage::DockerListNetworks { .. }
             | ServerMessage::DockerListVolumes { .. }) => {
                 if let Some(reply) = self.docker.handle(msg).await {
+                    let reply = self.with_combined_features(reply);
+                    send_msg(write, &reply).await?;
+                }
+            }
+            ServerMessage::TailscaleGetStatus { msg_id } => {
+                let step = self.tailscale.handle_get_status(msg_id).await;
+                for reply in self.materialize_tailscale_step(step) {
                     send_msg(write, &reply).await?;
                 }
             }
@@ -790,6 +865,7 @@ mod tests {
                 upgrade: UpgradeConfig::default(),
                 security: SecurityConfig::default(),
                 capabilities: CapabilitiesConfig::default(),
+                tailscale: crate::config::TailscaleConfig::default(),
             };
             let capabilities = CapabilityAuthority::fixed(caps);
             let firewall_manager = Arc::new(FirewallManager::new(Arc::new(CliNftExecutor)));
@@ -1607,5 +1683,248 @@ mod tests {
             }
             other => panic!("expected UpgradeResult, got {other:?}"),
         }
+    }
+
+    // ----------------------------------------------------------------------
+    // Tailscale & combined Docker+Tailscale `features` preservation tests
+    // ----------------------------------------------------------------------
+
+    struct RuntimeMockTailscaleProbe {
+        result: std::sync::Mutex<
+            Result<serverbee_common::tailscale_types::TailscaleStatusReport, String>,
+        >,
+    }
+
+    impl RuntimeMockTailscaleProbe {
+        fn ok() -> Arc<Self> {
+            use serverbee_common::tailscale_types::{TailscaleNodeSummary, TailscaleStatusReport};
+            Arc::new(Self {
+                result: std::sync::Mutex::new(Ok(TailscaleStatusReport {
+                    summary: TailscaleNodeSummary {
+                        backend_state: "Running".into(),
+                        tailscale_ips: vec!["100.64.0.42".into()],
+                        dns_name: Some("agent.ts.net".into()),
+                        tailnet_name: Some("ts.net".into()),
+                        version: Some("1.78.0".into()),
+                        hostname: Some("agent".into()),
+                        online: true,
+                        exit_node: false,
+                        exit_node_option: false,
+                        key_expiry: None,
+                    },
+                    advertised_routes: vec![],
+                    tags: vec![],
+                    derp_region: Some("tok".into()),
+                    peers: vec![],
+                    health_warnings: vec![],
+                    collected_at: "2026-11-21T03:35:00Z".into(),
+                })),
+            })
+        }
+
+        fn err(msg: &str) -> Arc<Self> {
+            Arc::new(Self {
+                result: std::sync::Mutex::new(Err(msg.to_string())),
+            })
+        }
+
+        fn set_err(&self, msg: &str) {
+            *self.result.lock().unwrap() = Err(msg.to_string());
+        }
+
+        fn set_ok(&self) {
+            *self.result.lock().unwrap() = Self::ok().result.lock().unwrap().clone();
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl crate::tailscale::TailscaleProbe for RuntimeMockTailscaleProbe {
+        async fn fetch_status(
+            &self,
+        ) -> anyhow::Result<serverbee_common::tailscale_types::TailscaleStatusReport> {
+            match self.result.lock().unwrap().clone() {
+                Ok(r) => Ok(r),
+                Err(e) => anyhow::bail!(e),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_dispatch_tailscale_get_status_respects_capability_and_availability() {
+        // 1. Tailscale unavailable -> TailscaleUnavailable
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        h.runtime
+            .tailscale
+            .set_probe_for_test(RuntimeMockTailscaleProbe::err("absent"));
+        h.runtime.tailscale.probe().await;
+
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"tailscale_get_status","msg_id":"ts-1"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::TailscaleUnavailable { msg_id: Some(id), .. } if id == "ts-1"
+        ));
+
+        // 2. Tailscale available & CAP_TAILSCALE enabled -> TailscaleStatus
+        h.runtime
+            .tailscale
+            .set_probe_for_test(RuntimeMockTailscaleProbe::ok());
+        h.runtime.tailscale.probe().await;
+
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"tailscale_get_status","msg_id":"ts-2"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::TailscaleStatus { msg_id: Some(id), status }
+                if id == "ts-2" && status.summary.tailscale_ips == vec!["100.64.0.42"]
+        ));
+
+        // 3. Tailscale available but CAP_TAILSCALE disabled -> TailscaleUnavailable
+        let caps_no_ts = ALL_CAPS & !serverbee_common::constants::CAP_TAILSCALE;
+        let mut h_denied = Harness::new(caps_no_ts, FileConfig::default());
+        h_denied
+            .runtime
+            .tailscale
+            .set_probe_for_test(RuntimeMockTailscaleProbe::ok());
+        h_denied.runtime.tailscale.probe().await;
+
+        let mut sink = RecordingSink::new();
+        h_denied
+            .dispatch(
+                r#"{"type":"tailscale_get_status","msg_id":"ts-3"}"#,
+                &mut sink,
+            )
+            .await
+            .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::TailscaleUnavailable { msg_id: Some(id), reason: Some(r) }
+                if id == "ts-3" && r.contains("disabled")
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_combined_features_preserved_across_docker_and_tailscale_retry_and_demote() {
+        let mut h = Harness::new(ALL_CAPS, FileConfig::default());
+        let ts_probe = RuntimeMockTailscaleProbe::ok();
+        h.runtime
+            .tailscale
+            .set_probe_for_test(Arc::clone(&ts_probe) as Arc<dyn crate::tailscale::TailscaleProbe>);
+
+        // Step 1: Tailscale starts available, Docker starts absent.
+        h.runtime.tailscale.probe().await;
+        assert_eq!(h.runtime.features(), vec!["tailscale".to_string()]);
+
+        // Step 2: Docker retry succeeds -> FeaturesUpdate MUST preserve "tailscale"!
+        h.runtime.docker.set_mock_retry_for_test(Some(true));
+        let docker_promoted = h.runtime.on_docker_tick(DockerTick::Retry).await;
+        assert!(matches!(
+            docker_promoted,
+            Some(AgentMessage::FeaturesUpdate { ref features })
+                if features == &vec!["docker".to_string(), "tailscale".to_string()]
+        ));
+        assert_eq!(
+            h.runtime.features(),
+            vec!["docker".to_string(), "tailscale".to_string()]
+        );
+
+        // Step 3: Docker demotes via poll_stats failure -> FeaturesUpdate MUST preserve "tailscale"!
+        h.runtime
+            .docker
+            .set_available_with_unreachable_daemon_for_test();
+        let docker_demoted = h.runtime.on_docker_tick(DockerTick::PollStats).await;
+        assert!(matches!(
+            docker_demoted,
+            Some(AgentMessage::FeaturesUpdate { ref features })
+                if features == &vec!["tailscale".to_string()]
+        ));
+        assert_eq!(h.runtime.features(), vec!["tailscale".to_string()]);
+
+        // Step 4: Docker comes back via retry AND then demotes via handle_server_message
+        // (`DockerGetInfo`) -> FeaturesUpdate MUST still preserve "tailscale"!
+        h.runtime
+            .docker
+            .set_available_with_unreachable_daemon_for_test();
+        let mut sink = RecordingSink::new();
+        h.dispatch(r#"{"type":"docker_get_info","msg_id":"d1"}"#, &mut sink)
+            .await
+            .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 1);
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::FeaturesUpdate { features }
+                if features == &vec!["tailscale".to_string()]
+        ));
+
+        // Step 5: Promote Docker again so both are live, then demote Tailscale via
+        // periodic Refresh failure -> FeaturesUpdate MUST preserve "docker"!
+        let _ = h.runtime.on_docker_tick(DockerTick::Retry).await;
+        assert_eq!(
+            h.runtime.features(),
+            vec!["docker".to_string(), "tailscale".to_string()]
+        );
+        ts_probe.set_err("tailscaled stopped");
+        let ts_demoted = h.runtime.on_tailscale_tick(TailscaleTick::Refresh).await;
+        assert_eq!(ts_demoted.len(), 1);
+        assert!(matches!(
+            &ts_demoted[0],
+            AgentMessage::FeaturesUpdate { features }
+                if features == &vec!["docker".to_string()]
+        ));
+        assert_eq!(h.runtime.features(), vec!["docker".to_string()]);
+
+        // Step 6: Tailscale retries and recovers while Docker is live ->
+        // emits FeaturesUpdate(["docker", "tailscale"]) followed by TailscaleStatus!
+        ts_probe.set_ok();
+        let ts_promoted = h.runtime.on_tailscale_tick(TailscaleTick::Retry).await;
+        assert_eq!(ts_promoted.len(), 2);
+        assert!(matches!(
+            &ts_promoted[0],
+            AgentMessage::FeaturesUpdate { features }
+                if features == &vec!["docker".to_string(), "tailscale".to_string()]
+        ));
+        assert!(matches!(
+            &ts_promoted[1],
+            AgentMessage::TailscaleStatus { msg_id: None, .. }
+        ));
+
+        // Step 7: Tailscale fails during explicit `TailscaleGetStatus` while Docker is live ->
+        // emits TailscaleUnavailable(msg_id) AND FeaturesUpdate(["docker"])!
+        ts_probe.set_err("socket gone");
+        let mut sink = RecordingSink::new();
+        h.dispatch(
+            r#"{"type":"tailscale_get_status","msg_id":"ts-fail"}"#,
+            &mut sink,
+        )
+        .await
+        .unwrap();
+        let msgs = sink.agent_messages();
+        assert_eq!(msgs.len(), 2);
+        assert!(matches!(
+            &msgs[0],
+            AgentMessage::TailscaleUnavailable { msg_id: Some(id), .. } if id == "ts-fail"
+        ));
+        assert!(matches!(
+            &msgs[1],
+            AgentMessage::FeaturesUpdate { features }
+                if features == &vec!["docker".to_string()]
+        ));
     }
 }

@@ -1,10 +1,10 @@
 ---
 title: 安全设置
-description: 配置双因素认证、OAuth 登录、密码管理和登录安全策略。
+description: 配置双因素认证、OAuth 登录、Tailscale Serve 回环认证、密码管理和登录安全策略。
 icon: Shield
 ---
 
-ServerBee 提供多层安全防护：双因素认证 (2FA)、OAuth 社交登录、密码策略和登录限流。
+ServerBee 提供多层安全防护：双因素认证 (2FA)、OAuth 社交登录（含 Tailscale `tsidp` OIDC）、可选的 Tailscale Serve 回环身份认证、密码策略和登录限流。
 
 ## 双因素认证 (2FA)
 
@@ -81,6 +81,18 @@ client_secret = "your-github-client-secret"
 5. 如果未关联且 `allow_registration = true`，自动创建 Member 角色用户并登录
 6. 如果未关联且 `allow_registration = false`，返回错误
 
+## Tailscale Serve 回环身份认证
+
+当 `tailscale serve` 与 `serverbee-server` 运行在同一宿主机或共享同一容器网络命名空间时，开启 `tailscale.auth_enabled = true`（`SERVERBEE_TAILSCALE__AUTH_ENABLED=true` 或通过 **设置 → Tailscale**）即可通过 `Tailscale-User-Login` 身份请求头实现浏览器 REST 请求与实时 WebSocket 升级的免密登录。
+
+为防止伪造身份请求头，ServerBee 在信任 `Tailscale-User-Login` 前强制执行以下安全边界：
+
+- **默认关闭**：`tailscale.auth_enabled` 默认值为 `false`。
+- **严格回环且禁止代理转发头**：仅当底层 TCP 对端（`ConnectInfo`）严格为 `127.0.0.1` 或 `::1`，**且**请求不携带 `X-Forwarded-For` 或 `Forwarded` 头时才放行；当 `tailscale.socket_path` 指向可达的本地 `tailscaled` Unix Socket 时，服务端还会通过 `/localapi/v0/whois` 交叉核验对端身份。
+- **账号匹配与角色安全**：按精确用户名、唯一不区分大小写用户名、已关联 OAuth 账号或唯一邮箱前缀解析现有用户，并继续执行初始管理员的 `must_change_password` 强制改密。未匹配的 Tailnet 用户默认拒绝访问；仅在设置 `tailscale.auto_provision_role = "member"` 时自动创建只读 Member 账号（**绝不自动创建 `admin` 账号**）。长连接 WebSocket 会在连接期间持续重验 `auth_enabled` 与用户角色。
+
+启用此模式时请将 `server.listen` 绑定到 `127.0.0.1:9527`，确保所有外部流量均经由 `tailscale serve` 转发。Tailscale OIDC（`tsidp`）与 HTTPS Sidecar 部署步骤详见 [Tailscale 集成](/zh/docs/tailscale)。
+
 ## 密码管理
 
 ### 修改密码
@@ -119,6 +131,7 @@ Agent 注册端点同样受限：
 
 <Cards>
   <Card title="Server 配置" href="/zh/docs/server" />
+  <Card title="Tailscale 集成" href="/zh/docs/tailscale" />
   <Card title="管理员指南" href="/zh/docs/admin" />
   <Card title="配置参考" href="/zh/docs/configuration" />
 </Cards>

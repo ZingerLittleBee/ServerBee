@@ -8,13 +8,13 @@ use std::sync::Arc;
 
 mod transaction;
 
+pub use serverbee_common::constants::is_upgrade_probe;
 pub use transaction::{
     PARENT_WATCHDOG_ENV, StartupDisposition, acknowledge_recovery_report, commit_startup_trial,
     has_parent_watchdog, install_candidate, is_supervised, prepare_startup, read_recovery_report,
-    restart_restored_binary, rollback_failed_candidate, start_trial_watchdog, startup_health_timeout,
-    trial_is_active, verify_candidate_version,
+    restart_restored_binary, rollback_failed_candidate, start_trial_watchdog,
+    startup_health_timeout, trial_is_active, verify_candidate_version,
 };
-pub use serverbee_common::constants::is_upgrade_probe;
 
 /// 返回当前构建对应的 release asset 文件名(与 release.yml 命名一致)。
 pub fn current_asset_name() -> &'static str {

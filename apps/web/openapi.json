@@ -5943,6 +5943,54 @@
         ]
       }
     },
+    "/api/servers/{id}/tailscale/status": {
+      "get": {
+        "tags": [
+          "tailscale"
+        ],
+        "operationId": "get_server_tailscale_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Server ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Per-server Tailscale node & peer status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerTailscaleStatusResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Tailscale capability disabled on agent"
+          },
+          "404": {
+            "description": "Server not found"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
     "/api/servers/{id}/traceroute": {
       "get": {
         "tags": [
@@ -7400,6 +7448,163 @@
             "description": "Rate limit exceeded"
           }
         }
+      }
+    },
+    "/api/tailscale/config": {
+      "get": {
+        "tags": [
+          "tailscale"
+        ],
+        "operationId": "get_tailscale_config",
+        "responses": {
+          "200": {
+            "description": "Global Tailscale / Headscale admin configuration (API key redacted)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailscaleAdminConfigResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "tailscale"
+        ],
+        "operationId": "update_tailscale_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTailscaleConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated Tailscale / Headscale admin configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailscaleAdminConfigResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required"
+          },
+          "422": {
+            "description": "Validation or SSRF guard error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/tailscale/overview": {
+      "get": {
+        "tags": [
+          "tailscale"
+        ],
+        "operationId": "get_tailnet_overview",
+        "responses": {
+          "200": {
+            "description": "Global Tailnet / Headscale overview and linked devices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailnetOverviewResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
+      }
+    },
+    "/api/tailscale/test": {
+      "post": {
+        "tags": [
+          "tailscale"
+        ],
+        "operationId": "test_tailscale_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestTailscaleConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Upstream Tailscale / Headscale connection test result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TailscaleConnectionTestResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin role required"
+          },
+          "422": {
+            "description": "Validation or SSRF guard error"
+          }
+        },
+        "security": [
+          {
+            "session_cookie": []
+          },
+          {
+            "api_key": []
+          },
+          {
+            "bearer_token": []
+          }
+        ]
       }
     },
     "/api/tasks": {
@@ -13787,6 +13992,30 @@
             ],
             "format": "int64"
           },
+          "tailscale_dns_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailscale_ipv4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailscale_ipv6": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailscale_tailnet": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "temporary": {
             "type": "array",
             "items": {
@@ -13857,6 +14086,59 @@
             "items": {
               "$ref": "#/components/schemas/TargetSummary"
             }
+          }
+        }
+      },
+      "ServerTailscaleStatusResponse": {
+        "type": "object",
+        "required": [
+          "available",
+          "online",
+          "cached"
+        ],
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "cached": {
+            "type": "boolean"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TailscaleStatusReport"
+              }
+            ]
+          },
+          "tailscale_dns_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailscale_ipv4": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailscale_ipv6": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailscale_tailnet": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -14220,6 +14502,417 @@
           }
         }
       },
+      "TailnetDeviceItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "hostname",
+          "addresses",
+          "authorized",
+          "online",
+          "key_expiry_disabled",
+          "tags"
+        ],
+        "properties": {
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "authorized": {
+            "type": "boolean"
+          },
+          "client_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expires": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hostname": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "key_expiry_disabled": {
+            "type": "boolean"
+          },
+          "last_seen": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matched_server_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "matched_server_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "TailnetOverviewResponse": {
+        "type": "object",
+        "required": [
+          "configured",
+          "provider",
+          "tailnet",
+          "total_devices",
+          "online_devices",
+          "linked_servers",
+          "expiring_keys_count",
+          "devices"
+        ],
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TailnetDeviceItem"
+            }
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "expiring_keys_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fetched_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "linked_servers": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "online_devices": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "provider": {
+            "type": "string"
+          },
+          "server_tailnet_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailnet": {
+            "type": "string"
+          },
+          "total_devices": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "TailscaleAdminConfigResponse": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "provider",
+          "api_base_url",
+          "tailnet",
+          "has_api_key",
+          "preferred_server_url",
+          "auth_enabled",
+          "auto_provision_role"
+        ],
+        "properties": {
+          "api_base_url": {
+            "type": "string"
+          },
+          "auth_enabled": {
+            "type": "boolean"
+          },
+          "auto_provision_role": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "has_api_key": {
+            "type": "boolean"
+          },
+          "preferred_server_url": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "tailnet": {
+            "type": "string"
+          }
+        }
+      },
+      "TailscaleConnectionTestResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "device_count",
+          "message"
+        ],
+        "properties": {
+          "device_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "message": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TailscaleNodeSummary": {
+        "type": "object",
+        "required": [
+          "backend_state",
+          "tailscale_ips",
+          "online",
+          "exit_node",
+          "exit_node_option"
+        ],
+        "properties": {
+          "backend_state": {
+            "type": "string"
+          },
+          "dns_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exit_node": {
+            "type": "boolean"
+          },
+          "exit_node_option": {
+            "type": "boolean"
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "key_expiry": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "tailnet_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailscale_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TailscalePeerInfo": {
+        "type": "object",
+        "required": [
+          "id",
+          "host_name",
+          "tailscale_ips",
+          "online",
+          "active",
+          "connection_mode",
+          "rx_bytes",
+          "tx_bytes",
+          "exit_node",
+          "exit_node_option",
+          "tags"
+        ],
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "connection_mode": {
+            "type": "string",
+            "description": "One of `\"direct\"`, `\"derp\"`, `\"peer_relay\"`, or `\"idle\"`."
+          },
+          "cur_addr": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dns_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exit_node": {
+            "type": "boolean"
+          },
+          "exit_node_option": {
+            "type": "boolean"
+          },
+          "host_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "last_handshake": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_seen": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "online": {
+            "type": "boolean"
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relay": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "rx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tailscale_ips": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "TailscaleStatusReport": {
+        "type": "object",
+        "required": [
+          "summary",
+          "advertised_routes",
+          "tags",
+          "peers",
+          "health_warnings",
+          "collected_at"
+        ],
+        "properties": {
+          "advertised_routes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "collected_at": {
+            "type": "string"
+          },
+          "derp_region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "health_warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "peers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TailscalePeerInfo"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TailscaleNodeSummary"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "TargetSummary": {
         "type": "object",
         "required": [
@@ -14478,6 +15171,35 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "TestTailscaleConfigRequest": {
+        "type": "object",
+        "properties": {
+          "api_base_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tailnet": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -15714,6 +16436,52 @@
           }
         }
       },
+      "UpdateTailscaleConfigRequest": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "provider",
+          "api_base_url"
+        ],
+        "properties": {
+          "api_base_url": {
+            "type": "string"
+          },
+          "api_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "auth_enabled": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "auto_provision_role": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "preferred_server_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "tailnet": {
+            "type": "string"
+          }
+        }
+      },
       "UpdateTaskRequest": {
         "type": "object",
         "properties": {
@@ -16182,6 +16950,10 @@
     {
       "name": "asn",
       "description": "ASN MMDB database management for traceroute enrichment (DB-IP Lite ASN)"
+    },
+    {
+      "name": "tailscale",
+      "description": "Tailscale & Headscale host observability and control-plane integration"
     }
   ]
 }

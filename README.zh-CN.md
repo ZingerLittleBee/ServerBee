@@ -24,7 +24,7 @@ ServerBee 在一处统一监控你的所有服务器。中心 **Server** 通过 
 - 🪶 **极致轻量** —— Agent 冷启动约 4.3 MB、稳态约 27 MB,Server 即便管理大量节点也保持精简。
 - ⚡ **实时刷新** —— WebSocket 实时仪表盘,涵盖 CPU、内存、磁盘、网络、负载、温度、磁盘 I/O,以及自行使用 `--features gpu` 构建 Agent 后可用的 NVIDIA GPU 指标(预编译二进制不含 GPU 支持)。
 - 📦 **单一二进制** —— Server 与内嵌 Web UI 打包成一个文件,支持 Docker、一行脚本、Railway 部署。
-- 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、状态页等功能。
+- 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、Tailscale 与 Headscale、状态页等功能。
 - 🔒 **默认安全** —— OAuth + 2FA、RBAC、审计日志、一次性 Agent 注册、Agent 自主掌管的能力门控。
 - ✅ **充分测试** —— 3800+ 自动化测试，Rust 区域覆盖率实测超过 91%；其中集成套件通过 mock-agent 测试桩驱动真实路由、经由 HTTP + WebSocket 演练控制面，每次 CI 全部通过。
 
@@ -62,10 +62,10 @@ Agent 首次连接时会保存每服务器 token 并自动重连 —— code 只
 |---|---|
 | **📊 监控** | 实时指标(CPU/内存/磁盘/网络/负载/温度/磁盘 I/O,以及可选的自行构建 NVIDIA GPU 支持)· 历史图表(1h–30d)· Docker 容器统计、日志与事件 · 按计费周期统计月度流量并预测 · 成本洞察(burn rate、资源单价、0–100 价值评分) |
 | **🔔 告警** | 14+ 指标类型 · 阈值 / 离线 / 流量 / 到期规则 · Webhook、Telegram、Bark、邮件、APNs 渠道,支持通知组 |
-| **🌐 网络** | Ping 探测(ICMP/TCP/HTTP)· 网络质量监控(96 个中国三网 + 国际预设)· 服务监控(SSL/DNS/HTTP 关键字/TCP/WHOIS)· IP 质量与流媒体解锁检测,含欺诈风险评分 |
+| **🌐 网络** | Ping 探测(ICMP/TCP/HTTP)· 网络质量监控(96 个中国三网 + 国际预设)· Tailscale 与 Headscale 组网观测(`Direct` 直连与 `DERP` 中继、MagicDNS、密钥过期)· 服务监控(SSL/DNS/HTTP 关键字/TCP/WHOIS)· IP 质量与流媒体解锁检测,含欺诈风险评分 |
 | **🛠️ 远程管理** | 浏览器 Web 终端(WS 上的 PTY)· 沙箱化文件管理 + Monaco 编辑器 · 基于 nftables 的防火墙封禁 · Agent 自主掌管的能力门控(支持主机本地临时授权)· Agent 自动更新 |
-| **🔐 安全与访问** | SSH 登录 / 暴力破解 / 端口扫描检测 · OAuth(GitHub/Google/OIDC)+ TOTP 两步验证 · Admin/Member 角色 · 审计日志 · 一次性 Agent 注册码 |
-| **🖥️ 仪表盘与分享** | 拖拽式自定义仪表盘(17 种 widget)· 含 90 天可用性时间线的公共状态页 · OKLCH 自定义主题 · 带国旗的服务器分组 · 原生 iOS 移动端 |
+| **🔐 安全与访问** | SSH 登录 / 暴力破解 / 端口扫描检测 · OAuth(GitHub/Google/OIDC)+ TOTP 两步验证 · Tailscale Serve 回环身份认证 · Admin/Member 角色 · 审计日志 · 一次性 Agent 注册码 |
+| **🖥️ 仪表盘与分享** | 拖拽式自定义仪表盘(18 种 widget,含 Tailscale 概览)· 含 90 天可用性时间线的公共状态页 · OKLCH 自定义主题 · 带国旗的服务器分组 · 原生 iOS 移动端 |
 | **⚙️ 运维** | `serverbee` 管理 CLI · 备份与恢复 · GeoIP 地区检测 · OpenAPI/Swagger 文档(180+ 端点) |
 
 ## 配置
@@ -114,9 +114,9 @@ sudo serverbee config         # 查看 / 修改配置
 sudo serverbee uninstall agent -y
 ```
 
-### 反向代理
+### 反向代理与 Tailscale Sidecar
 
-在 Nginx/Caddy 之后,将 `/` 代理到 `127.0.0.1:9527`,并确保 WebSocket 路由 `/api/ws/` 和 `/api/agent/ws` 透传 `Upgrade`/`Connection` 头且设置较长读超时。完整可用的 Nginx 配置见[部署文档](https://docs.serverbee.app/zh/docs/deployment)。
+在 Nginx/Caddy 之后,将 `/` 代理到 `127.0.0.1:9527`,并确保 WebSocket 路由 `/api/ws/` 和 `/api/agent/ws` 透传 `Upgrade`/`Connection` 头且设置较长读超时。完整可用的 Nginx 配置见[部署文档](https://docs.serverbee.app/zh/docs/deployment)。如需在私有 Tailnet 内通过 `*.ts.net` 自动 HTTPS 发布面板并可选开启回环免密登录,可使用 [`deploy/docker-compose.tailscale.yml`](deploy/docker-compose.tailscale.yml),详见 [Tailscale 集成文档](https://docs.serverbee.app/zh/docs/tailscale)。
 
 ## 开发
 

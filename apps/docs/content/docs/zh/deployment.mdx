@@ -275,6 +275,7 @@ sudo systemctl status serverbee-server
 |------|----------|----------------------|-----------------|------------|
 | IP 直连，普通 HTTP | `http://203.0.113.10:9527` | `false` | `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://203.0.113.10:9527` |
 | 域名 + HTTPS 反向代理 | `https://monitor.example.com` | `true` | `SERVERBEE_AUTH__SECURE_COOKIE=true` 或不设置该变量 | `https://monitor.example.com` |
+| 私有 Tailnet + `tailscale serve` | `https://serverbee.tailnet.ts.net` | `true` | `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://serverbee.tailnet.ts.net` |
 
 使用域名访问时，需要先添加 DNS `A` 或 `AAAA` 记录指向服务器，再用 Nginx、Caddy 或 Traefik 终止 HTTPS，并把请求反向代理到 ServerBee 的 `127.0.0.1:9527`。
 
@@ -389,6 +390,16 @@ networks:
 volumes:
   serverbee-data:
 ```
+
+### Tailscale Sidecar（`*.ts.net` HTTPS）
+
+如果希望仅在私有 Tailnet 内发布 ServerBee 而不向公网暴露 `9527` 或 `443` 端口，可直接使用仓库提供的 `deploy/docker-compose.tailscale.yml`。该模板将 `tailscale/tailscale:latest` 与 `serverbee-server` 置于共享网络命名空间（`network_mode: service:tailscale`），让 ServerBee 仅监听 `127.0.0.1:9527`，并由 `tailscale serve` 自动签发和终止受系统信任的 Let's Encrypt `*.ts.net` HTTPS（同时满足浏览器 `Secure` Cookie 与 iOS App Transport Security 要求）：
+
+```bash
+TS_AUTHKEY=tskey-auth-YOUR_KEY docker compose -f deploy/docker-compose.tailscale.yml up -d
+```
+
+完整的 `config/ts-serve.json` 配置、可选的 `Tailscale-User-Login` 回环免密登录以及通过 Tailnet 接入 Agent 的步骤，请参见 [Tailscale 集成](/zh/docs/tailscale)。
 
 ## TLS / HTTPS
 
@@ -867,5 +878,6 @@ curl --fail http://127.0.0.1:9527/healthz
 <Cards>
   <Card title="Server 配置" href="/zh/docs/server" />
   <Card title="Agent 配置" href="/zh/docs/agent" />
+  <Card title="Tailscale 集成" href="/zh/docs/tailscale" />
   <Card title="架构设计" href="/zh/docs/architecture" />
 </Cards>

@@ -7,6 +7,19 @@
 import type { components } from './api-types'
 
 export type { IpQualitySnapshotData, ServerIpQualityData } from './ip-quality-types'
+export type {
+  ServerTailscaleStatusResponse,
+  TailnetDeviceItem,
+  TailnetOverviewResponse,
+  TailscaleAdminConfigResponse,
+  TailscaleConnectionMode,
+  TailscaleConnectionTestResponse,
+  TailscaleNodeSummary,
+  TailscalePeerInfo,
+  TailscaleStatusReport,
+  TestTailscaleConfigRequest,
+  UpdateTailscaleConfigRequest
+} from './tailscale-types'
 
 type S = components['schemas']
 
@@ -23,7 +36,12 @@ export type UpdateUserInput = S['UpdateUserInput']
 export type ChangePasswordRequest = S['ChangePasswordRequest']
 
 // Servers
-export type ServerResponse = S['ServerResponse']
+export type ServerResponse = S['ServerResponse'] & {
+  tailscale_dns_name?: string | null
+  tailscale_ipv4?: string | null
+  tailscale_ipv6?: string | null
+  tailscale_tailnet?: string | null
+}
 export type ServerMetricRecord = S['ServerRecord']
 export type UpdateServerInput = S['UpdateServerInput']
 export type BatchDeleteRequest = S['BatchDeleteRequest']

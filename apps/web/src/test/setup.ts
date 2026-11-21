@@ -40,6 +40,10 @@ if (typeof Element !== 'undefined' && typeof Element.prototype.scrollIntoView ==
   Element.prototype.scrollIntoView = () => undefined
 }
 
+if (typeof Element !== 'undefined' && typeof Element.prototype.getAnimations === 'undefined') {
+  Element.prototype.getAnimations = () => []
+}
+
 // jsdom has no matchMedia. boneyard's Skeleton (dark-mode detection) and the
 // useReducedMotion hook both call it, so provide a no-preference default;
 // individual tests override window.matchMedia to simulate specific queries.

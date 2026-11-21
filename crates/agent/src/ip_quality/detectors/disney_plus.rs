@@ -183,7 +183,12 @@ mod tests {
     fn failed_when_200_but_no_service_markers() {
         // Ambiguous 200 with unrecognized body => Failed (inconclusive),
         // not Blocked — an unrecognized 200 is not a geo-block signal.
-        let o = outcome(200, "<html>Loading...</html>", "https://www.disneyplus.com/", vec![]);
+        let o = outcome(
+            200,
+            "<html>Loading...</html>",
+            "https://www.disneyplus.com/",
+            vec![],
+        );
         let (status, _) = classify(&o);
         assert_eq!(status, UnlockStatus::Failed);
     }

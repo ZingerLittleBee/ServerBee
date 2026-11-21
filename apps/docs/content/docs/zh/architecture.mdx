@@ -70,6 +70,7 @@ icon: Boxes
 | PingService | Ping 探测任务 CRUD、任务下发、结果存储 |
 | TaskService | 远程命令下发、执行结果查询 |
 | ConfigService | 系统配置读写（K-V 存储） |
+| TailscaleControlService | Tailscale v2 / Headscale v1 控制面客户端、设备关联与 `tailscaled` LocalAPI `whois` 校验 |
 | GeoIpService | IP 地理位置查询（MaxMind MMDB） |
 | UserService | 用户 CRUD、角色管理 |
 
@@ -92,6 +93,7 @@ icon: Boxes
 | Reporter | 管理 WebSocket 连接、上报指标、处理 Server 下发的指令、断线重连 |
 | PingManager | 执行 Server 下发的定时 ICMP/TCP/HTTP Ping 任务 |
 | NetworkProber | 执行定时网络质量探测并上报聚合结果 |
+| Tailscale | 通过本机 Unix Socket LocalAPI 或 CLI 回退采集并上报 `tailscaled` 状态 |
 | Terminal | 管理 PTY 终端会话，转发终端输入输出 |
 
 ### Common（共享 crate，`crates/common`）
@@ -139,6 +141,8 @@ Agent 连接到 `ws://<server>/api/agent/ws`，并使用 `Authorization: Bearer 
 | `DockerStats` | 容器资源使用统计 | 否 |
 | `DockerLog` | 容器日志条目（批量） | 否 |
 | `DockerEvent` | 容器生命周期事件 | 否 |
+| `TailscaleStatus` | 宿主机 `tailscaled` 节点概览、路由及对端快照 | 否 |
+| `TailscaleUnavailable` | 上报本机 `tailscaled` 未运行或不可达 | 否 |
 
 ### Server -> Agent（`ServerMessage`）
 
@@ -157,6 +161,7 @@ Agent 连接到 `ws://<server>/api/agent/ws`，并使用 `Authorization: Bearer 
 | `DockerLogsStart` | 开始为容器流式传输日志 |
 | `DockerLogsStop` | 停止流式传输日志 |
 | `DockerAction` | 执行容器操作（start/stop/restart/remove） |
+| `TailscaleGetStatus` | 按需请求实时 `tailscaled` 状态快照 |
 
 ### Server -> Browser（`BrowserMessage`）
 
@@ -298,13 +303,14 @@ Server 启动时通过 `tokio::spawn` 创建多个长期运行的后台任务：
 
 ### 认证路径
 
-面向用户的 REST 和 WebSocket 请求可通过 Session Cookie、API Key 或 Bearer Session Token 解析出用户，随后按该用户的当前角色进行授权。Agent WebSocket 连接使用独立的 Agent run token。
+面向用户的 REST 和 WebSocket 请求可通过 Session Cookie、API Key、Bearer Session Token 或（在严格回环对端且不含代理转发头、已开启 `tailscale.auth_enabled` 时）`Tailscale-User-Login` 解析出用户，随后按该用户的当前角色进行授权。Agent WebSocket 连接使用独立的 Agent run token。
 
 ```
 请求进入
   +-- Cookie: session_token=xxx         --> Session 认证（浏览器）
   +-- Header: X-API-Key: serverbee_xxx  --> API Key 认证（自动化）
   +-- Header: Authorization: Bearer xxx  --> Session 认证（移动端）
+  +-- Header: Tailscale-User-Login      --> 回环 Tailscale Serve 认证（可选）
 
 Agent WebSocket 连接
   +-- Header: Authorization: Bearer xxx  --> Agent run token 认证
@@ -387,6 +393,7 @@ ServerBee/
         lib.rs
         protocol.rs             # Agent <-> Server 消息类型
         types.rs                # SystemReport、GpuInfo 等
+        tailscale_types.rs      # Tailscale 节点与对端状态 DTO
         constants.rs            # 协议版本、默认值
     server/                     # 服务端二进制（Axum、sea-orm、后台任务）
       src/
@@ -414,10 +421,12 @@ ServerBee/
         security/                # 主机安全事件检测
         firewall/                # 防火墙拦截管理
         ip_quality/              # IP 质量检测
+        tailscale/               # 本机 tailscaled Socket 与 CLI 状态采集
         upgrade.rs               # 自升级协调逻辑
         upgrade/                 # 事务式自升级支持
   apps/
     web/                        # React SPA 前端（Vite、TanStack、shadcn/ui）
+    ios/                        # 原生 iOS SwiftUI 客户端
     docs/                       # 文档站点（TanStack Start + Fumadocs）
   docs/                         # 设计文档与计划
 ```

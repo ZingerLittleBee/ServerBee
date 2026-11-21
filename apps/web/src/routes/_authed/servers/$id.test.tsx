@@ -156,11 +156,17 @@ vi.mock('@/lib/api-client', () => ({
   }
 }))
 
+const mockGetEffectiveCapabilityEnabled = vi.fn<(_eff?: unknown, _cfg?: unknown, _bit?: unknown) => boolean>(
+  () => false
+)
+
 vi.mock('@/lib/capabilities', () => ({
   CAP_DOCKER: 1,
   CAP_FILE: 2,
+  CAP_TAILSCALE: 2048,
   CAP_TERMINAL: 4,
-  getEffectiveCapabilityEnabled: () => false
+  getEffectiveCapabilityEnabled: (eff: unknown, cfg: unknown, bit: unknown) =>
+    mockGetEffectiveCapabilityEnabled(eff, cfg, bit)
 }))
 
 vi.mock('@/lib/disk-io', () => ({
@@ -206,6 +212,7 @@ function renderDetailPage() {
 
 describe('ServerDetailPage', () => {
   beforeEach(() => {
+    mockGetEffectiveCapabilityEnabled.mockReturnValue(false)
     mockUseServer.mockReturnValue({
       data: {
         agent_version: '1.0.0',
@@ -397,5 +404,43 @@ describe('ServerDetailPage', () => {
 
     expect(screen.getByText(REGEX_DETAIL_EXPIRED)).toBeInTheDocument()
     expect(screen.getByText('cost_invalid_missing_billing_cycle')).toBeInTheDocument()
+  })
+
+  it('renders Tailscale IP/DNS meta chips and Tailscale action button when CAP_TAILSCALE is enabled', () => {
+    mockGetEffectiveCapabilityEnabled.mockImplementation((_eff: unknown, _cfg: unknown, bit: unknown) => bit === 2048)
+    mockUseServer.mockReturnValue({
+      data: {
+        agent_version: '1.0.0',
+        billing_cycle: null,
+        capabilities: 3900,
+        country_code: 'US',
+        cpu_arch: 'x86_64',
+        cpu_cores: 4,
+        cpu_name: 'Test CPU',
+        disk_total: 1,
+        effective_capabilities: 3900,
+        features: ['tailscale'],
+        id: 'server-1',
+        ipv4: '127.0.0.1',
+        ipv6: null,
+        kernel_version: '6.0.0',
+        mem_total: 1,
+        name: 'test-server',
+        os: 'Ubuntu',
+        price: null,
+        protocol_version: 2,
+        region: 'test-region',
+        tailscale_dns_name: 'test-server.tailnet.ts.net',
+        tailscale_ipv4: '100.64.0.42',
+        traffic_limit: null
+      },
+      isLoading: false
+    })
+
+    renderDetailPage()
+
+    expect(screen.getByText('100.64.0.42')).toBeInTheDocument()
+    expect(screen.getByText('test-server.tailnet.ts.net')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tailscale' })).toBeInTheDocument()
   })
 })

@@ -62,6 +62,8 @@ final class ServersViewModel {
                 server.name.lowercased().contains(query) ||
                 (server.ipv4?.lowercased().contains(query) ?? false) ||
                 (server.ipv6?.lowercased().contains(query) ?? false) ||
+                (server.tailscaleIpv4?.lowercased().contains(query) ?? false) ||
+                (server.tailscaleDnsName?.lowercased().contains(query) ?? false) ||
                 (server.tags?.contains { $0.lowercased().contains(query) } ?? false)
             }
         }
@@ -167,6 +169,7 @@ final class ServersViewModel {
                 // and are absent from the authenticated ServerResponse DTO.
                 if cfg.tags == nil { refreshed.tags = existing.tags }
                 if cfg.groupName == nil { refreshed.groupName = existing.groupName }
+                if cfg.features == nil { refreshed.features = existing.features }
                 byID[cfg.id] = refreshed
             } else {
                 byID[cfg.id] = cfg

@@ -6,12 +6,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use crate::capability_grants::CapabilityAuthority;
 use chrono::Utc;
 use serverbee_common::constants::CAP_IP_QUALITY;
 use serverbee_common::protocol::{UnlockResultData, UnlockServiceDef, UnlockStatus};
 use tokio::sync::{Mutex, Semaphore, mpsc, watch};
 use tokio::task::JoinHandle;
-use crate::capability_grants::CapabilityAuthority;
 
 /// Maximum number of services probed concurrently within a single run.
 const MAX_UNLOCK_CONCURRENT: usize = 5;
@@ -60,10 +60,7 @@ impl UnlockChecker {
     /// Create a new `UnlockChecker` and spawn its scheduler task.
     ///
     /// `result_tx` receives a `RunResult` each time a run completes.
-    pub fn new(
-        capabilities: Arc<CapabilityAuthority>,
-        result_tx: mpsc::Sender<RunResult>,
-    ) -> Self {
+    pub fn new(capabilities: Arc<CapabilityAuthority>, result_tx: mpsc::Sender<RunResult>) -> Self {
         let services = Arc::new(Mutex::new(Vec::new()));
         let interval_hours = Arc::new(Mutex::new(DEFAULT_INTERVAL_HOURS));
         // mpsc for run_now: buffered so signals sent before the scheduler starts are not lost.
@@ -136,9 +133,7 @@ impl UnlockChecker {
     /// Trigger an immediate check outside the regular schedule.
     pub fn run_now(&self) {
         if !self.capabilities.has(CAP_IP_QUALITY) {
-            tracing::debug!(
-                "IpQualityRunNow received but CAP_IP_QUALITY not effective — ignoring"
-            );
+            tracing::debug!("IpQualityRunNow received but CAP_IP_QUALITY not effective — ignoring");
             return;
         }
         // Best-effort send: if the channel is full the scheduler already has a pending run.
@@ -230,10 +225,7 @@ where
 }
 
 /// Run the probe for a single `UnlockServiceDef` and map to a `UnlockResultData`.
-async fn run_single_service(
-    def: UnlockServiceDef,
-    client: &reqwest::Client,
-) -> UnlockResultData {
+async fn run_single_service(def: UnlockServiceDef, client: &reqwest::Client) -> UnlockResultData {
     // Determine whether this is a built-in (detector key) or custom (request + rules) service.
     if let Some(ref detector_key) = def.detector {
         // Built-in path: dispatch to the hardcoded detector.
@@ -277,10 +269,7 @@ async fn run_single_service(
             }
             Err(e) => {
                 let latency_ms = start.elapsed().as_millis() as u32;
-                tracing::debug!(
-                    "Custom service (service_id={}) fetch failed: {e}",
-                    def.id
-                );
+                tracing::debug!("Custom service (service_id={}) fetch failed: {e}", def.id);
                 UnlockResultData {
                     service_id: def.id.clone(),
                     status: UnlockStatus::Failed,
@@ -389,12 +378,20 @@ async fn run_scheduler(
         tracing::info!(
             "UnlockChecker: starting run for {} services (egress_ip={})",
             current_services.len(),
-            if egress_ip.is_empty() { "<unknown>" } else { &egress_ip }
+            if egress_ip.is_empty() {
+                "<unknown>"
+            } else {
+                &egress_ip
+            }
         );
 
         let (results, checked_at) = run_once(&current_services).await;
 
-        let run_result = RunResult { egress_ip, results, checked_at };
+        let run_result = RunResult {
+            egress_ip,
+            results,
+            checked_at,
+        };
 
         if result_tx.send(run_result).await.is_err() {
             tracing::debug!("UnlockChecker: result channel closed, stopping scheduler");
@@ -483,7 +480,10 @@ mod tests {
 
         // Services should remain empty because the capability is absent.
         let stored = checker.services.lock().await;
-        assert!(stored.is_empty(), "sync must be a no-op when capability absent");
+        assert!(
+            stored.is_empty(),
+            "sync must be a no-op when capability absent"
+        );
     }
 
     // ── run_once with a stub (unknown key → Unsupported, not dropped) ─────────
@@ -615,12 +615,17 @@ mod tests {
         let caps = make_caps(CAP_IP_QUALITY);
         let checker = UnlockChecker::new(caps, tx);
 
-        checker.sync(vec![stub_builtin("x", "unknown_xyz")], 12).await;
+        checker
+            .sync(vec![stub_builtin("x", "unknown_xyz")], 12)
+            .await;
         checker.notify_ip_changed(Some("1.2.3.4".to_string()));
         checker.run_now();
 
         let result = tokio::time::timeout(Duration::from_secs(10), rx.recv()).await;
-        assert!(result.is_ok(), "run_now must trigger a scheduler run when capability present");
+        assert!(
+            result.is_ok(),
+            "run_now must trigger a scheduler run when capability present"
+        );
         assert!(result.unwrap().is_some());
     }
 
@@ -670,13 +675,10 @@ mod tests {
         checker.run_now();
 
         // Wait for the result with a generous timeout.
-        let result = tokio::time::timeout(
-            Duration::from_secs(10),
-            rx.recv(),
-        )
-        .await
-        .expect("timed out waiting for UnlockChecker result")
-        .expect("channel closed before result");
+        let result = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("timed out waiting for UnlockChecker result")
+            .expect("channel closed before result");
 
         assert_eq!(result.results.len(), 1);
         assert_eq!(result.results[0].status, UnlockStatus::Unsupported);
@@ -692,7 +694,9 @@ mod tests {
         let caps = make_caps(CAP_IP_QUALITY);
         let checker = UnlockChecker::new(caps, tx);
 
-        checker.sync(vec![stub_builtin("svc1", "unknown_xyz")], 12).await;
+        checker
+            .sync(vec![stub_builtin("svc1", "unknown_xyz")], 12)
+            .await;
 
         let result = tokio::time::timeout(Duration::from_secs(10), rx.recv())
             .await
@@ -713,7 +717,9 @@ mod tests {
         let no_run = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await;
         assert!(no_run.is_err(), "empty sync must not trigger a run");
 
-        checker.sync(vec![stub_builtin("svc1", "unknown_xyz")], 12).await;
+        checker
+            .sync(vec![stub_builtin("svc1", "unknown_xyz")], 12)
+            .await;
         let result = tokio::time::timeout(Duration::from_secs(10), rx.recv())
             .await
             .expect("sync with services must trigger the initial run")
@@ -728,13 +734,17 @@ mod tests {
         let caps = make_caps(CAP_IP_QUALITY);
         let checker = UnlockChecker::new(caps, tx);
 
-        checker.sync(vec![stub_builtin("svc1", "unknown_xyz")], 12).await;
+        checker
+            .sync(vec![stub_builtin("svc1", "unknown_xyz")], 12)
+            .await;
         tokio::time::timeout(Duration::from_secs(10), rx.recv())
             .await
             .expect("initial run expected")
             .expect("channel open");
 
-        checker.sync(vec![stub_builtin("svc2", "unknown_abc")], 12).await;
+        checker
+            .sync(vec![stub_builtin("svc2", "unknown_abc")], 12)
+            .await;
         let extra = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await;
         assert!(extra.is_err(), "second sync must not retrigger a run");
     }
@@ -799,7 +809,9 @@ mod tests {
 
         // Configure services without consuming the initial-run one-shot via
         // run_now: sync triggers the initial run, drain it first.
-        checker.sync(vec![stub_builtin("svc1", "unknown_xyz")], 12).await;
+        checker
+            .sync(vec![stub_builtin("svc1", "unknown_xyz")], 12)
+            .await;
         tokio::time::timeout(Duration::from_secs(10), rx.recv())
             .await
             .expect("initial run expected")

@@ -48,6 +48,10 @@ pub struct Model {
     #[sea_orm(default_value = "[]")]
     pub features: String,
     pub last_remote_addr: Option<String>,
+    pub tailscale_ipv4: Option<String>,
+    pub tailscale_ipv6: Option<String>,
+    pub tailscale_dns_name: Option<String>,
+    pub tailscale_tailnet: Option<String>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

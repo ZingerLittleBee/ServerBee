@@ -16,6 +16,7 @@ import enServers from '@/locales/en/servers.json'
 import enServiceMonitors from '@/locales/en/service-monitors.json'
 import enSettings from '@/locales/en/settings.json'
 import enStatus from '@/locales/en/status.json'
+import enTailscale from '@/locales/en/tailscale.json'
 import enTerminal from '@/locales/en/terminal.json'
 
 import zhCommon from '@/locales/zh/common.json'
@@ -32,6 +33,7 @@ import zhServers from '@/locales/zh/servers.json'
 import zhServiceMonitors from '@/locales/zh/service-monitors.json'
 import zhSettings from '@/locales/zh/settings.json'
 import zhStatus from '@/locales/zh/status.json'
+import zhTailscale from '@/locales/zh/tailscale.json'
 import zhTerminal from '@/locales/zh/terminal.json'
 
 // i18next resource keys are bare language codes; `<html lang>` wants a BCP-47
@@ -71,6 +73,7 @@ i18next
         'service-monitors': enServiceMonitors,
         settings: enSettings,
         status: enStatus,
+        tailscale: enTailscale,
         terminal: enTerminal
       },
       zh: {
@@ -88,6 +91,7 @@ i18next
         'service-monitors': zhServiceMonitors,
         settings: zhSettings,
         status: zhStatus,
+        tailscale: zhTailscale,
         terminal: zhTerminal
       }
     },

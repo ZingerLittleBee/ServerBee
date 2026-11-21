@@ -97,4 +97,11 @@ mod tests {
         let ip: IpAddr = "203.0.113.7".parse().unwrap();
         assert!(check("198.51.100.5/32", Some(ip)).is_ok());
     }
+
+    #[test]
+    fn rejects_tailscale_cgnat_peer_and_range() {
+        assert!(check("100.64.0.0/10", None).is_err());
+        assert!(check("100.100.42.7/32", None).is_err());
+        assert!(check("fd7a:115c:a1e0::5/128", None).is_err());
+    }
 }

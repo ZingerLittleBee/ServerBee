@@ -22,6 +22,39 @@ enum Capability: Int, CaseIterable, Sendable {
     case securityEvents = 256
     case firewallBlock = 512
     case ipQuality = 1024
+    case tailscale = 2048
+
+    var key: String {
+        switch self {
+        case .terminal: "terminal"
+        case .exec: "exec"
+        case .upgrade: "upgrade"
+        case .pingICMP: "ping_icmp"
+        case .pingTCP: "ping_tcp"
+        case .pingHTTP: "ping_http"
+        case .file: "file"
+        case .docker: "docker"
+        case .securityEvents: "security_events"
+        case .firewallBlock: "firewall_block"
+        case .ipQuality: "ip_quality"
+        case .tailscale: "tailscale"
+        }
+    }
+
+    var defaultEnabled: Bool {
+        switch self {
+        case .terminal, .exec, .file, .docker: false
+        case .upgrade, .pingICMP, .pingTCP, .pingHTTP, .securityEvents, .firewallBlock, .ipQuality, .tailscale: true
+        }
+    }
+
+    var riskLevel: String {
+        switch self {
+        case .terminal, .exec, .file, .docker: "high"
+        case .firewallBlock, .ipQuality: "medium"
+        case .upgrade, .pingICMP, .pingTCP, .pingHTTP, .securityEvents, .tailscale: "low"
+        }
+    }
 
     var label: String {
         switch self {
@@ -36,6 +69,7 @@ enum Capability: Int, CaseIterable, Sendable {
         case .securityEvents: String(localized: "Security events")
         case .firewallBlock: String(localized: "Firewall blocklist")
         case .ipQuality: String(localized: "IP quality")
+        case .tailscale: String(localized: "Tailscale")
         }
     }
 
@@ -50,6 +84,7 @@ enum Capability: Int, CaseIterable, Sendable {
         case .securityEvents: "shield"
         case .firewallBlock: "lock.shield"
         case .ipQuality: "checkmark.seal"
+        case .tailscale: "circle.grid.3x3"
         }
     }
 }

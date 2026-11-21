@@ -47,9 +47,7 @@ pub fn classify(outcome: &HttpOutcome) -> (UnlockStatus, Option<String>) {
         .collect();
     for url in &all_urls {
         let url_lower = url.to_lowercase();
-        if url_lower.contains("not-available")
-            || url_lower.contains("unavailable")
-        {
+        if url_lower.contains("not-available") || url_lower.contains("unavailable") {
             return (UnlockStatus::Blocked, None);
         }
     }
@@ -170,7 +168,12 @@ mod tests {
     fn failed_when_200_no_service_markers() {
         // Ambiguous 200 with no Spotify markers => Failed (inconclusive),
         // not Blocked — an unrecognized 200 is not a geo-block signal.
-        let o = outcome(200, "<html>Loading</html>", "https://open.spotify.com/", vec![]);
+        let o = outcome(
+            200,
+            "<html>Loading</html>",
+            "https://open.spotify.com/",
+            vec![],
+        );
         let (status, _) = classify(&o);
         assert_eq!(status, UnlockStatus::Failed);
     }

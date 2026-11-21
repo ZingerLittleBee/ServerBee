@@ -29,20 +29,73 @@ use crate::ip_quality::rule_engine::HttpOutcome;
 ///
 /// Returns `(UnlockStatus, Option<region_string>, latency_ms)`.
 /// Unknown keys return `UnlockStatus::Unsupported`.
-pub async fn dispatch(
-    key: &str,
-    client: &reqwest::Client,
-) -> (UnlockStatus, Option<String>, u32) {
+pub async fn dispatch(key: &str, client: &reqwest::Client) -> (UnlockStatus, Option<String>, u32) {
     match key {
         "netflix" => run_netflix(client).await,
-        "disney_plus" => run_single(client, disney_plus::PROBE_URL, disney_plus::TIMEOUT_MS, disney_plus::classify).await,
-        "youtube_premium" => run_single(client, youtube_premium::PROBE_URL, youtube_premium::TIMEOUT_MS, youtube_premium::classify).await,
-        "amazon_prime" => run_single(client, amazon_prime::PROBE_URL, amazon_prime::TIMEOUT_MS, amazon_prime::classify).await,
-        "hbo_max" => run_single(client, hbo_max::PROBE_URL, hbo_max::TIMEOUT_MS, hbo_max::classify).await,
+        "disney_plus" => {
+            run_single(
+                client,
+                disney_plus::PROBE_URL,
+                disney_plus::TIMEOUT_MS,
+                disney_plus::classify,
+            )
+            .await
+        }
+        "youtube_premium" => {
+            run_single(
+                client,
+                youtube_premium::PROBE_URL,
+                youtube_premium::TIMEOUT_MS,
+                youtube_premium::classify,
+            )
+            .await
+        }
+        "amazon_prime" => {
+            run_single(
+                client,
+                amazon_prime::PROBE_URL,
+                amazon_prime::TIMEOUT_MS,
+                amazon_prime::classify,
+            )
+            .await
+        }
+        "hbo_max" => {
+            run_single(
+                client,
+                hbo_max::PROBE_URL,
+                hbo_max::TIMEOUT_MS,
+                hbo_max::classify,
+            )
+            .await
+        }
         "chatgpt" => run_chatgpt(client).await,
-        "gemini" => run_single(client, gemini::PROBE_URL, gemini::TIMEOUT_MS, gemini::classify).await,
-        "spotify" => run_single(client, spotify::PROBE_URL, spotify::TIMEOUT_MS, spotify::classify).await,
-        "tiktok" => run_single(client, tiktok::PROBE_URL, tiktok::TIMEOUT_MS, tiktok::classify).await,
+        "gemini" => {
+            run_single(
+                client,
+                gemini::PROBE_URL,
+                gemini::TIMEOUT_MS,
+                gemini::classify,
+            )
+            .await
+        }
+        "spotify" => {
+            run_single(
+                client,
+                spotify::PROBE_URL,
+                spotify::TIMEOUT_MS,
+                spotify::classify,
+            )
+            .await
+        }
+        "tiktok" => {
+            run_single(
+                client,
+                tiktok::PROBE_URL,
+                tiktok::TIMEOUT_MS,
+                tiktok::classify,
+            )
+            .await
+        }
         _ => (UnlockStatus::Unsupported, None, 0),
     }
 }
@@ -294,7 +347,12 @@ mod tests {
         let (trace_status, _) = chatgpt::classify_trace(&trace);
         assert_eq!(trace_status, UnlockStatus::Failed);
 
-        let fallback = outcome(200, "<html>Sign in to ChatGPT</html>", chatgpt::FALLBACK_URL, vec![]);
+        let fallback = outcome(
+            200,
+            "<html>Sign in to ChatGPT</html>",
+            chatgpt::FALLBACK_URL,
+            vec![],
+        );
         let (fb_status, _) = chatgpt::classify_fallback(&fallback);
         assert_eq!(fb_status, UnlockStatus::Unlocked);
     }
@@ -322,7 +380,12 @@ mod tests {
     fn disney_plus_arm_unrecognized_200_is_failed() {
         // A 200 with no positive or negative marker is inconclusive (Failed),
         // not Blocked — confirming the conservative default branch.
-        let o = outcome(200, "<html>loading</html>", "https://www.disneyplus.com/home", vec![]);
+        let o = outcome(
+            200,
+            "<html>loading</html>",
+            "https://www.disneyplus.com/home",
+            vec![],
+        );
         let (status, _) = disney_plus::classify(&o);
         assert_eq!(status, UnlockStatus::Failed);
     }
@@ -341,7 +404,12 @@ mod tests {
     fn amazon_prime_arm_classifies_via_detector() {
         // The amazon_prime arm delegates to amazon_prime::classify; a plain 200
         // with no markers must not be reported as Unsupported.
-        let o = outcome(200, "<html>home</html>", "https://www.primevideo.com/", vec![]);
+        let o = outcome(
+            200,
+            "<html>home</html>",
+            "https://www.primevideo.com/",
+            vec![],
+        );
         let (status, _) = amazon_prime::classify(&o);
         assert_ne!(status, UnlockStatus::Unsupported);
     }
@@ -357,7 +425,12 @@ mod tests {
     #[test]
     fn gemini_arm_classifies_via_detector() {
         // The gemini arm delegates to gemini::classify (never Unsupported).
-        let o = outcome(200, "<html>home</html>", "https://gemini.google.com/", vec![]);
+        let o = outcome(
+            200,
+            "<html>home</html>",
+            "https://gemini.google.com/",
+            vec![],
+        );
         let (status, _) = gemini::classify(&o);
         assert_ne!(status, UnlockStatus::Unsupported);
     }
@@ -434,8 +507,13 @@ mod tests {
         // Embedded userinfo is rejected pre-flight; another distinct synchronous
         // validation failure feeding the `Err(_)` arm.
         let client = crate::ip_quality::http::build_client().unwrap();
-        let (status, _region, _latency) =
-            run_single(&client, "http://user:pass@example.com/", 1000, never_classify).await;
+        let (status, _region, _latency) = run_single(
+            &client,
+            "http://user:pass@example.com/",
+            1000,
+            never_classify,
+        )
+        .await;
         assert_eq!(status, UnlockStatus::Failed);
     }
 

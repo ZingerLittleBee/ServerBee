@@ -66,6 +66,10 @@ export interface ServerMetrics extends LiveMetrics {
   region: string | null
   swap_total: number
   tags?: string[]
+  tailscale_dns_name?: string | null
+  tailscale_ipv4?: string | null
+  tailscale_ipv6?: string | null
+  tailscale_tailnet?: string | null
   temporary?: TemporaryGrant[]
 }
 
@@ -136,6 +140,10 @@ function blankServerMetrics(id: string): ServerMetrics {
     swap_total: 0,
     swap_used: 0,
     tags: [],
+    tailscale_dns_name: null,
+    tailscale_ipv4: null,
+    tailscale_ipv6: null,
+    tailscale_tailnet: null,
     tcp_conn: 0,
     temporary: [],
     udp_conn: 0,
@@ -143,33 +151,52 @@ function blankServerMetrics(id: string): ServerMetrics {
   }
 }
 
+interface TailscaleCatalogFields {
+  tailscale_dns_name?: string | null
+  tailscale_ipv4?: string | null
+  tailscale_ipv6?: string | null
+  tailscale_tailnet?: string | null
+}
+
+function pickDefined<T>(incoming: T | undefined, fallback: T): T {
+  return incoming === undefined ? fallback : incoming
+}
+
+function mergeTailscaleFields(
+  current: TailscaleCatalogFields,
+  incoming: TailscaleCatalogFields
+): TailscaleCatalogFields {
+  return {
+    tailscale_dns_name: pickDefined(incoming.tailscale_dns_name, current.tailscale_dns_name),
+    tailscale_ipv4: pickDefined(incoming.tailscale_ipv4, current.tailscale_ipv4),
+    tailscale_ipv6: pickDefined(incoming.tailscale_ipv6, current.tailscale_ipv6),
+    tailscale_tailnet: pickDefined(incoming.tailscale_tailnet, current.tailscale_tailnet)
+  }
+}
+
 function projectRestServer(current: ServerMetrics, server: ServerResponse): ServerMetrics {
   return {
     ...current,
     agent_authority: server.agent_authority,
-    agent_local_capabilities:
-      server.agent_local_capabilities === undefined
-        ? current.agent_local_capabilities
-        : server.agent_local_capabilities,
-    agent_version: server.agent_version === undefined ? current.agent_version : server.agent_version,
+    agent_local_capabilities: pickDefined(server.agent_local_capabilities, current.agent_local_capabilities),
+    agent_version: pickDefined(server.agent_version, current.agent_version),
     capabilities: server.capabilities,
-    country_code: server.country_code === undefined ? current.country_code : server.country_code,
-    cpu_cores: server.cpu_cores === undefined ? current.cpu_cores : server.cpu_cores,
-    cpu_name: server.cpu_name === undefined ? current.cpu_name : server.cpu_name,
+    country_code: pickDefined(server.country_code, current.country_code),
+    cpu_cores: pickDefined(server.cpu_cores, current.cpu_cores),
+    cpu_name: pickDefined(server.cpu_name, current.cpu_name),
     disk_total: server.disk_total === undefined ? current.disk_total : (server.disk_total ?? 0),
-    effective_capabilities:
-      server.effective_capabilities === undefined ? current.effective_capabilities : server.effective_capabilities,
+    effective_capabilities: pickDefined(server.effective_capabilities, current.effective_capabilities),
     features: [...server.features],
-    group_id: server.group_id === undefined ? current.group_id : server.group_id,
+    group_id: pickDefined(server.group_id, current.group_id),
     has_token: server.has_token,
     mem_total: server.mem_total === undefined ? current.mem_total : (server.mem_total ?? 0),
     name: server.name,
-    os: server.os === undefined ? current.os : server.os,
-    outstanding_enrollment:
-      server.outstanding_enrollment === undefined ? current.outstanding_enrollment : server.outstanding_enrollment,
+    os: pickDefined(server.os, current.os),
+    outstanding_enrollment: pickDefined(server.outstanding_enrollment, current.outstanding_enrollment),
     protocol_version: server.protocol_version,
-    region: server.region === undefined ? current.region : server.region,
+    region: pickDefined(server.region, current.region),
     swap_total: server.swap_total === undefined ? current.swap_total : (server.swap_total ?? 0),
+    ...mergeTailscaleFields(current, server),
     temporary: server.temporary === undefined ? current.temporary : [...server.temporary]
   }
 }
@@ -188,19 +215,29 @@ function projectFullSyncServerToRest(current: ServerResponse, server: ServerMetr
     cpu_name: server.cpu_name,
     features: server.features === undefined ? current.features : [...server.features],
     group_id: server.group_id,
-    has_token: server.has_token === undefined ? current.has_token : server.has_token,
+    has_token: pickDefined(server.has_token, current.has_token),
     name: server.name,
     os: server.os,
-    outstanding_enrollment:
-      server.outstanding_enrollment === undefined ? current.outstanding_enrollment : server.outstanding_enrollment,
-    region: server.region
+    outstanding_enrollment: pickDefined(server.outstanding_enrollment, current.outstanding_enrollment),
+    region: server.region,
+    ...mergeTailscaleFields(current, server)
   }
 }
 
 function mergeWsServerUpdate(current: ServerMetrics, incoming: LiveMetrics): ServerMetrics {
   // The wire `name` exists only so old iOS decoders accept the frame; it is
   // the agent connection name and must not stomp the REST-managed one.
-  return { ...current, ...incoming, name: current.name }
+  // Static `tailscale_*` fields arrive via `full_sync`/REST and must never be
+  // wiped by partial `LiveMetrics` `update` frames.
+  return {
+    ...current,
+    ...incoming,
+    name: current.name,
+    tailscale_dns_name: current.tailscale_dns_name,
+    tailscale_ipv4: current.tailscale_ipv4,
+    tailscale_ipv6: current.tailscale_ipv6,
+    tailscale_tailnet: current.tailscale_tailnet
+  }
 }
 
 function mergeWsUpdate(current: ServerMetrics[], incoming: LiveMetrics[]): ServerMetrics[] {
@@ -220,17 +257,14 @@ function mergeWsFullSync(current: ServerMetrics[] | undefined, incoming: ServerM
     }
     return {
       ...server,
-      agent_local_capabilities:
-        server.agent_local_capabilities === undefined
-          ? existing.agent_local_capabilities
-          : server.agent_local_capabilities,
-      agent_version: server.agent_version === undefined ? existing.agent_version : server.agent_version,
-      agent_authority: server.agent_authority === undefined ? existing.agent_authority : server.agent_authority,
-      capabilities: server.capabilities === undefined ? existing.capabilities : server.capabilities,
-      effective_capabilities:
-        server.effective_capabilities === undefined ? existing.effective_capabilities : server.effective_capabilities,
-      protocol_version: server.protocol_version === undefined ? existing.protocol_version : server.protocol_version,
-      temporary: server.temporary === undefined ? existing.temporary : server.temporary
+      agent_local_capabilities: pickDefined(server.agent_local_capabilities, existing.agent_local_capabilities),
+      agent_version: pickDefined(server.agent_version, existing.agent_version),
+      agent_authority: pickDefined(server.agent_authority, existing.agent_authority),
+      capabilities: pickDefined(server.capabilities, existing.capabilities),
+      effective_capabilities: pickDefined(server.effective_capabilities, existing.effective_capabilities),
+      protocol_version: pickDefined(server.protocol_version, existing.protocol_version),
+      ...mergeTailscaleFields(existing, server),
+      temporary: pickDefined(server.temporary, existing.temporary)
     }
   })
 }

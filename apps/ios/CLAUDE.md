@@ -217,7 +217,7 @@ credentials are compiled in. Pass via `simctl launch` using the
   `upgrade-progress[:stage]`, `insights-maintenance-create`, `advanced-tools`),
   `SB_UITEST_ADMIN` (push a Settings screen on launch. Administration screens
   `administration` / `users` / `groups` / `ping-tasks` / `tasks` /
-  `network-probes` / `ip-quality` / `status-page` / `rate-limit` / `audit` /
+  `network-probes` / `ip-quality` / `tailscale` / `status-page` / `rate-limit` / `audit` /
   `databases` push that hub first; Settings' own rows `password` /
   `two-factor` / `firewall` / `api-keys` / `devices` / `device-name` /
   `appearance` / `language` push directly).
@@ -241,7 +241,9 @@ Native admin/config surfaces (Settings → admin): server groups, ping-task conf
 (`/api/ping-tasks`, CRUD), scheduled-command management (`/api/tasks`,
 list/create/run/results), network-probe global config (`/api/network-probes`,
 targets CRUD + settings), IP-quality config (`/api/ip-quality`, service
-enable/delete + interval), public status-page config (`/api/status-page`), users,
+enable/delete + interval), Tailscale control-plane & Serve auth config
+(`/api/tailscale/config`, `/api/tailscale/test`, `/api/tailscale/overview`),
+public status-page config (`/api/status-page`), users,
 audit log, rate limits, GeoIP/ASN. These are management surfaces, distinct from
 the deferred live-exec/terminal PTY.
 

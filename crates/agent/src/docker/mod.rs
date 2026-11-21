@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::capability_grants::CapabilityAuthority;
 use bollard::Docker;
 use serverbee_common::constants::CAP_DOCKER;
 use serverbee_common::docker_types::DockerAction;
@@ -15,7 +16,6 @@ use serverbee_common::protocol::{AgentMessage, ServerMessage};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::Interval;
-use crate::capability_grants::CapabilityAuthority;
 
 pub struct DockerManager {
     docker: Docker,
@@ -44,6 +44,23 @@ impl DockerManager {
             event_stream_handle: None,
             running_container_ids: Vec::new(),
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_client_for_test(
+        docker: Docker,
+        agent_tx: mpsc::Sender<AgentMessage>,
+        capabilities: Arc<CapabilityAuthority>,
+    ) -> Self {
+        Self {
+            docker,
+            agent_tx,
+            capabilities,
+            stats_interval: None,
+            log_sessions: HashMap::new(),
+            event_stream_handle: None,
+            running_container_ids: Vec::new(),
+        }
     }
 
     /// Verify the Docker connection by pinging the daemon.
@@ -551,13 +568,16 @@ mod tests {
     async fn cleanup_drains_sessions_and_clears_handles() {
         // cleanup() drains all log sessions, the event handle, and the stats interval
         let (mut manager, _rx) = make_manager(CAP_DOCKER);
-        manager
-            .log_sessions
-            .insert("a".to_string(), tokio::spawn(async { std::future::pending::<()>().await }));
-        manager
-            .log_sessions
-            .insert("b".to_string(), tokio::spawn(async { std::future::pending::<()>().await }));
-        manager.event_stream_handle = Some(tokio::spawn(async { std::future::pending::<()>().await }));
+        manager.log_sessions.insert(
+            "a".to_string(),
+            tokio::spawn(async { std::future::pending::<()>().await }),
+        );
+        manager.log_sessions.insert(
+            "b".to_string(),
+            tokio::spawn(async { std::future::pending::<()>().await }),
+        );
+        manager.event_stream_handle =
+            Some(tokio::spawn(async { std::future::pending::<()>().await }));
         manager.handle_start_stats(3);
 
         manager.cleanup();
@@ -615,9 +635,10 @@ mod tests {
     async fn handle_server_message_dispatches_logs_stop_when_capable() {
         // DockerLogsStop routes through the dispatcher and removes the named session
         let (mut manager, _rx) = make_manager(CAP_DOCKER);
-        manager
-            .log_sessions
-            .insert("s9".to_string(), tokio::spawn(async { std::future::pending::<()>().await }));
+        manager.log_sessions.insert(
+            "s9".to_string(),
+            tokio::spawn(async { std::future::pending::<()>().await }),
+        );
         manager
             .handle_server_message(ServerMessage::DockerLogsStop {
                 session_id: "s9".to_string(),

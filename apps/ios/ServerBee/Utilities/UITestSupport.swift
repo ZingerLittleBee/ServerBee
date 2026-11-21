@@ -85,7 +85,7 @@ enum UITestSupport {
 
     /// Optional admin sub-screen to push on launch from Settings, so the
     /// cliclick harness needn't scroll the admin list and tap a row. Matches a
-    /// known token, e.g. "network-probes" / "ip-quality" / "status-page".
+    /// known token, e.g. "network-probes" / "ip-quality" / "status-page" / "tailscale".
     static var adminRoute: String? {
         ProcessInfo.processInfo.environment["SB_UITEST_ADMIN"]
     }

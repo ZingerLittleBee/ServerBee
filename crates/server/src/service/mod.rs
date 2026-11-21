@@ -39,6 +39,7 @@ pub mod server_onboarding;
 pub mod server_tag;
 pub mod service_monitor;
 pub mod status_page;
+pub mod tailscale_control;
 pub mod task_scheduler;
 pub mod traceroute;
 pub mod traceroute_enrich;

@@ -1,6 +1,6 @@
 ---
 title: 管理员指南
-description: 用户管理、审计日志、远程命令和计费信息管理。
+description: 用户管理、审计日志、远程命令、计费信息、Agent Authority 与 Tailscale 控制面管理。
 icon: UserCog
 ---
 
@@ -61,6 +61,7 @@ ServerBee 自动记录关键操作的审计日志，帮助管理员追踪安全�
 - `capability_temporarily_granted` —— 主机本地的临时授予开启了某个默认关闭的能力
 - `capability_grant_expired` —— 临时授予到期，能力自动关回
 - `capability_grant_revoked` —— 主机操作者提前撤销了临时授予
+- `tailscale.config.update` —— 管理员更新了 Tailscale / Headscale 控制面或 Serve 回环认证配置
 
 ### 查看审计日志
 
@@ -260,8 +261,20 @@ Agent Authority 历史会记录操作者、来源、状态转换、模式、offe
 
 中止的接入可能会留下离线 Server 占位条目。此时 **服务器** 页面会显示 **Clean up unconnected** 操作，它只删除从未完成初始化的离线占位服务器，并刻意保留在线但尚未初始化的 Agent。
 
+## Tailscale 控制面管理
+
+前往 Web 控制台的 **设置 → Tailscale**（或 iOS 客户端的 **设置 → 管理 → Tailscale**），无需手工修改 `server.toml` 即可管理全局 Tailscale / Headscale 集成：
+
+- **控制面凭据**：启用或停用全局设备发现，选择 **Tailscale**（`https://api.tailscale.com`，API v2）或自建 **Headscale**（API v1），配置 Tailnet 名称（默认 `"-"`）并保存只读 API Key。密钥仅可写入不可读回（`GET /api/tailscale/config` 仅返回 `has_api_key: boolean`，留空保存会保留既有密钥）。自定义 Headscale 地址经过 SSRF 校验，拦截回环与云元数据地址，同时允许内网 LAN / Tailnet 地址。
+- **首选 Server 地址**：设置 `preferred_server_url`（如 `https://serverbee.tailnet.ts.net`），使 **服务器 → 添加服务器** 在生成一键安装命令时提供 **使用 Tailnet 地址** 切换开关。
+- **Tailscale Serve 回环认证**：在本机部署 `tailscale serve` 时按需开启 `auth_enabled` 与 `auto_provision_role`（`""` 不自动建号或 `"member"` 只读成员，绝不自动创建 `admin`）。
+- **连接测试与设备关联**：通过 **测试连接**（`POST /api/tailscale/test`）在保存前验证凭据与可见设备数，并通过 `GET /api/tailscale/overview` 查看与已接入 ServerBee 服务器自动关联的全局 Tailnet 设备列表。
+
+完整配置说明参见 [Tailscale 集成](/zh/docs/tailscale)。
+
 <Cards>
   <Card title="功能开关" href="/zh/docs/capabilities" />
+  <Card title="Tailscale 集成" href="/zh/docs/tailscale" />
   <Card title="安全设置" href="/zh/docs/security" />
   <Card title="告警与通知" href="/zh/docs/alerts" />
 </Cards>

@@ -30,4 +30,16 @@ final class CapabilityTests: XCTestCase {
         let set = CapabilitySet(configured: 65, agentLocal: 1, effective: 1)
         XCTAssertEqual(set.configuredButUnavailable, [.file])
     }
+
+    func test_tailscale_bitAndMetadata() {
+        XCTAssertEqual(Capability.tailscale.rawValue, 1 << 11)
+        XCTAssertEqual(Capability.tailscale.rawValue, 2048)
+        XCTAssertEqual(Capability.tailscale.key, "tailscale")
+        XCTAssertTrue(Capability.tailscale.defaultEnabled)
+        XCTAssertEqual(Capability.tailscale.riskLevel, "low")
+
+        let set = CapabilitySet(configured: 3900, agentLocal: 3900, effective: 3900)
+        XCTAssertTrue(set.isEnabled(.tailscale))
+        XCTAssertTrue(set.isConfigured(.tailscale))
+    }
 }

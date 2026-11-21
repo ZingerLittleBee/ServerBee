@@ -482,7 +482,10 @@ mod tests {
         assert_eq!(transition.effective, CAP_DEFAULT | CAP_TERMINAL);
         assert_eq!(transition.temporary.len(), 1);
         assert_eq!(transition.changes.len(), 1);
-        assert_eq!(transition.changes[0].action, CapabilityChangeAction::Granted);
+        assert_eq!(
+            transition.changes[0].action,
+            CapabilityChangeAction::Granted
+        );
 
         // The state watch and the shared snapshot moved with the transition.
         tokio::time::timeout(Duration::from_secs(1), state.changed())

@@ -22,6 +22,7 @@
 //! agent and a recorded run; those are covered for their auth/validation/
 //! not-found outcomes only.
 mod common;
+mod tailscale;
 
 use common::{create_server, http_client, login_admin, login_as_new_user, start_test_server};
 use serde_json::{Value, json};
@@ -227,7 +228,11 @@ async fn network_probe_update_target_invalid_probe_type_422() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 422, "udp is not a valid probe_type on update");
+    assert_eq!(
+        resp.status(),
+        422,
+        "udp is not a valid probe_type on update"
+    );
 }
 
 // Deleting a non-existent custom target id → 404 (existence check in the service).
@@ -238,7 +243,10 @@ async fn network_probe_delete_target_missing_404() {
     login_admin(&admin, &base_url).await;
 
     let resp = admin
-        .delete(format!("{}/api/network-probes/targets/ghost-target", base_url))
+        .delete(format!(
+            "{}/api/network-probes/targets/ghost-target",
+            base_url
+        ))
         .send()
         .await
         .unwrap();
@@ -444,7 +452,11 @@ async fn alert_rule_valid_block_action_is_created() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 200, "valid block_source_ip action is accepted");
+    assert_eq!(
+        resp.status(),
+        200,
+        "valid block_source_ip action is accepted"
+    );
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["data"]["name"].as_str(), Some("auto-block"));
 }
@@ -476,7 +488,11 @@ async fn alert_rule_update_invalid_cover_type_is_422() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 422, "invalid cover_type on update → Validation/422");
+    assert_eq!(
+        resp.status(),
+        422,
+        "invalid cover_type on update → Validation/422"
+    );
 }
 
 // Updating a rule with mixed security + metric items re-runs item validation,
@@ -511,7 +527,11 @@ async fn alert_rule_update_mixed_security_is_400() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 400, "mixing security + metric on update → 400");
+    assert_eq!(
+        resp.status(),
+        400,
+        "mixing security + metric on update → 400"
+    );
 }
 
 // Updating an unknown alert-rule id → 404 (the update path loads the rule first).

@@ -566,4 +566,66 @@ describe('server catalog projection', () => {
     expect(readServerList(queryClient)?.[0].name).toBe('Refreshed Snapshot')
     fetchMock.mockRestore()
   })
+
+  it('merges tailscale_* fields from REST and full_sync without wiping them on partial ws_update frames', () => {
+    const queryClient = createQueryClient()
+    const rest = makeRestServer({
+      features: ['docker', 'tailscale'],
+      tailscale_dns_name: 'edge-1.tailnet.ts.net',
+      tailscale_ipv4: '100.64.0.10',
+      tailscale_ipv6: 'fd7a:115c:a1e0::10',
+      tailscale_tailnet: 'tailnet.ts.net'
+    })
+
+    projectServerCatalog(queryClient, { kind: 'rest_snapshot', servers: [rest] })
+    projectServerCatalog(queryClient, { kind: 'server_saved', server: rest })
+    projectServerCatalog(queryClient, {
+      kind: 'ws_update',
+      servers: [makeLiveMetrics({ cpu: 88, mem_used: 20_000 })]
+    })
+
+    expect(readLiveServers(queryClient)?.[0]).toMatchObject({
+      cpu: 88,
+      features: ['docker', 'tailscale'],
+      tailscale_dns_name: 'edge-1.tailnet.ts.net',
+      tailscale_ipv4: '100.64.0.10',
+      tailscale_ipv6: 'fd7a:115c:a1e0::10',
+      tailscale_tailnet: 'tailnet.ts.net'
+    })
+
+    // Full sync updates tailscale fields across live, list, and detail caches
+    // and preserves them across subsequent partial update and docker availability events.
+    projectServerCatalog(queryClient, {
+      kind: 'ws_full_sync',
+      servers: [
+        makeMetrics({
+          features: ['tailscale'],
+          tailscale_dns_name: 'edge-1-new.tailnet.ts.net',
+          tailscale_ipv4: '100.64.0.99',
+          tailscale_ipv6: 'fd7a:115c:a1e0::99',
+          tailscale_tailnet: 'tailnet.ts.net'
+        })
+      ]
+    })
+    projectServerCatalog(queryClient, {
+      available: true,
+      kind: 'docker_availability_changed',
+      serverId: rest.id
+    })
+    projectServerCatalog(queryClient, {
+      kind: 'ws_update',
+      servers: [makeLiveMetrics({ cpu: 55 })]
+    })
+
+    const expectedTailscale = {
+      features: ['tailscale', 'docker'],
+      tailscale_dns_name: 'edge-1-new.tailnet.ts.net',
+      tailscale_ipv4: '100.64.0.99',
+      tailscale_ipv6: 'fd7a:115c:a1e0::99',
+      tailscale_tailnet: 'tailnet.ts.net'
+    }
+    expect(readLiveServers(queryClient)?.[0]).toMatchObject({ cpu: 55, ...expectedTailscale })
+    expect(readServerList(queryClient)?.[0]).toMatchObject(expectedTailscale)
+    expect(readServerDetail(queryClient, rest.id)).toMatchObject(expectedTailscale)
+  })
 })

@@ -6,6 +6,7 @@ import {
   CAP_PING_HTTP,
   CAP_PING_ICMP,
   CAP_PING_TCP,
+  CAP_TAILSCALE,
   CAP_TERMINAL,
   CAP_UPGRADE,
   CAPABILITIES,
@@ -16,20 +17,29 @@ import {
 } from './capabilities'
 
 describe('capability toggles', () => {
-  it('default capabilities enable upgrade alongside the low-risk probes', () => {
+  it('default capabilities enable upgrade and tailscale alongside the low-risk probes', () => {
     expect(hasCap(CAP_DEFAULT, CAP_TERMINAL)).toBe(false)
     expect(hasCap(CAP_DEFAULT, CAP_EXEC)).toBe(false)
     expect(hasCap(CAP_DEFAULT, CAP_UPGRADE)).toBe(true)
     expect(hasCap(CAP_DEFAULT, CAP_PING_ICMP)).toBe(true)
     expect(hasCap(CAP_DEFAULT, CAP_PING_TCP)).toBe(true)
     expect(hasCap(CAP_DEFAULT, CAP_PING_HTTP)).toBe(true)
+    expect(hasCap(CAP_DEFAULT, CAP_TAILSCALE)).toBe(true)
+    expect(CAP_TAILSCALE).toBe(2048)
+    expect(CAP_DEFAULT).toBe(3900)
   })
 
-  it('classifies auto upgrade as a low-risk capability', () => {
+  it('classifies auto upgrade and tailscale as low-risk capabilities', () => {
     const upgradeCapability = CAPABILITIES.find(({ key }) => key === 'upgrade')
+    const tailscaleCapability = CAPABILITIES.find(({ key }) => key === 'tailscale')
 
     expect(upgradeCapability).toMatchObject({
       bit: CAP_UPGRADE,
+      risk: 'low'
+    })
+    expect(tailscaleCapability).toMatchObject({
+      bit: CAP_TAILSCALE,
+      labelKey: 'cap_tailscale',
       risk: 'low'
     })
   })

@@ -23,6 +23,7 @@ open ServerBee.xcodeproj
 - **二维码配对** -- 扫描 Web 应用中的二维码即可即时认证，无需手动输入 Token
 - **已验证通知设置** -- 显式授权、订阅设置与 已认证安装注册，以及管理员所有者的任务最终结果通知，成功通知需单独启用，以及无需通知组的加密告警触发、恢复和管理员安全规则通知
 - **实时指标** -- 通过 WebSocket 传输的实时服务器状态、CPU、内存、磁盘和网络指标
+- **Tailscale 与 Headscale 视图** -- 原生单机 WireGuard 对端路径诊断（`ServerTailscaleView`）与全局 Tailnet 控制面管理（`TailscaleAdminView` + `TailnetOverviewSection`），完整适配隐私模式 IP 打码
 - **告警历史** -- 查看近期告警及其状态（触发/已解决）和详细信息
 - **安全认证** -- 基于 Bearer Token 的认证，支持自动刷新（15 分钟访问令牌，30 天刷新令牌）
 
@@ -83,6 +84,14 @@ refresh_ttl = 2592000 # 刷新令牌有效期（秒），默认 30 天
 3. 确认操作
 
 该设备将立即登出，其所有令牌将被作废。
+
+## Tailscale 与 Headscale 支持
+
+iOS 客户端提供原生的单机 Tailscale 诊断视图与全局 Tailnet 管理界面：
+
+- **服务器详情 → Tailscale（`ServerTailscaleView`）**：当服务器开启 `CAP_TAILSCALE` 并上报实时 `tailscaled` 状态或存在持久化 Tailscale 地址时显示（`GET /api/servers/{id}/tailscale/status`）。展示后端状态（`Running`、`NeedsLogin`、`Stopped`）、支持点按复制的 Tailscale IPv4/IPv6 与 MagicDNS 行、DERP 主区域、密钥过期预警、Exit Node 与子网路由标签、ACL 标签、健康告警，以及带 `Direct`、`DERP`、`Peer Relay`、`Idle` 连接模式徽章的对端列表（含活跃 Endpoint、收发流量、握手时间及离线缓存快照提示）。
+- **设置 → 管理 → Tailscale（`TailscaleAdminView` 与 `TailnetOverviewSection`）**：管理员可配置 Tailscale 或自建 Headscale 控制面凭据、已保存的 API Key、首选 Server 地址及 Tailscale Serve 回环认证（`GET/PUT /api/tailscale/config`），执行 **测试连接**（`POST /api/tailscale/test`），并通过 `TailnetOverviewSection`（`GET /api/tailscale/overview`）查看在线/总设备数、已关联 ServerBee 服务器数、即将过期密钥数，以及点击已匹配设备直达对应 `ServerDetailView`。
+- **隐私模式与 `*.ts.net` HTTPS**：开启 **设置 → 隐私模式** 后，两处界面中的 Tailscale IP、对端 Endpoint、子网路由、含 IP 的域名/设备名及 Tailnet URL 均自动隐藏后两段，而复制操作与编辑输入框保留原始值。通过 `deploy/docker-compose.tailscale.yml` 部署时，Tailscale 自动签发的 Let's Encrypt `*.ts.net` 证书天然满足 iOS App Transport Security（ATS）要求，详见 [Tailscale 集成](/zh/docs/tailscale)。
 
 ## 已验证通知设置
 

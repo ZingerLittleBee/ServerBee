@@ -403,6 +403,44 @@ impl ServerService {
         active.update(db).await?;
         Ok(())
     }
+
+    /// Persist primary Tailscale IPv4/IPv6/MagicDNS/Tailnet summary fields on
+    /// `servers`. Returns `Ok(true)` if any stored column changed.
+    pub async fn update_tailscale_info(
+        db: &DatabaseConnection,
+        server_id: &str,
+        tailscale_ipv4: Option<&str>,
+        tailscale_ipv6: Option<&str>,
+        tailscale_dns_name: Option<&str>,
+        tailscale_tailnet: Option<&str>,
+    ) -> Result<bool, DbErr> {
+        let Some(existing) = server::Entity::find_by_id(server_id).one(db).await? else {
+            return Ok(false);
+        };
+
+        let next_v4 = tailscale_ipv4.map(str::to_string);
+        let next_v6 = tailscale_ipv6.map(str::to_string);
+        let next_dns = tailscale_dns_name.map(str::to_string);
+        let next_tailnet = tailscale_tailnet.map(str::to_string);
+
+        if existing.tailscale_ipv4 == next_v4
+            && existing.tailscale_ipv6 == next_v6
+            && existing.tailscale_dns_name == next_dns
+            && existing.tailscale_tailnet == next_tailnet
+        {
+            return Ok(false);
+        }
+
+        server::Entity::update_many()
+            .filter(server::Column::Id.eq(server_id))
+            .col_expr(server::Column::TailscaleIpv4, Expr::value(next_v4))
+            .col_expr(server::Column::TailscaleIpv6, Expr::value(next_v6))
+            .col_expr(server::Column::TailscaleDnsName, Expr::value(next_dns))
+            .col_expr(server::Column::TailscaleTailnet, Expr::value(next_tailnet))
+            .exec(db)
+            .await?;
+        Ok(true)
+    }
 }
 
 #[cfg(test)]

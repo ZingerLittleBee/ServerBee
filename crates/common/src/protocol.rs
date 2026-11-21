@@ -348,6 +348,18 @@ pub enum AgentMessage {
         success: bool,
         error: Option<String>,
     },
+    // Tailscale responses
+    TailscaleStatus {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        msg_id: Option<String>,
+        status: crate::tailscale_types::TailscaleStatusReport,
+    },
+    TailscaleUnavailable {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        msg_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     IpChanged {
         ipv4: Option<String>,
         ipv6: Option<String>,
@@ -535,6 +547,10 @@ pub enum ServerMessage {
         msg_id: String,
     },
     DockerListVolumes {
+        msg_id: String,
+    },
+    // Tailscale commands
+    TailscaleGetStatus {
         msg_id: String,
     },
     Traceroute {
@@ -1271,6 +1287,73 @@ mod tests {
     }
 
     #[test]
+    fn test_tailscale_messages_serde() {
+        use crate::tailscale_types::{TailscaleNodeSummary, TailscaleStatusReport};
+
+        let req = ServerMessage::TailscaleGetStatus {
+            msg_id: "ts-req-1".into(),
+        };
+        let req_json = serde_json::to_string(&req).unwrap();
+        assert!(req_json.contains("\"type\":\"tailscale_get_status\""));
+        match serde_json::from_str::<ServerMessage>(&req_json).unwrap() {
+            ServerMessage::TailscaleGetStatus { msg_id } => assert_eq!(msg_id, "ts-req-1"),
+            _ => panic!("expected TailscaleGetStatus"),
+        }
+
+        let report = TailscaleStatusReport {
+            summary: TailscaleNodeSummary {
+                backend_state: "Running".into(),
+                tailscale_ips: vec!["100.64.0.1".into()],
+                dns_name: Some("node.ts.net".into()),
+                tailnet_name: Some("ts.net".into()),
+                version: Some("1.76.0".into()),
+                hostname: Some("node".into()),
+                online: true,
+                exit_node: false,
+                exit_node_option: false,
+                key_expiry: None,
+            },
+            advertised_routes: vec![],
+            tags: vec![],
+            derp_region: Some("sfo".into()),
+            peers: vec![],
+            health_warnings: vec![],
+            collected_at: "2026-11-21T03:35:00Z".into(),
+        };
+
+        let unsolicited = AgentMessage::TailscaleStatus {
+            msg_id: None,
+            status: report.clone(),
+        };
+        let unsolicited_json = serde_json::to_string(&unsolicited).unwrap();
+        assert!(unsolicited_json.contains("\"type\":\"tailscale_status\""));
+        assert!(!unsolicited_json.contains("\"msg_id\""));
+        match serde_json::from_str::<AgentMessage>(&unsolicited_json).unwrap() {
+            AgentMessage::TailscaleStatus { msg_id, status } => {
+                assert!(msg_id.is_none());
+                assert_eq!(status, report);
+            }
+            _ => panic!("expected TailscaleStatus"),
+        }
+
+        let unavail = AgentMessage::TailscaleUnavailable {
+            msg_id: Some("ts-req-1".into()),
+            reason: None,
+        };
+        let unavail_json = serde_json::to_string(&unavail).unwrap();
+        assert!(unavail_json.contains("\"type\":\"tailscale_unavailable\""));
+        assert!(unavail_json.contains("\"msg_id\":\"ts-req-1\""));
+        assert!(!unavail_json.contains("\"reason\""));
+        match serde_json::from_str::<AgentMessage>(&unavail_json).unwrap() {
+            AgentMessage::TailscaleUnavailable { msg_id, reason } => {
+                assert_eq!(msg_id.as_deref(), Some("ts-req-1"));
+                assert!(reason.is_none());
+            }
+            _ => panic!("expected TailscaleUnavailable"),
+        }
+    }
+
+    #[test]
     fn test_network_probe_result_with_null_latency() {
         use crate::types::NetworkProbeResultData;
         use chrono::Utc;
@@ -1368,9 +1451,15 @@ mod tests {
                     rtt2: Some(1.456),
                     rtt3: Some(1.678),
                     asn: None,
-                    ips: vec![], total_sent: None, total_recv: None,
-                    loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
-                    stddev_ms: None, jitter_ms: None,
+                    ips: vec![],
+                    total_sent: None,
+                    total_recv: None,
+                    loss_pct: None,
+                    best_ms: None,
+                    worst_ms: None,
+                    avg_ms: None,
+                    stddev_ms: None,
+                    jitter_ms: None,
                 },
                 TracerouteHop {
                     hop: 2,
@@ -1380,9 +1469,15 @@ mod tests {
                     rtt2: None,
                     rtt3: None,
                     asn: None,
-                    ips: vec![], total_sent: None, total_recv: None,
-                    loss_pct: None, best_ms: None, worst_ms: None, avg_ms: None,
-                    stddev_ms: None, jitter_ms: None,
+                    ips: vec![],
+                    total_sent: None,
+                    total_recv: None,
+                    loss_pct: None,
+                    best_ms: None,
+                    worst_ms: None,
+                    avg_ms: None,
+                    stddev_ms: None,
+                    jitter_ms: None,
                 },
             ],
             completed: true,
@@ -1878,13 +1973,22 @@ mod tests {
             round: 1,
             total_rounds: 5,
             hops: vec![TracerouteHop {
-                hop: 1, ip: None, hostname: Some("hop1.example".into()),
-                rtt1: None, rtt2: None, rtt3: None, asn: None,
+                hop: 1,
+                ip: None,
+                hostname: Some("hop1.example".into()),
+                rtt1: None,
+                rtt2: None,
+                rtt3: None,
+                asn: None,
                 ips: vec!["10.0.0.1".into()],
-                total_sent: Some(1), total_recv: Some(1),
+                total_sent: Some(1),
+                total_recv: Some(1),
                 loss_pct: Some(0.0),
-                best_ms: Some(1.0), worst_ms: Some(1.0), avg_ms: Some(1.0),
-                stddev_ms: Some(0.0), jitter_ms: Some(0.0),
+                best_ms: Some(1.0),
+                worst_ms: Some(1.0),
+                avg_ms: Some(1.0),
+                stddev_ms: Some(0.0),
+                jitter_ms: Some(0.0),
             }],
             completed: false,
             error: None,
@@ -1894,7 +1998,11 @@ mod tests {
         assert!(json.contains("\"protocol\":\"tcp\""));
         let parsed: BrowserMessage = serde_json::from_str(&json).unwrap();
         match parsed {
-            BrowserMessage::TracerouteUpdate { protocol, started_at, .. } => {
+            BrowserMessage::TracerouteUpdate {
+                protocol,
+                started_at,
+                ..
+            } => {
                 assert_eq!(protocol, RecordedProtocol::Tcp);
                 assert_eq!(started_at, 1_716_500_000_000);
             }
@@ -1911,13 +2019,22 @@ mod tests {
             round: 2,
             total_rounds: 5,
             hops: vec![TracerouteHop {
-                hop: 1, ip: None, hostname: None,
-                rtt1: None, rtt2: None, rtt3: None, asn: None,
+                hop: 1,
+                ip: None,
+                hostname: None,
+                rtt1: None,
+                rtt2: None,
+                rtt3: None,
+                asn: None,
                 ips: vec!["10.0.0.1".into()],
-                total_sent: Some(2), total_recv: Some(2),
+                total_sent: Some(2),
+                total_recv: Some(2),
                 loss_pct: Some(0.0),
-                best_ms: Some(1.0), worst_ms: Some(1.2), avg_ms: Some(1.1),
-                stddev_ms: Some(0.1), jitter_ms: Some(0.05),
+                best_ms: Some(1.0),
+                worst_ms: Some(1.2),
+                avg_ms: Some(1.1),
+                stddev_ms: Some(0.1),
+                jitter_ms: Some(0.05),
             }],
             completed: false,
             error: None,
@@ -1926,7 +2043,13 @@ mod tests {
         assert!(json.contains("\"type\":\"traceroute_round_update\""));
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
         match parsed {
-            AgentMessage::TracerouteRoundUpdate { round, total_rounds, completed, hops, .. } => {
+            AgentMessage::TracerouteRoundUpdate {
+                round,
+                total_rounds,
+                completed,
+                hops,
+                ..
+            } => {
                 assert_eq!(round, 2);
                 assert_eq!(total_rounds, 5);
                 assert!(!completed);
@@ -1950,7 +2073,9 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         let parsed: AgentMessage = serde_json::from_str(&json).unwrap();
         match parsed {
-            AgentMessage::TracerouteRoundUpdate { completed, error, .. } => {
+            AgentMessage::TracerouteRoundUpdate {
+                completed, error, ..
+            } => {
                 assert!(completed);
                 assert!(error.as_deref().unwrap().contains("privileges"));
             }
@@ -1970,7 +2095,9 @@ mod tests {
         assert!(json.contains("\"protocol\":\"udp\""));
         let parsed: ServerMessage = serde_json::from_str(&json).unwrap();
         match parsed {
-            ServerMessage::Traceroute { protocol, .. } => assert_eq!(protocol, Some(TraceProtocol::Udp)),
+            ServerMessage::Traceroute { protocol, .. } => {
+                assert_eq!(protocol, Some(TraceProtocol::Udp))
+            }
             _ => panic!("Expected Traceroute"),
         }
     }
@@ -1998,7 +2125,9 @@ mod tests {
             hop: 1,
             ip: None,
             hostname: Some("router.local".into()),
-            rtt1: None, rtt2: None, rtt3: None,
+            rtt1: None,
+            rtt2: None,
+            rtt3: None,
             asn: None,
             ips: vec!["10.0.0.1".into()],
             total_sent: Some(5),
@@ -2026,26 +2155,41 @@ mod tests {
             hop: 2,
             ip: Some("8.8.8.8".into()),
             hostname: Some("dns.google".into()),
-            rtt1: Some(12.0), rtt2: Some(11.8), rtt3: Some(12.3),
+            rtt1: Some(12.0),
+            rtt2: Some(11.8),
+            rtt3: Some(12.3),
             asn: Some("AS15169".into()),
             ips: vec![],
-            total_sent: None, total_recv: None,
+            total_sent: None,
+            total_recv: None,
             loss_pct: None,
-            best_ms: None, worst_ms: None, avg_ms: None,
-            stddev_ms: None, jitter_ms: None,
+            best_ms: None,
+            worst_ms: None,
+            avg_ms: None,
+            stddev_ms: None,
+            jitter_ms: None,
         };
         let json = serde_json::to_string(&hop).unwrap();
-        assert!(!json.contains("\"ips\":"),       "got: {json}");
+        assert!(!json.contains("\"ips\":"), "got: {json}");
         assert!(!json.contains("\"total_sent\""), "got: {json}");
-        assert!(!json.contains("\"loss_pct\""),   "got: {json}");
+        assert!(!json.contains("\"loss_pct\""), "got: {json}");
         assert!(json.contains("\"rtt1\":12.0"));
     }
 
     #[test]
     fn test_trace_protocol_serializes_lowercase() {
-        assert_eq!(serde_json::to_string(&TraceProtocol::Icmp).unwrap(), "\"icmp\"");
-        assert_eq!(serde_json::to_string(&TraceProtocol::Udp).unwrap(), "\"udp\"");
-        assert_eq!(serde_json::to_string(&TraceProtocol::Tcp).unwrap(), "\"tcp\"");
+        assert_eq!(
+            serde_json::to_string(&TraceProtocol::Icmp).unwrap(),
+            "\"icmp\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TraceProtocol::Udp).unwrap(),
+            "\"udp\""
+        );
+        assert_eq!(
+            serde_json::to_string(&TraceProtocol::Tcp).unwrap(),
+            "\"tcp\""
+        );
     }
 
     #[test]
@@ -2062,15 +2206,30 @@ mod tests {
 
     #[test]
     fn test_recorded_protocol_serializes_lowercase_including_legacy() {
-        assert_eq!(serde_json::to_string(&RecordedProtocol::Icmp).unwrap(), "\"icmp\"");
-        assert_eq!(serde_json::to_string(&RecordedProtocol::Legacy).unwrap(), "\"legacy\"");
+        assert_eq!(
+            serde_json::to_string(&RecordedProtocol::Icmp).unwrap(),
+            "\"icmp\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RecordedProtocol::Legacy).unwrap(),
+            "\"legacy\""
+        );
     }
 
     #[test]
     fn test_recorded_protocol_from_trace_protocol() {
-        assert_eq!(RecordedProtocol::from(TraceProtocol::Icmp), RecordedProtocol::Icmp);
-        assert_eq!(RecordedProtocol::from(TraceProtocol::Udp), RecordedProtocol::Udp);
-        assert_eq!(RecordedProtocol::from(TraceProtocol::Tcp), RecordedProtocol::Tcp);
+        assert_eq!(
+            RecordedProtocol::from(TraceProtocol::Icmp),
+            RecordedProtocol::Icmp
+        );
+        assert_eq!(
+            RecordedProtocol::from(TraceProtocol::Udp),
+            RecordedProtocol::Udp
+        );
+        assert_eq!(
+            RecordedProtocol::from(TraceProtocol::Tcp),
+            RecordedProtocol::Tcp
+        );
     }
 }
 
@@ -2084,7 +2243,11 @@ mod capability_grant_protocol_tests {
             occurred_at: None,
             msg_id: "m1".into(),
             capabilities: 1 | 1852,
-            temporary: vec![TemporaryGrant { cap: "terminal".into(), granted_at: 10, expires_at: 1810 }],
+            temporary: vec![TemporaryGrant {
+                cap: "terminal".into(),
+                granted_at: 10,
+                expires_at: 1810,
+            }],
             changes: vec![CapabilityChangeEvent {
                 cap: "terminal".into(),
                 action: CapabilityChangeAction::Granted,
@@ -2098,7 +2261,12 @@ mod capability_grant_protocol_tests {
         assert!(json.contains("\"action\":\"granted\""));
         let back: AgentMessage = serde_json::from_str(&json).unwrap();
         match back {
-            AgentMessage::CapabilitiesChanged { capabilities, temporary, changes, .. } => {
+            AgentMessage::CapabilitiesChanged {
+                capabilities,
+                temporary,
+                changes,
+                ..
+            } => {
                 assert_eq!(capabilities, 1 | 1852);
                 assert_eq!(temporary.len(), 1);
                 assert_eq!(changes[0].action, CapabilityChangeAction::Granted);

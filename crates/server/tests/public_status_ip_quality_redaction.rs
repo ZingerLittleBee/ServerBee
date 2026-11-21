@@ -13,9 +13,7 @@ use chrono::Utc;
 use sea_orm::{ActiveModelTrait, ConnectOptions, ConnectionTrait, Database, EntityTrait, Set};
 use sea_orm_migration::MigratorTrait;
 use serverbee_server::config::{AppConfig, AuthConfig, DatabaseConfig, ServerConfig};
-use serverbee_server::entity::{
-    ip_quality_snapshot, server, status_page, unlock_result,
-};
+use serverbee_server::entity::{ip_quality_snapshot, server, status_page, unlock_result};
 use serverbee_server::migration::Migrator;
 use serverbee_server::router::create_router;
 use serverbee_server::service::auth::AuthService;
@@ -147,6 +145,10 @@ async fn insert_minimal_server(db: &sea_orm::DatabaseConnection, id: &str) {
         protocol_version: Set(1),
         features: Set("[]".to_string()),
         last_remote_addr: Set(None),
+        tailscale_ipv4: Set(None),
+        tailscale_ipv6: Set(None),
+        tailscale_dns_name: Set(None),
+        tailscale_tailnet: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -257,9 +259,7 @@ async fn public_ip_quality_redacts_snapshot_and_unlock_detail() {
     assert_eq!(status, 200, "expected 200, got {status}: {text}");
     let body: serde_json::Value = serde_json::from_str(&text).expect("json");
 
-    let entries = body["data"]["entries"]
-        .as_array()
-        .expect("entries array");
+    let entries = body["data"]["entries"].as_array().expect("entries array");
     assert!(!entries.is_empty(), "expected at least one entry");
 
     // Find the entry for our server.
@@ -287,7 +287,10 @@ async fn public_ip_quality_redacts_snapshot_and_unlock_detail() {
     let unlock_results = entry["unlock_results"]
         .as_array()
         .expect("unlock_results array");
-    assert!(!unlock_results.is_empty(), "expected at least one unlock result");
+    assert!(
+        !unlock_results.is_empty(),
+        "expected at least one unlock result"
+    );
     for ur in unlock_results {
         let ur_obj = ur.as_object().expect("unlock result is object");
         assert!(

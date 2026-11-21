@@ -1,6 +1,6 @@
 ---
 title: Admin Guide
-description: User management, audit logs, remote commands, and billing management.
+description: User management, audit logs, remote commands, billing, Agent Authority, and Tailscale control plane administration.
 icon: UserCog
 ---
 
@@ -61,6 +61,7 @@ ServerBee automatically records audit logs for critical operations so administra
 - `capability_temporarily_granted` — a host-local temporary grant turned an off-by-default capability on
 - `capability_grant_expired` — a temporary grant reached its deadline and the capability turned back off
 - `capability_grant_revoked` — a host operator revoked a temporary grant early
+- `tailscale.config.update` — an administrator updated Tailscale / Headscale control-plane or Serve authentication settings
 
 ### Viewing Audit Logs
 
@@ -260,8 +261,20 @@ The Agent Authority history records actor, source, transition, mode, offer outco
 
 Abandoned onboarding can leave behind offline Server placeholders. The Servers page then shows a **Clean up unconnected** action that removes only never-initialized offline placeholders and deliberately keeps online-but-uninitialized agents.
 
+## Tailscale Control Plane Administration
+
+Go to **Settings → Tailscale** in the web dashboard (or **Settings → Administration → Tailscale** in the iOS app) to manage global Tailscale / Headscale integration without editing `server.toml`:
+
+- **Control Plane credentials**: Enable or disable global discovery, choose **Tailscale** (`https://api.tailscale.com`, API v2) or self-hosted **Headscale** (API v1), set the Tailnet name (`"-"` for default), and store a read-only API key. Stored API keys are write-only (`GET /api/tailscale/config` returns `has_api_key: boolean` and never echoes secrets; leaving the field blank preserves the saved key). Custom Headscale URLs are checked against SSRF rules that block loopback and cloud metadata endpoints while allowing private LAN/Tailnet addresses.
+- **Preferred Server URL**: Set `preferred_server_url` (for example `https://serverbee.tailnet.ts.net`) so **Servers → Add Server** offers a **Use Tailnet URL** toggle in generated Agent enrollment commands.
+- **Tailscale Serve loopback auth**: Toggle `auth_enabled` and optional `auto_provision_role` (`""` disabled or `"member"`; `admin` is never auto-provisioned) when `tailscale serve` proxies local loopback traffic to ServerBee.
+- **Connection testing and device correlation**: Click **Test Connection** (`POST /api/tailscale/test`) to verify API reachability and device counts before saving, and inspect the live Tailnet device inventory (`GET /api/tailscale/overview`) linked to enrolled ServerBee hosts.
+
+See [Tailscale Integration](/en/docs/tailscale) for complete setup details.
+
 <Cards>
   <Card title="Capabilities" href="/en/docs/capabilities" />
+  <Card title="Tailscale Integration" href="/en/docs/tailscale" />
   <Card title="Security" href="/en/docs/security" />
   <Card title="Alerts" href="/en/docs/alerts" />
 </Cards>

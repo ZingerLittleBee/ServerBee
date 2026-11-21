@@ -368,7 +368,10 @@ mod tests {
         // The fractional part is padded so the prefix occupies indices 0..35.
         let line = "2026-03-18T10:00:00.00000000000000Z tail";
         let space_pos = line.find(' ').expect("guard: line must contain a space");
-        assert_eq!(space_pos, 35, "guard: space must be at the inclusive boundary");
+        assert_eq!(
+            space_pos, 35,
+            "guard: space must be at the inclusive boundary"
+        );
         let (ts, msg) = split_timestamp(line);
         assert_eq!(
             ts.as_deref(),
@@ -411,7 +414,10 @@ mod tests {
             message: Vec::new().into(),
         };
         let (stream, msg) = parse_log_output(&out);
-        assert_eq!(stream, "stdout", "stream name is unaffected by empty payload");
+        assert_eq!(
+            stream, "stdout",
+            "stream name is unaffected by empty payload"
+        );
         assert_eq!(msg, "", "empty bytes decode to an empty string");
     }
 
@@ -435,7 +441,10 @@ mod tests {
             Some("2026-03-18T10:00:00.000000000Z"),
             "embedded timestamp is split out of the decoded frame"
         );
-        assert_eq!(entry.message, "boom", "trailing payload becomes the message");
+        assert_eq!(
+            entry.message, "boom",
+            "trailing payload becomes the message"
+        );
     }
 
     #[tokio::test]
@@ -453,7 +462,10 @@ mod tests {
                 entries,
             } => {
                 assert_eq!(session_id, "sess-empty", "session id is still propagated");
-                assert!(entries.is_empty(), "no entries are carried for an empty batch");
+                assert!(
+                    entries.is_empty(),
+                    "no entries are carried for an empty batch"
+                );
             }
             other => panic!("expected DockerLog message, got {other:?}"),
         }

@@ -92,9 +92,7 @@ pub fn parse_conntrack_line(line: &str) -> Option<ConntrackEvent> {
 fn extract_kv<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     let idx = line.find(key)?;
     let rest = &line[idx + key.len()..];
-    let end = rest
-        .find(|c: char| c.is_whitespace())
-        .unwrap_or(rest.len());
+    let end = rest.find(|c: char| c.is_whitespace()).unwrap_or(rest.len());
     Some(&rest[..end])
 }
 
@@ -129,7 +127,8 @@ mod tests {
 
     #[test]
     fn ignores_non_new_events() {
-        let line = "[UPDATE] tcp 6 432000 ESTABLISHED src=1.2.3.4 dst=10.0.0.1 sport=54321 dport=22";
+        let line =
+            "[UPDATE] tcp 6 432000 ESTABLISHED src=1.2.3.4 dst=10.0.0.1 sport=54321 dport=22";
         assert!(parse_conntrack_line(line).is_none());
     }
 

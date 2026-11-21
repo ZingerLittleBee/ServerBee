@@ -1,15 +1,19 @@
+use std::collections::HashSet;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 
 use axum::Json;
 use axum::{
-    extract::{Request, State},
+    extract::{ConnectInfo, Request, State},
     http::{HeaderMap, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
-use crate::entity::{api_key, session, user};
+use crate::entity::{api_key, oauth_account, session, user};
+use crate::error::AppError;
+use crate::service::audit::AuditService;
 use crate::service::auth::AuthService;
 use crate::state::AppState;
 
@@ -76,6 +80,7 @@ pub struct AuthenticatedConnection {
 pub enum ConnectionCredential {
     Session { id: String },
     ApiKey { id: String },
+    Tailscale { user_id: String },
 }
 
 impl AuthenticatedConnection {
@@ -101,25 +106,45 @@ impl AuthenticatedConnection {
                 .and_then(|(key, user)| {
                     (key.user_id == self.user.user_id).then_some(user).flatten()
                 }),
+            ConnectionCredential::Tailscale { user_id } => {
+                let auth_still_enabled = state
+                    .tailscale_control
+                    .effective_config(&state.db)
+                    .await
+                    .map(|cfg| cfg.auth_enabled)
+                    .unwrap_or(false);
+                if !auth_still_enabled || user_id != &self.user.user_id {
+                    None
+                } else {
+                    user::Entity::find_by_id(user_id).one(&state.db).await?
+                }
+            }
         };
         Ok(current_user
             .is_some_and(|user| !user.must_change_password && user.role == self.user.role))
     }
 }
 
-/// Resolve the authenticated connection (if any) from a request's headers.
-///
-/// Tries, in order: session cookie, `X-API-Key` header, `Bearer` token. The
-/// first credential that validates decides the identity and lifetime; later
-/// rungs are only consulted when earlier ones are absent or invalid. Returns
-/// `None` when no credential validates.
-///
-/// This is the single, shared credential policy. HTTP middleware, public
-/// routes with optional auth, and every WebSocket handler resolve through it,
-/// so precedence, session-source, and expiry semantics never drift between
-/// copies.
+/// Resolve the authenticated connection (if any) from a request's headers
+/// without peer TCP address context (fails closed for Tailscale loopback auth).
 pub async fn resolve_connection(
     headers: &HeaderMap,
+    state: &AppState,
+) -> Option<AuthenticatedConnection> {
+    resolve_connection_with_peer(headers, None, state).await
+}
+
+/// Resolve the authenticated connection (if any) from a request's headers and
+/// optional TCP peer socket address.
+///
+/// Tries, in order: session cookie, `X-API-Key` header, `Bearer` token, and
+/// (when `tailscale.auth_enabled` is true on a strict loopback connection
+/// without `X-Forwarded-For` / `Forwarded` headers) `Tailscale-User-Login`.
+/// The first credential that validates decides the identity and lifetime; later
+/// rungs are only consulted when earlier ones are absent or invalid.
+pub async fn resolve_connection_with_peer(
+    headers: &HeaderMap,
+    peer_addr: Option<SocketAddr>,
     state: &AppState,
 ) -> Option<AuthenticatedConnection> {
     let session_ttl = state.config.auth.session_ttl;
@@ -166,7 +191,217 @@ pub async fn resolve_connection(
         });
     }
 
+    // Try Tailscale Serve loopback identity header
+    if let Some(conn) = resolve_tailscale_serve_connection(headers, peer_addr, state).await {
+        return Some(conn);
+    }
+
     None
+}
+
+/// Returns `true` iff `ip` is strictly IPv4 `127.0.0.1` or IPv6 `::1`
+/// (including dual-stack IPv4-mapped `::ffff:127.0.0.1`).
+pub(crate) fn is_strict_loopback_peer(ip: IpAddr) -> bool {
+    matches!(
+        ip.to_canonical(),
+        IpAddr::V4(Ipv4Addr::LOCALHOST) | IpAddr::V6(Ipv6Addr::LOCALHOST)
+    )
+}
+
+pub(crate) fn extract_tailscale_login(headers: &HeaderMap) -> Option<String> {
+    let raw = headers.get("tailscale-user-login")?.to_str().ok()?.trim();
+    if raw.is_empty() || raw.len() > 254 || raw.chars().any(char::is_control) {
+        return None;
+    }
+    Some(raw.to_string())
+}
+
+async fn resolve_tailscale_serve_connection(
+    headers: &HeaderMap,
+    peer_addr: Option<SocketAddr>,
+    state: &AppState,
+) -> Option<AuthenticatedConnection> {
+    let login = extract_tailscale_login(headers)?;
+
+    // SECURITY INVARIANT: Never trust `Tailscale-User-Login` unless the TCP
+    // peer is strictly loopback (`127.0.0.1` or `::1`) AND neither
+    // `X-Forwarded-For` nor `Forwarded` is present.
+    let peer = peer_addr?;
+    if !is_strict_loopback_peer(peer.ip()) {
+        tracing::warn!(
+            peer = %peer,
+            "Rejected Tailscale-User-Login header from non-loopback peer"
+        );
+        return None;
+    }
+    if headers.contains_key("x-forwarded-for") || headers.contains_key("forwarded") {
+        tracing::warn!(
+            peer = %peer,
+            "Rejected Tailscale-User-Login header when X-Forwarded-For/Forwarded is present"
+        );
+        return None;
+    }
+
+    let effective = state
+        .tailscale_control
+        .effective_config(&state.db)
+        .await
+        .ok()?;
+    if !effective.auth_enabled {
+        return None;
+    }
+
+    if !crate::service::tailscale_control::verify_tailscale_whois_if_configured(
+        &effective.socket_path,
+        peer,
+        &login,
+    )
+    .await
+    {
+        tracing::warn!(
+            peer = %peer,
+            login = %login,
+            "Rejected Tailscale-User-Login header after tailscaled whois cross-check failed"
+        );
+        return None;
+    }
+
+    let user = match_or_provision_tailscale_user(
+        &state.db,
+        &login,
+        &effective.auto_provision_role,
+        &peer.ip().to_string(),
+    )
+    .await?;
+    let user_id = user.id.clone();
+
+    Some(AuthenticatedConnection {
+        user: CurrentUser::from(user),
+        mobile_expires: None,
+        credential: ConnectionCredential::Tailscale { user_id },
+    })
+}
+
+async fn match_or_provision_tailscale_user(
+    db: &DatabaseConnection,
+    login: &str,
+    auto_provision_role: &str,
+    audit_ip: &str,
+) -> Option<user::Model> {
+    let login_trimmed = login.trim();
+    if login_trimmed.is_empty() {
+        return None;
+    }
+
+    // 1. Exact username match.
+    if let Some(exact) = user::Entity::find()
+        .filter(user::Column::Username.eq(login_trimmed))
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+    {
+        return Some(exact);
+    }
+
+    let all_users = user::Entity::find().all(db).await.ok()?;
+
+    // Case-insensitive full-login username match if unique.
+    let ci_full: Vec<&user::Model> = all_users
+        .iter()
+        .filter(|u| u.username.eq_ignore_ascii_case(login_trimmed))
+        .collect();
+    if ci_full.len() == 1 {
+        return Some(ci_full[0].clone());
+    }
+
+    // 2. Linked OAuth account match (email case-insensitive or provider_user_id exact) if unique.
+    if let Ok(accounts) = oauth_account::Entity::find().all(db).await {
+        let matched_user_ids: HashSet<String> = accounts
+            .into_iter()
+            .filter(|acc| {
+                acc.provider_user_id == login_trimmed
+                    || acc
+                        .email
+                        .as_deref()
+                        .is_some_and(|e| e.trim().eq_ignore_ascii_case(login_trimmed))
+            })
+            .map(|acc| acc.user_id)
+            .collect();
+        if matched_user_ids.len() == 1
+            && let Some(uid) = matched_user_ids.into_iter().next()
+            && let Some(found) = all_users.iter().find(|u| u.id == uid)
+        {
+            return Some(found.clone());
+        }
+    }
+
+    // 3. Unique local-part match when login is an email/domain handle (`local@domain`).
+    if let Some((local_part, _domain)) = login_trimmed.split_once('@') {
+        let local_part = local_part.trim();
+        if !local_part.is_empty() {
+            let local_matches: Vec<&user::Model> = all_users
+                .iter()
+                .filter(|u| {
+                    u.username.eq_ignore_ascii_case(local_part)
+                        || u.username
+                            .split_once('@')
+                            .is_some_and(|(ulocal, _)| ulocal.eq_ignore_ascii_case(local_part))
+                })
+                .collect();
+            if local_matches.len() == 1 {
+                return Some(local_matches[0].clone());
+            }
+        }
+    }
+
+    // 4. Optional member-only auto-provisioning (NEVER auto-provision `admin`).
+    let role = auto_provision_role.trim();
+    if role.is_empty() {
+        return None;
+    }
+    if role != "member" {
+        tracing::warn!(
+            configured_role = %role,
+            "Refusing Tailscale auto-provisioning for non-member role"
+        );
+        return None;
+    }
+
+    let provisioned_username = login_trimmed.to_ascii_lowercase();
+    let random_password = AuthService::generate_session_token();
+    match AuthService::create_user(db, &provisioned_username, &random_password, "member").await {
+        Ok(created) => {
+            let detail = serde_json::json!({
+                "username": created.username,
+                "role": "member",
+                "tailscale_login": login_trimmed,
+            })
+            .to_string();
+            let _ = AuditService::log(
+                db,
+                &created.id,
+                "tailscale.auto_provision",
+                Some(&detail),
+                audit_ip,
+            )
+            .await;
+            Some(created)
+        }
+        Err(AppError::Conflict(_)) => user::Entity::find()
+            .filter(user::Column::Username.eq(&provisioned_username))
+            .one(db)
+            .await
+            .ok()
+            .flatten()
+            .filter(|u| u.role == "member"),
+        Err(error) => {
+            tracing::error!(
+                "Failed to auto-provision Tailscale member '{provisioned_username}': {error}"
+            );
+            None
+        }
+    }
 }
 
 /// A non-web session has a fixed lifetime (no sliding renewal), so its expiry
@@ -175,16 +410,26 @@ fn mobile_expiry(session: &crate::entity::session::Model) -> Option<chrono::Date
     (session.source != "web").then_some(session.expires_at)
 }
 
-/// Resolve the authenticated user for a WebSocket upgrade.
-///
-/// Same credential policy as [`resolve_connection`], plus the WS-specific
-/// rule: a user flagged `must_change_password` is rejected outright, because
-/// the onboarding flow cannot be completed over a WebSocket.
+/// Resolve the authenticated user for a WebSocket upgrade without peer address.
 pub async fn resolve_ws_connection(
     headers: &HeaderMap,
     state: &AppState,
 ) -> Option<AuthenticatedConnection> {
-    resolve_connection(headers, state)
+    resolve_ws_connection_with_peer(headers, None, state).await
+}
+
+/// Resolve the authenticated user for a WebSocket upgrade with optional peer
+/// socket address.
+///
+/// Same credential policy as [`resolve_connection_with_peer`], plus the
+/// WS-specific rule: a user flagged `must_change_password` is rejected
+/// outright, because the onboarding flow cannot be completed over a WebSocket.
+pub async fn resolve_ws_connection_with_peer(
+    headers: &HeaderMap,
+    peer_addr: Option<SocketAddr>,
+    state: &AppState,
+) -> Option<AuthenticatedConnection> {
+    resolve_connection_with_peer(headers, peer_addr, state)
         .await
         .filter(|conn| !conn.user.must_change_password)
 }
@@ -193,8 +438,19 @@ pub async fn resolve_ws_connection(
 ///
 /// Identity-only view of [`resolve_connection`] for callers that do not care
 /// about connection lifetime (HTTP middleware, optional-auth public routes).
+#[allow(dead_code)]
 pub async fn resolve_optional_user(headers: &HeaderMap, state: &AppState) -> Option<CurrentUser> {
     resolve_connection(headers, state).await.map(|c| c.user)
+}
+
+pub async fn resolve_optional_user_with_peer(
+    headers: &HeaderMap,
+    peer_addr: Option<SocketAddr>,
+    state: &AppState,
+) -> Option<CurrentUser> {
+    resolve_connection_with_peer(headers, peer_addr, state)
+        .await
+        .map(|c| c.user)
 }
 
 pub async fn auth_middleware(
@@ -202,7 +458,11 @@ pub async fn auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Response {
-    let current_user = resolve_optional_user(req.headers(), &state).await;
+    let peer_addr = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0);
+    let current_user = resolve_optional_user_with_peer(req.headers(), peer_addr, &state).await;
 
     match current_user {
         Some(user) => {
@@ -280,19 +540,13 @@ mod tests {
     #[test]
     fn test_extract_session_cookie_valid() {
         let headers = headers_with("cookie", "session_token=abc123; other=val");
-        assert_eq!(
-            extract_session_cookie(&headers),
-            Some("abc123".to_string())
-        );
+        assert_eq!(extract_session_cookie(&headers), Some("abc123".to_string()));
     }
 
     #[test]
     fn test_extract_session_cookie_only() {
         let headers = headers_with("cookie", "session_token=tok42");
-        assert_eq!(
-            extract_session_cookie(&headers),
-            Some("tok42".to_string())
-        );
+        assert_eq!(extract_session_cookie(&headers), Some("tok42".to_string()));
     }
 
     #[test]
@@ -443,14 +697,16 @@ mod tests {
             let user = AuthService::create_user(&db, "webby", "pass1234", "member")
                 .await
                 .unwrap();
-            let token =
-                seed_session(&db, &user.id, "web", Utc::now() + chrono::Duration::hours(1)).await;
+            let token = seed_session(
+                &db,
+                &user.id,
+                "web",
+                Utc::now() + chrono::Duration::hours(1),
+            )
+            .await;
             let state = AppState::new(db, AppConfig::default()).await.unwrap();
 
-            let headers = headers_with(
-                "cookie",
-                &format!("session_token={token}"),
-            );
+            let headers = headers_with("cookie", &format!("session_token={token}"));
             let conn = resolve_connection(&headers, &state).await.unwrap();
             assert!(conn.mobile_expires.is_none());
         }
@@ -464,8 +720,13 @@ mod tests {
             let mut active: user::ActiveModel = user.clone().into();
             active.must_change_password = Set(true);
             active.update(&db).await.unwrap();
-            let token =
-                seed_session(&db, &user.id, "web", Utc::now() + chrono::Duration::hours(1)).await;
+            let token = seed_session(
+                &db,
+                &user.id,
+                "web",
+                Utc::now() + chrono::Duration::hours(1),
+            )
+            .await;
             let state = AppState::new(db, AppConfig::default()).await.unwrap();
 
             let headers = headers_with("cookie", &format!("session_token={token}"));
@@ -473,6 +734,84 @@ mod tests {
             // onboarding routes); the WS view rejects outright.
             assert!(resolve_connection(&headers, &state).await.is_some());
             assert!(resolve_ws_connection(&headers, &state).await.is_none());
+        }
+
+        #[tokio::test]
+        async fn tailscale_serve_auth_enforces_loopback_no_xff_and_auth_enabled() {
+            let (db, _tmp) = setup_test_db().await;
+            AuthService::create_user(&db, "alice@example.com", "pass1234", "admin")
+                .await
+                .unwrap();
+
+            // 1. Default config (auth_enabled = false): rejected even from loopback.
+            let state_disabled = AppState::new(db.clone(), AppConfig::default())
+                .await
+                .unwrap();
+            let ts_headers = headers_with("tailscale-user-login", "alice@example.com");
+            let loopback_v4: SocketAddr = "127.0.0.1:41234".parse().unwrap();
+            let loopback_v6: SocketAddr = "[::1]:41234".parse().unwrap();
+            let external_peer: SocketAddr = "203.0.113.10:41234".parse().unwrap();
+            let cgnat_peer: SocketAddr = "100.64.0.5:41234".parse().unwrap();
+
+            assert!(
+                resolve_connection_with_peer(&ts_headers, Some(loopback_v4), &state_disabled)
+                    .await
+                    .is_none()
+            );
+
+            // 2. Enable auth_enabled: loopback v4 and v6 succeed; missing peer or non-loopback fail.
+            let mut enabled_cfg = AppConfig::default();
+            enabled_cfg.tailscale.auth_enabled = true;
+            let state = AppState::new(db, enabled_cfg).await.unwrap();
+
+            let conn_v4 = resolve_connection_with_peer(&ts_headers, Some(loopback_v4), &state)
+                .await
+                .expect("loopback v4 should authenticate");
+            assert_eq!(conn_v4.user.username, "alice@example.com");
+            assert_eq!(conn_v4.user.role, "admin");
+            assert!(conn_v4.lease_is_valid(&state).await.unwrap());
+
+            assert!(
+                resolve_connection_with_peer(&ts_headers, Some(loopback_v6), &state)
+                    .await
+                    .is_some(),
+                "loopback v6 should authenticate"
+            );
+            assert!(
+                resolve_connection_with_peer(&ts_headers, None, &state)
+                    .await
+                    .is_none(),
+                "missing ConnectInfo must fail closed"
+            );
+            assert!(
+                resolve_connection_with_peer(&ts_headers, Some(external_peer), &state)
+                    .await
+                    .is_none(),
+                "public TCP peer must be rejected"
+            );
+            assert!(
+                resolve_connection_with_peer(&ts_headers, Some(cgnat_peer), &state)
+                    .await
+                    .is_none(),
+                "non-loopback CGNAT TCP peer must be rejected"
+            );
+
+            // 3. Presence of X-Forwarded-For or Forwarded rejects even on loopback!
+            let mut with_xff = ts_headers.clone();
+            with_xff.insert("x-forwarded-for", HeaderValue::from_static("1.2.3.4"));
+            assert!(
+                resolve_connection_with_peer(&with_xff, Some(loopback_v4), &state)
+                    .await
+                    .is_none()
+            );
+
+            let mut with_forwarded = ts_headers.clone();
+            with_forwarded.insert("forwarded", HeaderValue::from_static("for=1.2.3.4"));
+            assert!(
+                resolve_connection_with_peer(&with_forwarded, Some(loopback_v4), &state)
+                    .await
+                    .is_none()
+            );
         }
     }
 }

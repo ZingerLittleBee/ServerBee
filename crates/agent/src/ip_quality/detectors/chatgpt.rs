@@ -231,7 +231,10 @@ mod tests {
 
     #[test]
     fn fallback_blocked_when_access_denied_body() {
-        let o = fallback_outcome(200, "Access denied. OpenAI is not available in your country.");
+        let o = fallback_outcome(
+            200,
+            "Access denied. OpenAI is not available in your country.",
+        );
         let (status, _) = classify_fallback(&o);
         assert_eq!(status, UnlockStatus::Blocked);
     }

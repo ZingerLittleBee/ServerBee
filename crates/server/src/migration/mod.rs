@@ -57,6 +57,7 @@ mod m20261003_000084_alert_event_intents;
 mod m20261003_000085_security_event_admission;
 
 mod m20261005_000086_renewal_dates;
+mod m20261121_000087_tailscale_support;
 
 pub struct Migrator;
 
@@ -118,6 +119,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261003_000084_alert_event_intents::Migration),
             Box::new(m20261003_000085_security_event_admission::Migration),
             Box::new(m20261005_000086_renewal_dates::Migration),
+            Box::new(m20261121_000087_tailscale_support::Migration),
         ]
     }
 }
@@ -359,5 +361,32 @@ mod tests {
             .expect("event count");
         assert_eq!(offer_count, 0, "credential-bearing offers cascade");
         assert_eq!(event_count, 1, "secret-free authority history is retained");
+    }
+
+    #[tokio::test]
+    async fn tailscale_support_migration_adds_nullable_server_columns() {
+        let db = migrated_db().await;
+        let server_columns = db
+            .query_all(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "PRAGMA table_info('servers')".to_string(),
+            ))
+            .await
+            .expect("inspect servers schema");
+        let names: Vec<String> = server_columns
+            .iter()
+            .map(|row| row.try_get("", "name").expect("column name"))
+            .collect();
+        for expected in [
+            "tailscale_ipv4",
+            "tailscale_ipv6",
+            "tailscale_dns_name",
+            "tailscale_tailnet",
+        ] {
+            assert!(
+                names.iter().any(|c| c == expected),
+                "servers table must include column {expected}"
+            );
+        }
     }
 }

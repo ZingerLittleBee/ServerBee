@@ -46,6 +46,8 @@ struct ContentView: View {
                                 ServerDetailLoaderView(serverId: serverId)
                             case .security(let serverId, let eventId):
                                 SecurityNotificationDetailView(serverId: serverId, eventId: eventId)
+                            case .tailscale(let serverId, let serverName):
+                                ServerTailscaleView(serverId: serverId, serverName: serverName)
                             }
                         }
                 }
@@ -266,6 +268,7 @@ struct ContentView: View {
 enum ServerNavigationTarget: Hashable {
     case detailById(String)
     case security(serverId: String, eventId: String)
+    case tailscale(serverId: String, serverName: String)
 }
 
 /// Displays `ServerDetailView` for a server id. The detail view reads live

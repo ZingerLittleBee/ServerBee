@@ -34,6 +34,8 @@ pub(super) struct DockerSubsystem {
     available: bool,
     stats_interval: Option<tokio::time::Interval>,
     retry_interval: tokio::time::Interval,
+    #[cfg(test)]
+    mock_retry_ok: Option<bool>,
 }
 
 impl DockerSubsystem {
@@ -53,6 +55,8 @@ impl DockerSubsystem {
             available: false,
             stats_interval: None,
             retry_interval,
+            #[cfg(test)]
+            mock_retry_ok: None,
         }
     }
 
@@ -118,6 +122,17 @@ impl DockerSubsystem {
     /// Retry the daemon connection; success returns the `FeaturesUpdate`
     /// re-advertising the feature.
     pub(super) async fn retry(&mut self) -> Option<AgentMessage> {
+        #[cfg(test)]
+        if let Some(ok) = self.mock_retry_ok {
+            if ok {
+                self.available = true;
+                return Some(AgentMessage::FeaturesUpdate {
+                    features: vec!["docker".to_string()],
+                });
+            }
+            return None;
+        }
+
         tracing::debug!("Retrying Docker connection...");
         match DockerManager::try_new(self.tx.clone(), Arc::clone(&self.capabilities)) {
             Ok(dm) => match dm.verify_connection().await {
@@ -207,6 +222,27 @@ impl DockerSubsystem {
     #[cfg(test)]
     pub(super) fn arm_stats_polling_for_test(&mut self) {
         self.stats_interval = Some(tokio::time::interval(Duration::from_secs(60)));
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_mock_retry_for_test(&mut self, ok: Option<bool>) {
+        self.mock_retry_ok = ok;
+    }
+
+    #[cfg(test)]
+    pub(super) fn set_available_with_unreachable_daemon_for_test(&mut self) {
+        let docker = bollard::Docker::connect_with_http(
+            "http://127.0.0.1:1",
+            1,
+            bollard::API_DEFAULT_VERSION,
+        )
+        .expect("connect_with_http builds transport without I/O");
+        self.manager = Some(DockerManager::from_client_for_test(
+            docker,
+            self.tx.clone(),
+            Arc::clone(&self.capabilities),
+        ));
+        self.available = true;
     }
 
     /// Tear down the daemon connection without emitting anything; part of
