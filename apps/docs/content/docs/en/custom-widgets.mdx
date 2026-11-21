@@ -4,7 +4,7 @@ description: Author custom dashboard widgets with React + Zod, and install them 
 icon: Puzzle
 ---
 
-ServerBee dashboards natively support custom widget modules. Each widget is a standalone ES module that an admin installs once and can then drop onto any dashboard, exactly like a built-in widget. This guide covers the two supported install methods:
+ServerBee dashboards natively support custom widget modules alongside the 18 built-in dashboard widgets (including SDK-built modules like `com.serverbee.tailscale-overview` — **Tailscale Overview**). Each widget is a standalone ES module that an admin installs once and can then drop onto any dashboard, exactly like a built-in widget. This guide covers the two supported install methods:
 
 - **Method B** — a single `.js` file (one widget per file)
 - **Method C** — a `.zip` collection bundle (multiple widgets in one upload, sharing the same build output)
@@ -272,7 +272,7 @@ curl -X DELETE "https://your-host/api/widget-modules/com.example.hello" \
   -H "X-API-Key: $SERVERBEE_API_KEY"
 ```
 
-Built-in widgets (for example `com.serverbee.hello-world`) cannot be uninstalled — `DELETE` against them returns `400`.
+Built-in widget modules (such as `com.serverbee.tailscale-overview` and `com.serverbee.hello-world`) cannot be uninstalled — `DELETE` against them returns `400`.
 
 ## Limits and safety
 

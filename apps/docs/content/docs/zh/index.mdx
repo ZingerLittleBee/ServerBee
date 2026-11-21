@@ -37,6 +37,10 @@ Agent 通过 WebSocket 与 Server 保持长连接，实现实时数据推送。�
 
 启用 Docker capability 后，可以查看容器列表、实时统计、生命周期事件、日志流、网络、卷，并执行容器操作。
 
+### 防火墙、IP 质量与 Tailscale 组网
+
+识别 SSH 暴力破解与端口扫描并联动 nftables 防火墙黑名单，检测每台服务器出口 IP 的风险评分与流媒体/AI 解锁情况，并原生支持通过 Tailscale 与自建 Headscale 私网接入与观测（`Direct` 直连与 `DERP` 中继路径诊断、MagicDNS、密钥过期预警、全局 Tailnet 设备关联以及 `*.ts.net` HTTPS Sidecar 部署）。
+
 ### 公开状态页、主题和品牌
 
 对外发布单个公开状态页（路径 `/status`，无需认证），可配置服务器范围、实时指标、90 天可用性时间线、可用性阈值、事件公告和维护窗口。外观设置支持预设/自定义 OKLCH 主题，以及白标站点标题、Logo、Favicon 和页脚文本。
@@ -94,6 +98,9 @@ Agent 与 Server 之间的通信全部走 WebSocket（JSON 消息）。终端会
   <Card title="Web 终端" href="/zh/docs/terminal" />
   <Card title="文件管理器" href="/zh/docs/file-manager" />
   <Card title="Ping 探测" href="/zh/docs/ping" />
+  <Card title="防火墙封禁" href="/zh/docs/firewall" />
+  <Card title="IP 质量检测" href="/zh/docs/ip-quality" />
+  <Card title="Tailscale 集成" href="/zh/docs/tailscale" />
   <Card title="功能开关" href="/zh/docs/capabilities" />
   <Card title="公开状态页" href="/zh/docs/status-page" />
   <Card title="自定义组件" href="/zh/docs/custom-widgets" />

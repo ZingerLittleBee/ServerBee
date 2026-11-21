@@ -60,7 +60,7 @@ Each Agent inspects its local `tailscaled` daemon when the **`tailscale`** capab
 
 ### Metrics and Peer Diagnostics
 
-When `tailscaled` is detected, the Agent advertises `"tailscale"` in `SystemInfo.features`, reports periodic snapshots every 60 seconds, and serves live on-demand refreshes via `GET /api/servers/{id}/tailscale/status`. Both **Server Detail → Tailscale** in the Web Dashboard and **Server Detail → Tailscale** in the iOS app surface:
+When `tailscaled` is detected, the Agent advertises `"tailscale"` in `SystemInfo.features`, reports periodic snapshots every 60 seconds, and serves live on-demand refreshes via `GET /api/servers/{id}/tailscale/status`. Both **Server Detail → Tailscale** (`/servers/{id}/tailscale`) in the Web Dashboard and **Server Detail → Tailscale** (`ServerTailscaleView`) in the iOS app surface:
 
 - **Node summary**: Backend state (`Running`, `NeedsLogin`, `Stopped`), primary Tailscale IPv4 & IPv6, MagicDNS name, Tailnet name, client version, DERP home region, Exit Node status (`exit_node` / `exit_node_option`), advertised subnet routes, ACL tags, and health warnings.
 - **Key Expiry tracking**: Node key expiration timestamp and remaining lifetime so you can renew or disable key expiry before an unattended server drops off the Tailnet.
@@ -74,7 +74,7 @@ The Server also persists each host's primary `tailscale_ipv4`, `tailscale_ipv6`,
 
 ## Control Plane API & Dashboard Widget
 
-While per-host `CAP_TAILSCALE` shows each Agent's local WireGuard view, the Server's optional Control Plane integration queries the global device inventory of your Tailnet from either **Tailscale SaaS** or a self-hosted **Headscale** instance.
+While per-host `CAP_TAILSCALE` shows each Agent's local WireGuard view, the Server's optional Control Plane integration queries the global device inventory of your Tailnet from either **Tailscale SaaS** (API v2, `/api/v2/tailnet/{tailnet}/devices`) or a self-hosted **Headscale** instance (API v1, `/api/v1/node`, including Headscale v0.26+ tag schemas).
 
 ### Configuring Tailscale or Headscale
 
@@ -91,12 +91,20 @@ Security notes for control-plane configuration:
 - Custom `api_base_url` values pass through ServerBee's SSRF validator: loopback (`127.0.0.0/8`, `::1`) and link-local cloud metadata (`169.254.169.254`) are blocked, while private LAN and Tailnet addresses hosting self-managed Headscale instances are permitted.
 - Use **Test Connection** (`POST /api/tailscale/test`) to verify credentials and inspect the discovered device count before saving.
 
-### Server Matching & `tailscale-overview` Widget
+### Server Matching & `com.serverbee.tailscale-overview` Widget
 
 `GET /api/tailscale/overview` (cached briefly for 30 seconds to avoid upstream rate limits) correlates every Tailnet device against your ServerBee fleet by Tailscale IPv4/IPv6, reported IPv4, MagicDNS name, or hostname:
 
 - **Settings → Tailscale** displays fleet-wide totals (**Total Devices**, **Online**, **Linked ServerBee Servers**, **Expiring Keys**) and links matched Tailnet devices directly to `/servers/{id}`.
-- **Built-in Dashboard Widget (`tailscale-overview`)**: Add the **Tailscale Overview** widget to any [custom dashboard](/en/docs/dashboards) for an at-a-glance summary of online Tailnet nodes, linked ServerBee hosts, and upcoming key expirations.
+- **Built-in Dashboard Widget (`com.serverbee.tailscale-overview`)**: Add the **Tailscale Overview** widget from the [custom dashboard](/en/docs/dashboards) picker for an at-a-glance summary of online Tailnet nodes, linked ServerBee hosts, and upcoming key expirations.
+
+## Native iOS Support
+
+The [iOS Mobile Companion](/en/docs/mobile) includes native SwiftUI views for both per-host Tailscale diagnostics and global Tailnet administration:
+
+- **Server Detail → Tailscale (`ServerTailscaleView`)**: Surfaces on any server with `CAP_TAILSCALE` enabled that reports live `tailscaled` status or persisted Tailnet addresses. Displays backend state, copyable Tailscale IPv4/IPv6 and MagicDNS rows, DERP home region, key expiry warnings, Exit Node and subnet route chips, ACL tags, health warnings, and the full peer list with `Direct`, `DERP`, `Peer Relay`, and `Idle` badges, active endpoints, Rx/Tx counters, last WireGuard handshake, and cached offline fallback.
+- **Settings → Administration → Tailscale (`TailscaleAdminView`)**: Administrators can configure Tailscale or Headscale control-plane credentials, saved API keys, preferred Server URL, and Tailscale Serve loopback auth, run **Test Connection**, and inspect the live Tailnet device inventory (`TailnetOverviewSection`) with direct navigation to linked ServerBee servers. Read-only members can also view the Tailnet overview and device list.
+- **Privacy Mode IP masking**: Turning on **Settings → Privacy Mode** masks Tailscale IPv4/IPv6 addresses, peer endpoints, subnet routes, MagicDNS hostnames containing IPs, and Tailnet URLs across all cards and rows while preserving raw unmasked values in copy actions and edit fields.
 
 ## Authentication Options
 

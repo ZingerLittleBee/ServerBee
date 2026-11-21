@@ -131,6 +131,17 @@ issuer_url = ""
 client_id = ""
 client_secret = ""
 scopes = ["openid", "email", "profile"]
+
+[tailscale]
+enabled = false                # Enable Tailscale / Headscale control-plane integration
+provider = "tailscale"         # "tailscale" or "headscale"
+api_base_url = "https://api.tailscale.com"
+tailnet = "-"                  # "-" uses the API key's default tailnet
+api_key = ""                   # Read-only Tailscale or Headscale API key
+preferred_server_url = ""      # Optional Tailnet URL offered in Add Server enrollment commands
+socket_path = ""               # Custom local tailscaled Unix socket path on the Server host
+auth_enabled = false           # Accept loopback Tailscale-User-Login headers from tailscale serve
+auto_provision_role = ""       # "" (disabled) or "member" (admin is never auto-provisioned)
 ```
 
 ## Environment Variables
@@ -194,7 +205,7 @@ Enrollment offers are server-bound, single-use, and short-lived (10 minutes by d
 
 Before claiming an offer, the Agent generates and persists its own run token. It sends that proposed token with `POST /api/agent/register`; the Server stores only its hash and returns only the `server_id`. If the HTTP result is ambiguous, the Agent tries the WebSocket with its staged token before attempting another claim.
 
-The Server's `agent_authority.status` is either `claimed` or `unclaimed` and is independent of whether the Agent is currently online. The Agent Authority state and its outstanding offer are available from the Server detail APIs and UI. You can set `auth.max_servers` to cap new Server onboarding, and use **Clean up unconnected** to remove never-initialized offline placeholders.
+The Server's `agent_authority.status` is either `claimed` or `unclaimed` and is independent of whether the Agent is currently online. The Agent Authority state and its outstanding offer are available from the Server detail APIs and UI. You can set `auth.max_servers` to cap new Server onboarding, use **Clean up unconnected** to remove never-initialized offline placeholders, and toggle **Use Tailnet URL** in **Add Server** when `tailscale.preferred_server_url` (or local `tailscaled` detection) exposes a private Tailnet address (see [Tailscale Integration](/en/docs/tailscale)).
 
 ## Re-enrollment and Revocation
 

@@ -61,6 +61,8 @@ The agent collects and reports the following metrics every 3 seconds. The server
 | Network In Transfer | bytes | Cumulative total download since agent start |
 | Network Out Transfer | bytes | Cumulative total upload since agent start |
 
+By default (`collector.exclude_tailscale_traffic = true`), virtual `tailscale*` TUN interfaces are excluded from host bandwidth and cumulative transfer totals so encrypted WireGuard overlay packets are not counted twice alongside the physical NIC. See [Tailscale Integration](/en/docs/tailscale).
+
 ### System Load
 
 | Metric | Description |
@@ -186,6 +188,7 @@ Each server has a detail page showing:
 - **GPU panel** -- per-GPU utilization and VRAM charts, if the server reports GPU data (historical mode only)
 - **Traffic statistics** -- cumulative network traffic summary
 - **Server metadata** -- group, tags, remarks, pricing
+- **Tailscale diagnostics** (`/servers/{id}/tailscale`, when `CAP_TAILSCALE` is active) -- Tailscale IPv4/IPv6, MagicDNS, key expiry, subnet routes, and per-peer `Direct` vs `DERP` tunnel modes (see [Tailscale Integration](/en/docs/tailscale))
 - **Actions** -- terminal access, edit, delete
 
 ### Real-Time Charts

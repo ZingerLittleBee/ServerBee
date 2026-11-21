@@ -131,6 +131,17 @@ issuer_url = ""
 client_id = ""
 client_secret = ""
 scopes = ["openid", "email", "profile"]
+
+[tailscale]
+enabled = false                # 启用 Tailscale / Headscale 控制面集成
+provider = "tailscale"         # "tailscale" 或 "headscale"
+api_base_url = "https://api.tailscale.com"
+tailnet = "-"                  # "-" 表示使用 API Key 默认所属 Tailnet
+api_key = ""                   # 只读 Tailscale 或 Headscale API Key
+preferred_server_url = ""      # 添加服务器时供一键切换的 Server Tailnet URL
+socket_path = ""               # Server 宿主机自定义 tailscaled Unix Socket 路径
+auth_enabled = false           # 接受本机 tailscale serve 回环注入的 Tailscale-User-Login 头
+auto_provision_role = ""       # ""（关闭）或 "member"（绝不自动创建 admin）
 ```
 
 ## 环境变量
@@ -192,7 +203,7 @@ Enrollment offer 绑定到具体 Server，单次使用且短时有效（默认 1
 
 Agent 在 claim offer 前自行生成并持久化 run token，然后通过 `POST /api/agent/register` 提交 proposed token。Server 只保存哈希，并且只返回 `server_id`。如果 HTTP 结果不明确，Agent 会先用已暂存的 token 尝试 WebSocket，再决定是否重新 claim。
 
-Server 的 `agent_authority.status` 只有 `claimed` 与 `unclaimed`，它与 Agent 当前是否在线相互独立。Server 详情 API 和 UI 会展示 Agent Authority 状态及 outstanding offer。你可以用 `auth.max_servers` 限制新 Server onboarding，并用 **Clean up unconnected** 清理从未初始化的离线占位条目。
+Server 的 `agent_authority.status` 只有 `claimed` 与 `unclaimed`，它与 Agent 当前是否在线相互独立。Server 详情 API 和 UI 会展示 Agent Authority 状态及 outstanding offer。你可以用 `auth.max_servers` 限制新 Server onboarding，用 **Clean up unconnected** 清理从未初始化的离线占位条目；配置 `tailscale.preferred_server_url` 或检测到本机 `tailscaled` 时，还可在 **添加服务器** 弹窗中一键切换 **使用 Tailnet 地址** 私网接入（见 [Tailscale 集成](/zh/docs/tailscale)）。
 
 ## 重新接入与吊销
 

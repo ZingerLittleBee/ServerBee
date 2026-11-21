@@ -275,6 +275,7 @@ Pick one public access URL and keep the browser URL, the agent's `server_url`, a
 |----------|------------|----------------------|-----------------------------|-----------|
 | Direct IP over HTTP | `http://203.0.113.10:9527` | `false` | `SERVERBEE_AUTH__SECURE_COOKIE=false` | `http://203.0.113.10:9527` |
 | Domain through HTTPS reverse proxy | `https://monitor.example.com` | `true` | `SERVERBEE_AUTH__SECURE_COOKIE=true` or omit the variable | `https://monitor.example.com` |
+| Private Tailnet via `tailscale serve` | `https://serverbee.tailnet.ts.net` | `true` | `SERVERBEE_AUTH__SECURE_COOKIE=true` | `https://serverbee.tailnet.ts.net` |
 
 For domain access, create a DNS `A` or `AAAA` record pointing to the server, terminate HTTPS in Nginx, Caddy, or Traefik, and proxy traffic to ServerBee on `127.0.0.1:9527`.
 
@@ -389,6 +390,16 @@ networks:
 volumes:
   serverbee-data:
 ```
+
+### Tailscale Sidecar (`*.ts.net` HTTPS)
+
+To publish ServerBee privately on a Tailnet without exposing port `9527` or `443` to the public internet, use the repository's `deploy/docker-compose.tailscale.yml` stack. It pairs `tailscale/tailscale:latest` with `serverbee-server` in a shared network namespace (`network_mode: service:tailscale`), binds ServerBee to `127.0.0.1:9527`, and uses `tailscale serve` to terminate publicly trusted Let's Encrypt `*.ts.net` HTTPS (compatible with browser `Secure` cookies and iOS App Transport Security):
+
+```bash
+TS_AUTHKEY=tskey-auth-YOUR_KEY docker compose -f deploy/docker-compose.tailscale.yml up -d
+```
+
+See [Tailscale Integration](/en/docs/tailscale) for the `config/ts-serve.json` proxy definition, optional loopback `Tailscale-User-Login` sign-in, and Agent Tailnet enrollment.
 
 ## TLS / HTTPS
 
@@ -867,5 +878,6 @@ Consider recovery complete only when all of the following are true:
 <Cards>
   <Card title="Server Setup" href="/en/docs/server" />
   <Card title="Agent Setup" href="/en/docs/agent" />
+  <Card title="Tailscale Integration" href="/en/docs/tailscale" />
   <Card title="Architecture" href="/en/docs/architecture" />
 </Cards>

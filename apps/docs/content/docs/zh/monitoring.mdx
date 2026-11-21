@@ -61,6 +61,8 @@ Agent 每 3 秒采集并上报以下指标。Server 在 `Welcome` 消息中下�
 | 入站累计流量 | bytes | Agent 启动以来累计接收的总字节数 |
 | 出站累计流量 | bytes | Agent 启动以来累计发送的总字节数 |
 
+默认情况下（`collector.exclude_tailscale_traffic = true`），Agent 在汇总主机带宽与累计流量时会跳过虚拟 `tailscale*` TUN 网卡，避免加密后的 WireGuard 隧道流量与底层物理网卡重复统计。详见 [Tailscale 集成](/zh/docs/tailscale)。
+
 ### 系统负载
 
 | 指标 | 说明 |
@@ -186,6 +188,7 @@ Agent 上报 (每 3 秒)
 - **GPU 面板** -- 如果该服务器上报了 GPU 数据，显示各 GPU 的利用率和显存图表（仅历史模式）
 - **流量统计** -- 网络累计流量的统计信息
 - **服务器元数据** -- 分组、标签、备注、定价
+- **Tailscale 诊断**（`/servers/{id}/tailscale`，启用 `CAP_TAILSCALE` 时） -- Tailscale IPv4/IPv6、MagicDNS、密钥过期时间、子网路由以及对端 `Direct` 直连与 `DERP` 中继模式（见 [Tailscale 集成](/zh/docs/tailscale)）
 - **操作** -- 终端访问、编辑、删除
 
 ### 实时图表模式

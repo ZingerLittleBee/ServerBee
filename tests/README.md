@@ -84,6 +84,7 @@ Existing checked statuses below record prior manual runs without a pinned candid
 | 网络质量总览 | `/network` | ✅ |
 | Network detail tab | `/servers/:id?tab=network` | — |
 | Docker 监控 | `/servers/:id/docker` | — |
+| Tailscale 节点状态 | `/servers/:id/tailscale` | — |
 | 流量总览 | `/traffic` | ✅ |
 | 流量 Traffic Tab | `/servers/:id` (Traffic tab) | ✅ |
 | 服务监控列表 | `/settings/service-monitors` | ✅ |
@@ -99,3 +100,4 @@ Existing checked statuses below record prior manual runs without a pinned candid
 | Swagger UI | `/swagger-ui/` | ✅ |
 | 终端 | `/terminal/:id` | ✅ |
 | 移动设备管理 | `/settings/mobile-devices` | — |
+| Tailscale 控制面设置 | `/settings/tailscale` | — |

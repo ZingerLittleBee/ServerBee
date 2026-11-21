@@ -70,6 +70,7 @@ Its main service modules are:
 | PingService | Ping task CRUD, task assignment, result storage |
 | TaskService | Remote command dispatch, result queries |
 | ConfigService | System configuration read/write (key-value store) |
+| TailscaleControlService | Tailscale v2 / Headscale v1 control-plane client, fleet correlation, and `tailscaled` LocalAPI `whois` verification |
 | GeoIpService | IP geolocation lookup (MaxMind MMDB) |
 | UserService | User CRUD and role management |
 
@@ -92,6 +93,7 @@ Its main modules are:
 | Reporter | Manages the WebSocket connection, reports metrics, handles server commands, reconnects on disconnect |
 | PingManager | Runs scheduled ICMP/TCP/HTTP ping tasks dispatched by the server |
 | NetworkProber | Runs scheduled network quality probes and reports aggregate results |
+| Tailscale | Queries local `tailscaled` via Unix socket LocalAPI or CLI fallback for periodic and on-demand status reports |
 | Terminal | Manages PTY terminal sessions and forwards terminal I/O |
 
 ### Common (`crates/common`)
@@ -139,6 +141,8 @@ The agent connects to `ws://<server>/api/agent/ws` and authenticates with `Autho
 | `DockerStats` | Container resource usage statistics | No |
 | `DockerLog` | Container log entries (batched) | No |
 | `DockerEvent` | Container lifecycle event | No |
+| `TailscaleStatus` | Host `tailscaled` node summary, routes, and peer snapshot | No |
+| `TailscaleUnavailable` | Reports that local `tailscaled` is not running or unreachable | No |
 
 ### Server to Agent (`ServerMessage`)
 
@@ -157,6 +161,7 @@ The agent connects to `ws://<server>/api/agent/ws` and authenticates with `Autho
 | `DockerLogsStart` | Start streaming logs for a container |
 | `DockerLogsStop` | Stop streaming logs |
 | `DockerAction` | Execute container action (start/stop/restart/remove) |
+| `TailscaleGetStatus` | Request an on-demand `tailscaled` status snapshot |
 
 ### Server to Browser (`BrowserMessage`)
 
@@ -298,13 +303,14 @@ The server spawns several long-running background tasks via `tokio::spawn`:
 
 ### Authentication Paths
 
-User-facing REST and WebSocket requests resolve a user from a session cookie, API key, or Bearer session token. The authorization check then uses that user's current role. Agent WebSocket connections use a separate per-Agent run token.
+User-facing REST and WebSocket requests resolve a user from a session cookie, API key, Bearer session token, or (when `tailscale.auth_enabled` is active on a strict loopback peer without proxy forwarding headers) `Tailscale-User-Login`. The authorization check then uses that user's current role. Agent WebSocket connections use a separate per-Agent run token.
 
 ```
 Request arrives
   +-- Cookie: session_token=xxx         --> Session auth (browser)
   +-- Header: X-API-Key: serverbee_xxx  --> API key auth (automation)
   +-- Header: Authorization: Bearer xxx  --> Session auth (mobile)
+  +-- Header: Tailscale-User-Login      --> Loopback Tailscale Serve auth (optional)
 
 Agent WebSocket connects
   +-- Header: Authorization: Bearer xxx  --> Agent run-token auth
@@ -387,6 +393,7 @@ ServerBee/
         lib.rs
         protocol.rs             # Agent <-> Server message types
         types.rs                # SystemReport, GpuInfo, etc.
+        tailscale_types.rs      # Tailscale node/peer status DTOs
         constants.rs            # Protocol version, default values
     server/                     # Server binary (Axum, sea-orm, background tasks)
       src/
@@ -414,10 +421,12 @@ ServerBee/
         security/                # Host security event detection
         firewall/                # Firewall block management
         ip_quality/              # IP quality checks
+        tailscale/               # Local tailscaled socket & CLI collector
         upgrade.rs               # Self-upgrade coordinator
         upgrade/                 # Transactional self-upgrade support
   apps/
     web/                        # React frontend (Vite, TanStack, shadcn/ui)
+    ios/                        # Native iOS SwiftUI companion app
     docs/                       # Documentation site (TanStack Start + Fumadocs)
   docs/                         # Design documents and plans
 ```

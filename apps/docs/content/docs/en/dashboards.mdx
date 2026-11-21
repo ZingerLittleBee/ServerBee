@@ -32,6 +32,8 @@ The layout is stored as grid coordinates (`grid_x`, `grid_y`, `grid_w`, `grid_h`
 
 ## Widget Types
 
+ServerBee ships with **18 built-in widgets** across Real-time, Charts, and Status categories:
+
 | Widget | Category | Typical use |
 |--------|----------|-------------|
 | `stat-number` | Real-time | Show one fleet-wide summary metric (server count, average CPU/memory, total bandwidth, or health) |
@@ -51,6 +53,7 @@ The layout is stored as grid coordinates (`grid_x`, `grid_y`, `grid_w`, `grid_h`
 | `network-latency` | Charts | Show network latency probe history for a server |
 | `network-quality` | Real-time | Show network quality score and live metrics |
 | `network-overview` | Status | Show aggregate network quality across servers |
+| `com.serverbee.tailscale-overview` | Status | Show Tailnet online/total devices, linked ServerBee servers, and expiring keys (**Tailscale Overview**; see [Tailscale Integration](/en/docs/tailscale)) |
 
 ## Common Widget Configuration
 

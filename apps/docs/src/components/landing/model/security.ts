@@ -45,7 +45,8 @@ const lowRisk: { id: CapabilityId; medium: boolean }[] = [
   { id: 'http', medium: false },
   { id: 'securityEvents', medium: false },
   { id: 'firewall', medium: true },
-  { id: 'ipQuality', medium: true }
+  { id: 'ipQuality', medium: true },
+  { id: 'tailscale', medium: false }
 ]
 
 export function buildSecurity(lang: LandingLang): SecurityModel {

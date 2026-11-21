@@ -32,6 +32,8 @@ ServerBee 仪表盘由可配置组件组成。你可以保留默认总览仪表�
 
 ## 组件类型
 
+ServerBee 内置 **18 种仪表盘组件**，涵盖实时、图表和状态三类：
+
 | 组件 | 分类 | 典型用途 |
 |------|------|----------|
 | `stat-number` | 实时 | 展示一个全局汇总指标（服务器数量、平均 CPU/内存、总带宽或健康状态） |
@@ -51,6 +53,7 @@ ServerBee 仪表盘由可配置组件组成。你可以保留默认总览仪表�
 | `network-latency` | 图表 | 展示网络延迟探测历史曲线 |
 | `network-quality` | 实时 | 展示网络质量评分与实时指标 |
 | `network-overview` | 状态 | 跨服务器汇总网络质量概览 |
+| `com.serverbee.tailscale-overview` | 状态 | 展示 Tailnet 在线/总设备数、已关联 ServerBee 服务器数及即将过期密钥数（**Tailscale Overview**，见 [Tailscale 集成](/zh/docs/tailscale)） |
 
 ## 常见组件配置
 

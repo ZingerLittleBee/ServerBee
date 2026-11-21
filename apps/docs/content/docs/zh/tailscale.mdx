@@ -60,7 +60,7 @@ docker run -d \
 
 ### 观测指标与对端路径诊断
 
-检测到可用的 `tailscaled` 后，Agent 会在 `SystemInfo.features` 中声明 `"tailscale"`，每 60 秒周期性同步快照，并响应 `GET /api/servers/{id}/tailscale/status` 的按需实时查询。Web 控制台的 **服务器详情 → Tailscale** 页面与 iOS 客户端的 **服务器详情 → Tailscale** 视图均会展示：
+检测到可用的 `tailscaled` 后，Agent 会在 `SystemInfo.features` 中声明 `"tailscale"`，每 60 秒周期性同步快照，并响应 `GET /api/servers/{id}/tailscale/status` 的按需实时查询。Web 控制台的 **服务器详情 → Tailscale** 页面（`/servers/{id}/tailscale`）与 iOS 客户端的 **服务器详情 → Tailscale** 视图（`ServerTailscaleView`）均会展示：
 
 - **节点概览**：后端运行状态（`Running`、`NeedsLogin`、`Stopped`）、主 Tailscale IPv4 与 IPv6、MagicDNS 域名、Tailnet 名称、客户端版本、DERP 主区域、Exit Node 状态（`exit_node` / `exit_node_option`）、通告的子网路由（Advertised Routes）、ACL 标签（Tags）以及健康告警（Health Warnings）。
 - **密钥过期（Key Expiry）追踪**：展示节点密钥过期时间与剩余时长，便于在无人值守服务器因密钥过期掉线前及时续期或关闭密钥过期。
@@ -74,7 +74,7 @@ Server 同时会将每台主机的主 `tailscale_ipv4`、`tailscale_ipv6`、`tai
 
 ## 控制面 API 集成与仪表盘组件
 
-单机 `CAP_TAILSCALE` 反映每台 Agent 本地看到的 WireGuard 状态，而 Server 端可选的控制面集成则直接查询 **Tailscale 官方控制面**或自建 **Headscale** 的全局设备清单。
+单机 `CAP_TAILSCALE` 反映每台 Agent 本地看到的 WireGuard 状态，而 Server 端可选的控制面集成则直接查询 **Tailscale 官方控制面**（API v2，`/api/v2/tailnet/{tailnet}/devices`）或自建 **Headscale**（API v1，`/api/v1/node`，兼容 Headscale v0.26+ 标签结构）的全局设备清单。
 
 ### 配置 Tailscale 或 Headscale
 
@@ -91,12 +91,20 @@ Server 同时会将每台主机的主 `tailscale_ipv4`、`tailscale_ipv6`、`tai
 - 自定义 `api_base_url` 会经过 ServerBee 的 SSRF 安全校验：严格拦截回环地址（`127.0.0.0/8`、`::1`）与云厂商元数据地址（`169.254.169.254`），同时允许部署在内网 LAN 或 Tailnet 上的自建 Headscale 实例。
 - 保存前可使用 **测试连接**（`POST /api/tailscale/test`）验证凭据有效性并查看发现的设备数量。
 
-### 自动关联服务器与 `tailscale-overview` 组件
+### 自动关联服务器与 `com.serverbee.tailscale-overview` 组件
 
 `GET /api/tailscale/overview`（服务端内置 30 秒短期缓存，避免频繁请求上游 API）会按 Tailscale IPv4/IPv6、上报的 IPv4、MagicDNS 域名或主机名将每台 Tailnet 设备与已接入的 ServerBee 服务器自动匹配：
 
 - **设置 → Tailscale** 汇总展示全局指标（**总设备数**、**在线设备**、**已关联 ServerBee 服务器**、**即将过期密钥**），已匹配设备可直接跳转到对应的 `/servers/{id}` 详情页。
-- **内置仪表盘组件（`tailscale-overview`）**：可在任意[自定义仪表盘](/zh/docs/dashboards)中添加 **Tailscale 概览** 组件，一屏查看 Tailnet 在线节点数、已关联监控主机数及临近过期的节点密钥数量。
+- **内置仪表盘组件（`com.serverbee.tailscale-overview`）**：可在任意[自定义仪表盘](/zh/docs/dashboards)的组件选择器中添加 **Tailscale 概览（Tailscale Overview）** 组件，一屏查看 Tailnet 在线节点数、已关联监控主机数及临近过期的节点密钥数量。
+
+## 原生 iOS 客户端支持
+
+[iOS 移动客户端](/zh/docs/mobile)提供完整的原生 SwiftUI 视图，覆盖单机 Tailscale 诊断与全局 Tailnet 管理：
+
+- **服务器详情 → Tailscale（`ServerTailscaleView`）**：当服务器开启 `CAP_TAILSCALE` 并上报实时 `tailscaled` 状态或持久化 Tailnet 地址时，详情页会展示 Tailscale 导航卡片。点开可查看后端运行状态、支持一键复制的 Tailscale IPv4/IPv6 与 MagicDNS 行、DERP 主区域、密钥过期预警、Exit Node 与子网路由标签、ACL 标签、健康告警，以及带 `Direct`、`DERP`、`Peer Relay`、`Idle` 状态徽章的对端列表（含活跃端点、收发流量、最近握手时间及离线缓存快照提示）。
+- **设置 → 管理 → Tailscale（`TailscaleAdminView`）**：管理员可配置 Tailscale 或 Headscale 控制面凭据、已保存的 API Key、首选 Server 地址及 Tailscale Serve 回环认证，执行 **测试连接**，并通过 `TailnetOverviewSection` 查看全局设备清单并直接跳转到已关联的服务器详情；只读成员亦可查看 Tailnet 概览与设备列表。
+- **隐私模式 IP 打码**：开启 **设置 → 隐私模式** 后，所有卡片与列表中的 Tailscale IPv4/IPv6 地址、对端 Endpoint、子网路由、含 IP 的主机名及 Tailnet URL 均会自动隐藏后两段，而复制操作与编辑输入框仍保留真实完整地址。
 
 ## 身份认证方案
 
