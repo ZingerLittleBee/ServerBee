@@ -1715,6 +1715,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/servers/{id}/tailscale/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_server_tailscale_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/servers/{id}/traceroute": {
         parameters: {
             query?: never;
@@ -2131,6 +2147,54 @@ export interface paths {
         get: operations["get_server_uptime_daily"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tailscale/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_tailscale_config"];
+        put: operations["update_tailscale_config"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tailscale/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_tailnet_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tailscale/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["test_tailscale_config"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3866,6 +3930,10 @@ export interface components {
             renewal?: components["schemas"]["RenewalProjection"];
             /** Format: int64 */
             swap_total?: number | null;
+            tailscale_dns_name?: string | null;
+            tailscale_ipv4?: string | null;
+            tailscale_ipv6?: string | null;
+            tailscale_tailnet?: string | null;
             /**
              * @description Currently-active temporary capability grants reported by the agent, used
              *     by the UI to render countdowns. Empty when the agent is offline or has no
@@ -3889,6 +3957,16 @@ export interface components {
             server_id: string;
             server_name: string;
             targets: components["schemas"]["TargetSummary"][];
+        };
+        ServerTailscaleStatusResponse: {
+            available: boolean;
+            cached: boolean;
+            online: boolean;
+            status?: null | components["schemas"]["TailscaleStatusReport"];
+            tailscale_dns_name?: string | null;
+            tailscale_ipv4?: string | null;
+            tailscale_ipv6?: string | null;
+            tailscale_tailnet?: string | null;
         };
         ServerTrafficOverview: {
             billing_cycle?: string | null;
@@ -3994,6 +4072,93 @@ export interface components {
             site_description?: string | null;
             site_name?: string | null;
         };
+        TailnetDeviceItem: {
+            addresses: string[];
+            authorized: boolean;
+            client_version?: string | null;
+            expires?: string | null;
+            hostname: string;
+            id: string;
+            key_expiry_disabled: boolean;
+            last_seen?: string | null;
+            matched_server_id?: string | null;
+            matched_server_name?: string | null;
+            name: string;
+            online: boolean;
+            os?: string | null;
+            tags: string[];
+        };
+        TailnetOverviewResponse: {
+            configured: boolean;
+            devices: components["schemas"]["TailnetDeviceItem"][];
+            error?: string | null;
+            expiring_keys_count: number;
+            fetched_at?: string | null;
+            linked_servers: number;
+            online_devices: number;
+            provider: string;
+            server_tailnet_url?: string | null;
+            tailnet: string;
+            total_devices: number;
+        };
+        TailscaleAdminConfigResponse: {
+            api_base_url: string;
+            auth_enabled: boolean;
+            auto_provision_role: string;
+            enabled: boolean;
+            has_api_key: boolean;
+            preferred_server_url: string;
+            provider: string;
+            tailnet: string;
+        };
+        TailscaleConnectionTestResponse: {
+            device_count: number;
+            message: string;
+            success: boolean;
+        };
+        TailscaleNodeSummary: {
+            backend_state: string;
+            dns_name?: string | null;
+            exit_node: boolean;
+            exit_node_option: boolean;
+            hostname?: string | null;
+            key_expiry?: string | null;
+            online: boolean;
+            tailnet_name?: string | null;
+            tailscale_ips: string[];
+            version?: string | null;
+        };
+        TailscalePeerInfo: {
+            active: boolean;
+            /** @description One of `"direct"`, `"derp"`, `"peer_relay"`, or `"idle"`. */
+            connection_mode: string;
+            cur_addr?: string | null;
+            dns_name?: string | null;
+            exit_node: boolean;
+            exit_node_option: boolean;
+            host_name: string;
+            id: string;
+            last_handshake?: string | null;
+            last_seen?: string | null;
+            online: boolean;
+            os?: string | null;
+            relay?: string | null;
+            /** Format: int64 */
+            rx_bytes: number;
+            tags: string[];
+            tailscale_ips: string[];
+            /** Format: int64 */
+            tx_bytes: number;
+        };
+        TailscaleStatusReport: {
+            advertised_routes: string[];
+            collected_at: string;
+            derp_region?: string | null;
+            health_warnings: string[];
+            peers: components["schemas"]["TailscalePeerInfo"][];
+            summary: components["schemas"]["TailscaleNodeSummary"];
+            tags: string[];
+        };
         TargetSummary: {
             /** Format: double */
             availability: number;
@@ -4075,6 +4240,12 @@ export interface components {
             /** @description APNs acceptance cannot establish native presentation. */
             presentation: string;
             reason: string;
+        };
+        TestTailscaleConfigRequest: {
+            api_base_url?: string | null;
+            api_key?: string | null;
+            provider?: string | null;
+            tailnet?: string | null;
         };
         TotpDisableRequest: {
             password: string;
@@ -4404,6 +4575,16 @@ export interface components {
             uptime_red_threshold?: number | null;
             /** Format: double */
             uptime_yellow_threshold?: number | null;
+        };
+        UpdateTailscaleConfigRequest: {
+            api_base_url: string;
+            api_key?: string | null;
+            auth_enabled?: boolean | null;
+            auto_provision_role?: string | null;
+            enabled: boolean;
+            preferred_server_url?: string | null;
+            provider: string;
+            tailnet?: string;
         };
         UpdateTaskRequest: {
             command?: string | null;
@@ -8726,6 +8907,43 @@ export interface operations {
             };
         };
     };
+    get_server_tailscale_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Server ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Per-server Tailscale node & peer status */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServerTailscaleStatusResponse"];
+                };
+            };
+            /** @description Tailscale capability disabled on agent */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Server not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_traceroute_records: {
         parameters: {
             query?: never;
@@ -9839,6 +10057,129 @@ export interface operations {
             };
             /** @description Rate limit exceeded */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_tailscale_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Global Tailscale / Headscale admin configuration (API key redacted) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TailscaleAdminConfigResponse"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    update_tailscale_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateTailscaleConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated Tailscale / Headscale admin configuration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TailscaleAdminConfigResponse"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation or SSRF guard error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_tailnet_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Global Tailnet / Headscale overview and linked devices */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TailnetOverviewResponse"];
+                };
+            };
+        };
+    };
+    test_tailscale_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestTailscaleConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Upstream Tailscale / Headscale connection test result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TailscaleConnectionTestResponse"];
+                };
+            };
+            /** @description Admin role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation or SSRF guard error */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
