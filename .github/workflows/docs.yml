@@ -21,6 +21,7 @@ on:
       - 'apps/push-relay/README.md'
       - 'crates/server/src/service/geoip.rs'
       - 'crates/server/src/service/asn.rs'
+      - 'deploy/docker-compose.tailscale.yml'
       - 'deploy/install.sh'
       - 'deploy/railway/Dockerfile'
       - 'deploy/railway/README.md'
@@ -51,6 +52,7 @@ on:
       - 'apps/push-relay/README.md'
       - 'crates/server/src/service/geoip.rs'
       - 'crates/server/src/service/asn.rs'
+      - 'deploy/docker-compose.tailscale.yml'
       - 'deploy/install.sh'
       - 'deploy/railway/Dockerfile'
       - 'deploy/railway/README.md'
@@ -92,6 +94,7 @@ jobs:
       - name: Validate published Compose examples
         shell: bash
         run: |
+          docker compose -f deploy/docker-compose.tailscale.yml config --quiet
           for locale in en zh; do
             awk '/^## Docker Compose/{section=1} section && /^```yaml/{block=1; next} block && /^```/{exit} block{print}' \
               "apps/docs/content/docs/${locale}/deployment.mdx" \

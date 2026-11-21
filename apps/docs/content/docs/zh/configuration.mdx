@@ -55,7 +55,7 @@ Agent 依次使用内置默认值、`/etc/serverbee/agent.toml`、工作目录�
 |----------|--------|------|
 | `SERVERBEE_SERVER__DATA_DIR` | `./data` | 数据目录（存放数据库和备份） |
 | `SERVERBEE_AUTH__MAX_SERVERS` | `0` | 通过注册码接入的最大服务器数（0 = 不限制）。尽力软限制 |
-| `SERVERBEE_SERVER__TRUSTED_PROXIES` | 私有 / 回环 CIDR | 受信任的反向代理 CIDR 列表，默认信任 RFC 1918 + 回环地址。设为 `[]` 禁用 |
+| `SERVERBEE_SERVER__TRUSTED_PROXIES` | 私有 / CGNAT / 回环 CIDR | 受信任的反向代理 CIDR 列表，默认信任 RFC 1918 + RFC 6598 / Tailscale CGNAT（`100.64.0.0/10`）+ 回环地址。设为 `[]` 禁用 |
 | `SERVERBEE_SCHEDULER__TIMEZONE` | `UTC` | 流量日聚合时区（如 `Asia/Shanghai`） |
 | `SERVERBEE_LOG__LEVEL` | `info` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
 | `SERVERBEE_LOG__FILE` | `""` | 日志文件路径，留空仅输出到 stdout |
@@ -120,13 +120,29 @@ Agent 依次使用内置默认值、`/etc/serverbee/agent.toml`、工作目录�
 | `SERVERBEE_MOBILE__ACCESS_TTL` | `900` | 移动端 Access Token 有效期（秒），默认 15 分钟 |
 | `SERVERBEE_MOBILE__REFRESH_TTL` | `2592000` | 移动端 Refresh Token 有效期（秒），默认 30 天 |
 
-#### 防火墙（Firewall，可选）
+#### Tailscale（可选）
 
-[防火墙黑名单](/zh/docs/firewall) 功能的第二道护栏（Tier-2）。即使管理员主动尝试，`POST /api/firewall/blocks` 也会拒绝插入此列表中的 CIDR / IP。第一道护栏（硬编码的保留段：回环、RFC 1918、链路本地、组播、未指定地址）始终生效。
+配置 Server 端的 [Tailscale 与 Headscale 控制面集成](/zh/docs/tailscale)（`GET /api/tailscale/overview`）以及可选的 Tailscale Serve 回环身份认证。通过 **设置 → Tailscale** 保存的运行时设置会覆盖这些默认值。
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `SERVERBEE_FIREWALL__ALLOW_LIST` | `[]` | 服务端拒绝写入 `block_list` 的 CIDR / IP 列表。叠加在硬编码 Tier-1 保留段之上的 Tier-2 护栏 |
+| `SERVERBEE_TAILSCALE__ENABLED` | `false` | 启用 Tailscale / Headscale 控制面 API 集成 |
+| `SERVERBEE_TAILSCALE__PROVIDER` | `"tailscale"` | 控制面提供方：`"tailscale"` 或 `"headscale"` |
+| `SERVERBEE_TAILSCALE__API_BASE_URL` | `"https://api.tailscale.com"` | 控制面 API 基础 URL（`provider = "headscale"` 时设为自建 Headscale 地址；SSRF 校验会拦截回环与云元数据地址，同时允许内网 LAN / Tailnet 上的 Headscale） |
+| `SERVERBEE_TAILSCALE__TAILNET` | `"-"` | Tailscale API 使用的 Tailnet 标识（`"-"` 表示使用 `api_key` 对应的默认 Tailnet） |
+| `SERVERBEE_TAILSCALE__API_KEY` | `""` | 只读 Tailscale API Access Token（`tskey-api-...`）或 Headscale API Key。`GET /api/tailscale/config` 不会返回明文 |
+| `SERVERBEE_TAILSCALE__PREFERRED_SERVER_URL` | `""` | 当前 Server 的首选 Tailnet 访问地址（如 `https://serverbee.tailnet-name.ts.net`），用于「添加服务器」弹窗中的 Tailnet URL 切换开关 |
+| `SERVERBEE_TAILSCALE__SOCKET_PATH` | `""` | Server 宿主机上本地 `tailscaled` 守护进程的自定义 Unix Socket 路径。留空时依次探测 `/var/run/tailscale/tailscaled.sock`、`/run/tailscale/tailscaled.sock` 和 `/var/run/tailscaled.socket` |
+| `SERVERBEE_TAILSCALE__AUTH_ENABLED` | `false` | 接受本机 `tailscale serve` 通过回环注入的 `Tailscale-User-Login` 请求头。仅在 TCP 对端严格为回环地址（`127.0.0.1` / `::1`）且不含 `X-Forwarded-For` / `Forwarded` 头时放行 |
+| `SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE` | `""` | Tailscale Serve 首次登录时的自动建号角色：`""`（禁用）或 `"member"`。绝不会自动创建 `"admin"` |
+
+#### 防火墙（Firewall，可选）
+
+[防火墙黑名单](/zh/docs/firewall) 功能的第二道护栏（Tier-2）。即使管理员主动尝试，`POST /api/firewall/blocks` 也会拒绝插入此列表中的 CIDR / IP。第一道护栏（硬编码的保留段：回环、RFC 1918、RFC 6598 / Tailscale CGNAT `100.64.0.0/10`、链路本地、组播、未指定地址）始终生效。
+
+| 环境变量 | 默认值 | 说明 |
+|----------|--------|------|
+| `SERVERBEE_FIREWALL__ALLOW_LIST` | `[]` | 服务端拒绝写入 `block_list` 的 CIDR / IP 列表。叠加在硬编码 Tier-1 保留段（含 `100.64.0.0/10` Tailscale CGNAT）之上的 Tier-2 护栏 |
 
 #### IP 质量检测（IP Quality）
 
@@ -187,9 +203,11 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | `SERVERBEE_COLLECTOR__INTERVAL` | `3` | 仅为兼容保留。Agent 当前忽略此值，使用 Server 下发且固定为 3 秒的 `Welcome.report_interval` |
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `false` | 启用 NVIDIA GPU 监控（需要启用 `gpu` 特性的构建，以及提供 NVML 的 NVIDIA 驱动） |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `true` | 启用 CPU 温度监控 |
+| `SERVERBEE_COLLECTOR__EXCLUDE_TAILSCALE_TRAFFIC` | `true` | 在汇总主机网络速率与累计流量时排除虚拟 `tailscale*` TUN 网卡（如 `tailscale0`），避免 WireGuard 隧道流量与物理网卡重复统计 |
+| `SERVERBEE_TAILSCALE__SOCKET_PATH` | `""` | 访问宿主机 `tailscaled` LocalAPI（`GET /localapi/v0/status`）的自定义 Unix Socket 路径。留空时自动探测标准路径并在不可达时回退至 `tailscale status --json` |
 | `SERVERBEE_FILE__ENABLED` | `false` | 在该 Agent 上启用文件管理 |
 | `SERVERBEE_FILE__ROOT_PATHS` | `[]` | 允许的根路径（逗号分隔，如 `/home,/var/log`）。留空则拒绝所有文件操作 |
-| `SERVERBEE_CAPABILITIES__ALLOW` | `[]` | 在默认集合（`CAP_DEFAULT`）之上启用的能力键名，如 `["terminal","file"]`。见 [功能开关](/zh/docs/capabilities) |
+| `SERVERBEE_CAPABILITIES__ALLOW` | `[]` | 在默认集合（`CAP_DEFAULT = 3900`）之上启用的能力键名，如 `["terminal","file"]`。有效键名：`terminal`、`exec`、`upgrade`、`ping_icmp`、`ping_tcp`、`ping_http`、`file`、`docker`、`security_events`、`firewall_block`、`ip_quality`、`tailscale`。见 [功能开关](/zh/docs/capabilities) |
 | `SERVERBEE_CAPABILITIES__DENY` | `[]` | 从默认集合中移除的能力键名。`deny` 优先于 `allow`。未知键名会在启动时报错 |
 | `SERVERBEE_CAPABILITIES__TEMPORARY_MAX_DURATION` | `24h` | 单次临时能力授予可持续的最大时长（如 `30m`、`2h`、`1d`）。见 [功能开关 → 临时授予](/zh/docs/capabilities#临时授予) |
 | `SERVERBEE_CAPABILITIES__STATE_DIR` | `/var/lib/serverbee` | Agent 持久化 `capability_grants.json` 的目录（必须对 Agent 可写） |
@@ -238,7 +256,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 |----|------|--------|------|
 | `listen` | string | `"0.0.0.0:9527"` | Server 监听的 IP 地址和端口 |
 | `data_dir` | string | `"./data"` | 数据库文件和其他持久化数据的目录 |
-| `trusted_proxies` | string[] | 私有 / 回环 CIDR | 受信任的反向代理 CIDR 段。默认信任 RFC 1918 + 回环段。设为 `[]` 禁用 X-Forwarded-For 解析 |
+| `trusted_proxies` | string[] | 私有 / CGNAT / 回环 CIDR | 受信任的反向代理 CIDR 段。默认信任 RFC 1918 + RFC 6598 / Tailscale CGNAT（`100.64.0.0/10`）+ 回环段。设为 `[]` 禁用 X-Forwarded-For 解析 |
 
 ### `[database]` —— 数据库设置
 
@@ -389,11 +407,27 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 
 Server 保留已认证订阅、接收方检查、持久化加密 outbox/重试和从原始事件起算的 30 分钟期限。告警触发/恢复、管理员安全规则匹配、仅发给所有者的计划任务最终结果继续生效；成功通知须主动启用。角色、会话、订阅或注册版本改变会阻止后续符合条件的投递。终态密文会清除，已发送或接受的通知无法撤回。APNs 接受只代表服务商回执，不证明手机展示。应用/NSE 共享 Keychain 签名与真机验收仍须单独验证。参见[移动端](/zh/docs/mobile)与 [Push Relay 运维](/zh/docs/push-relay)。
 
+### `[tailscale]` —— Tailscale 与 Headscale 集成
+
+配置全局 Tailnet / Headscale 控制面客户端及可选的 Tailscale Serve 回环身份认证。通过 **设置 → Tailscale** 更新的运行时配置无需修改 `server.toml` 即可覆盖以下默认值。详见 [Tailscale 集成](/zh/docs/tailscale)。
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `enabled` | bool | `false` | 启用 Tailscale / Headscale 控制面集成（`GET /api/tailscale/overview`） |
+| `provider` | string | `"tailscale"` | 控制面提供方：`"tailscale"` 或 `"headscale"` |
+| `api_base_url` | string | `"https://api.tailscale.com"` | 控制面 API 基础 URL（`provider = "headscale"` 时设为自建 Headscale 地址） |
+| `tailnet` | string | `"-"` | Tailnet 标识（`"-"` 表示使用与 `api_key` 关联的默认 Tailnet） |
+| `api_key` | string | `""` | 只读 Tailscale API Access Token 或 Headscale API Key（GET 接口绝不返回明文） |
+| `preferred_server_url` | string | `""` | 当前 Server 的首选 Tailnet URL，供「添加服务器」弹窗切换使用 |
+| `socket_path` | string | `""` | Server 宿主机上本地 `tailscaled` 守护进程的自定义 Unix Socket 路径 |
+| `auth_enabled` | bool | `false` | 仅接受来自回环连接（`127.0.0.1` / `::1`）且无 `X-Forwarded-For` / `Forwarded` 头的 `Tailscale-User-Login` 请求头 |
+| `auto_provision_role` | string | `""` | 未匹配 Tailscale Serve 用户的自动建号角色：`""`（禁用）或 `"member"`（绝不会自动创建 `"admin"`） |
+
 ### `[firewall]` —— 防火墙黑名单护栏
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `allow_list` | string[] | `[]` | 服务端拒绝写入 `block_list` 的 CIDR / IP 列表。叠加在硬编码 Tier-1 保留段（回环 + RFC 1918 + 链路本地 + 组播 + 未指定地址）之上的 Tier-2 护栏。见 [防火墙黑名单](/zh/docs/firewall) |
+| `allow_list` | string[] | `[]` | 服务端拒绝写入 `block_list` 的 CIDR / IP 列表。叠加在硬编码 Tier-1 保留段（回环 + RFC 1918 + RFC 6598 / Tailscale CGNAT `100.64.0.0/10` + 链路本地 + 组播 + 未指定地址）之上的 Tier-2 护栏。见 [防火墙黑名单](/zh/docs/firewall) |
 
 ### `[ip_quality]` —— IP 质量风险评分
 
@@ -437,6 +471,13 @@ Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个�
 | `interval` | u32 | `3` | 仅为兼容保留。Agent 当前忽略此值，使用 Server 下发且固定为 3 秒的 `Welcome.report_interval` |
 | `enable_gpu` | bool | `false` | 启用 NVIDIA GPU 监控（需要启用 `gpu` 特性的构建，以及提供 NVML 的 NVIDIA 驱动） |
 | `enable_temperature` | bool | `true` | 启用 CPU 温度传感器监控 |
+| `exclude_tailscale_traffic` | bool | `true` | 在汇总主机网络速率与累计流量时跳过虚拟 `tailscale*` TUN 网卡（如 `tailscale0`） |
+
+### `[tailscale]` —— 宿主机 Tailscaled Socket（Agent）
+
+| 键 | 类型 | 默认值 | 说明 |
+|----|------|--------|------|
+| `socket_path` | string | `""` | 访问宿主机 `tailscaled` LocalAPI（`GET /localapi/v0/status`）的自定义 Unix Domain Socket 路径。留空时依次探测 `/var/run/tailscale/tailscaled.sock`、`/run/tailscale/tailscaled.sock` 和 `/var/run/tailscaled.socket`，不可达时回退到 `tailscale status --json` |
 
 ### `[file]` —— 文件管理
 
@@ -449,11 +490,11 @@ Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个�
 
 ### `[capabilities]` —— Agent 拥有的能力策略
 
-能力由 Agent 主机拥有。Agent 从默认集合（`CAP_DEFAULT = 1852`）开始，应用本段的 `allow`/`deny`，再应用任何 `--allow-cap`/`--deny-cap` CLI 参数，然后将结果上报给 Server。Server **无法**覆盖它。完整键名列表和强制执行模型见 [功能开关](/zh/docs/capabilities)。
+能力由 Agent 主机拥有。Agent 从默认集合（`CAP_DEFAULT = 3900`）开始，应用本段的 `allow`/`deny`，再应用任何 `--allow-cap`/`--deny-cap` CLI 参数，然后将结果上报给 Server。Server **无法**覆盖它。完整键名列表和强制执行模型见 [功能开关](/zh/docs/capabilities)。
 
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
-| `allow` | string[] | `[]` | 在默认集合之上启用的能力键名，如 `["terminal", "file"]`。有效键名：`terminal`、`exec`、`upgrade`、`ping_icmp`、`ping_tcp`、`ping_http`、`file`、`docker`、`security_events`、`firewall_block`、`ip_quality` |
+| `allow` | string[] | `[]` | 在默认集合之上启用的能力键名，如 `["terminal", "file"]`。有效键名：`terminal`、`exec`、`upgrade`、`ping_icmp`、`ping_tcp`、`ping_http`、`file`、`docker`、`security_events`、`firewall_block`、`ip_quality`、`tailscale` |
 | `deny` | string[] | `[]` | 从默认集合中移除的能力键名。`deny` 优先于 `allow`。未知键名在启动时报错 |
 | `temporary_max_duration` | string | `"24h"` | 单次临时能力授予可持续的最大时长（如 `30m`、`2h`、`1d`）。由主机本地 `serverbee-agent grant` CLI 使用。见 [功能开关 → 临时授予](/zh/docs/capabilities#临时授予) |
 | `state_dir` | string | `"/var/lib/serverbee"` | Agent 持久化 `capability_grants.json`（临时授予存储）的目录。必须对 Agent 可写 |

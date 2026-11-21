@@ -20,6 +20,7 @@ Server 会拒绝命中保留段的目标：
 
 - 回环地址（`127.0.0.0/8`、`::1`）
 - RFC 1918（`10/8`、`172.16/12`、`192.168/16`、`fc00::/7`、`fe80::/10`）
+- RFC 6598 / Tailscale CGNAT（`100.64.0.0/10`）
 - 组播 / 未指定地址
 - `server.toml` 中 `firewall.allow_list` 列出的任意 CIDR
 - `server.trusted_proxies`

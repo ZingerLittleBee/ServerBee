@@ -1,0 +1,107 @@
+# ServerBee Server + Tailscale HTTPS Sidecar (Docker Compose)
+#
+# Pairs `tailscale/tailscale:latest` with `serverbee-server` in a shared network
+# namespace so ServerBee is reachable privately over your Tailnet at
+# `https://<hostname>.<tailnet>.ts.net` without exposing port 9527 to the internet.
+#
+# Why `*.ts.net` HTTPS matters:
+#   1. Web Dashboard: keeps `SERVERBEE_AUTH__SECURE_COOKIE=true` working for
+#      HttpOnly + Secure session cookies and `wss://` real-time WebSockets.
+#   2. iOS Mobile Companion: Apple App Transport Security (ATS), QR pairing,
+#      mobile bearer token refresh, and verified Push Relay registration require
+#      a publicly trusted TLS certificate. Tailscale HTTPS issues standard
+#      Let's Encrypt certificates for `*.ts.net` (no self-signed CA required).
+#      Note: the native iOS app authenticates with mobile access/refresh tokens
+#      over `https://<hostname>.<tailnet>.ts.net` while connected to your Tailnet,
+#      whereas browsers can optionally use Tailscale Serve loopback identity auth.
+#
+# Prerequisites:
+#   1. In the Tailscale Admin Console -> DNS, enable MagicDNS and HTTPS Certificates.
+#   2. Generate an auth key (`TS_AUTHKEY`, e.g. `tskey-auth-...`) in Settings -> Keys.
+#   3. Create `./config/ts-serve.json` before starting Compose (a missing bind-mount
+#      file must not be auto-created as a directory by Docker):
+#
+#      mkdir -p config
+#      cat > config/ts-serve.json <<'EOF'
+#      {
+#        "TCP": {
+#          "443": {
+#            "HTTPS": true
+#          }
+#        },
+#        "Web": {
+#          "${TS_CERT_DOMAIN}:443": {
+#            "Handlers": {
+#              "/": {
+#                "Proxy": "http://127.0.0.1:9527"
+#              }
+#            }
+#          }
+#        }
+#      }
+#      EOF
+#
+#   4. Export `TS_AUTHKEY` (or place it in `.env`) and start:
+#      TS_AUTHKEY=tskey-auth-... docker compose -f deploy/docker-compose.tailscale.yml up -d
+
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: serverbee-tailscale
+    hostname: ${TS_HOSTNAME:-serverbee}
+    restart: unless-stopped
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_SERVE_CONFIG=/config/ts-serve.json
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - tailscale-sock:/var/run/tailscale
+      - ./config/ts-serve.json:/config/ts-serve.json:ro
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+  serverbee-server:
+    # Pin an exact version for repeatable deployments; `:beta` tracks prereleases
+    # and `:latest` tracks suffix-free stable releases.
+    image: ghcr.io/zingerlittlebee/serverbee-server:${SERVERBEE_IMAGE_TAG:-1.0.0-beta.6}
+    container_name: serverbee-server
+    restart: unless-stopped
+    # Share the Tailscale container's network namespace so `tailscale serve`
+    # proxies to 127.0.0.1:9527 over pure container loopback.
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+    volumes:
+      - serverbee-data:/data
+      # Optional read-only LocalAPI socket mount so ServerBee can discover its own
+      # Tailnet DNS/IP (`server_tailnet_url`) and verify Tailscale Serve peers.
+      - tailscale-sock:/var/run/tailscale:ro
+    environment:
+      # Bind strictly to loopback inside the shared network namespace so all
+      # Tailnet traffic must enter through `tailscale serve` TLS on port 443.
+      - SERVERBEE_SERVER__LISTEN=127.0.0.1:9527
+      - SERVERBEE_SERVER__DATA_DIR=/data
+      - SERVERBEE_AUTH__SECURE_COOKIE=true
+      - SERVERBEE_TAILSCALE__SOCKET_PATH=/var/run/tailscale/tailscaled.sock
+      # Optional: set to `true` to accept `Tailscale-User-Login` injected by
+      # `tailscale serve` over loopback (rejected for non-loopback or proxied requests).
+      - SERVERBEE_TAILSCALE__AUTH_ENABLED=${SERVERBEE_TAILSCALE__AUTH_ENABLED:-false}
+      # Optional: set to `member` to auto-create Member accounts on first Tailscale
+      # Serve login (`""` disables auto-provisioning; `admin` is never auto-provisioned).
+      - SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE=${SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE:-}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9527/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  tailscale-state:
+  tailscale-sock:
+  serverbee-data:
