@@ -17,6 +17,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/settings/status-pages': 'nav_status_pages',
   '/settings/network-probes': 'nav_network_probes',
   '/settings/firewall': 'nav_firewall',
+  '/settings/tailscale': 'nav_tailscale',
   '/settings/ip-quality': 'nav_ip_quality_settings',
   '/settings/tasks': 'nav_commands',
   '/settings/capabilities': 'nav_capabilities',

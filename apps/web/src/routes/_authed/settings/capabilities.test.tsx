@@ -147,7 +147,8 @@ describe('CapabilitiesPage', () => {
       'ICMPPingLowRisk',
       'TCPProbeLowRisk',
       'HTTPProbeLowRisk',
-      'cap_security_eventsLowRisk'
+      'cap_security_eventsLowRisk',
+      'cap_tailscaleLowRisk'
     ])
   })
 })

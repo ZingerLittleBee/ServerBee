@@ -36,7 +36,12 @@ function useBreadcrumbs(enabled: boolean): BreadcrumbEntry[] {
 // settings page is admin-only by default unless explicitly added here. Keep this in
 // sync with the `adminOnly` flags in app-sidebar.tsx — entries listed here must be
 // the ones NOT marked adminOnly there.
-const MEMBER_SETTINGS_ROUTES = ['/settings/mobile-devices', '/settings/api-keys', '/settings/security']
+const MEMBER_SETTINGS_ROUTES = [
+  '/settings/mobile-devices',
+  '/settings/api-keys',
+  '/settings/security',
+  '/settings/tailscale'
+]
 
 function isAdminRoute(pathname: string): boolean {
   if (!pathname.startsWith('/settings')) {
