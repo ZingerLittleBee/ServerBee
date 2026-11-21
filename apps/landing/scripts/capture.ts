@@ -10,10 +10,13 @@
  * as fixture responses, and the real web UI renders it. Every run signs in once; the raised login limit keeps
  * repeated runs from being rate limited.
  *
- * Output: src/assets/shots/{name}-{lang}-{theme}.webp, lossless. `--only=<name>` captures a single shot.
+ * Output: src/assets/shots/{name}-{lang}-{theme}.webp, lossless, and src/assets/shots/regions.json: where the
+ * page's animated scenes find things in each capture (the server cards, the chart's plot, the unlock results),
+ * read from the product's own DOM as percentages of the capture, so the scenes stay aligned when a capture is
+ * retaken. `--only=<name>` captures a single shot; `--regions-only` records the regions without retaking any.
  */
 
-import { mkdirSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,6 +33,7 @@ type Lang = (typeof LANGS)[number]
 type Theme = (typeof THEMES)[number]
 
 const only = process.argv.find((arg) => arg.startsWith('--only='))?.slice('--only='.length)
+const regionsOnly = process.argv.includes('--regions-only')
 
 /**
  * The fleet shown in every shot, by the id suffix the demo seed assigns: display name, monthly price, traffic
@@ -565,9 +569,16 @@ interface Rect {
   y: number
 }
 
+/** A part of the page the landing animates: its box, and a tag where the page tells its parts apart. */
+interface Mark extends Rect {
+  tag?: string
+}
+
 interface Shot {
   /** The part of the page to keep. Omitted, the shot is the whole window. */
   clip?: (page: Page) => Promise<Rect>
+  /** The parts of the shot the landing page animates, by name. They are written to REGIONS. */
+  marks?: (page: Page) => Promise<Record<string, Mark[]>>
   name: string
   path: () => string
   /** Runs before the screenshot, to reach the state the shot shows. */
@@ -575,6 +586,26 @@ interface Shot {
   /** Extra settling time after the page is idle, for charts that animate in. */
   settle?: number
   viewport: { height: number; width: number }
+}
+
+/**
+ * The box of every visible match of `selector`. `tags` maps a fragment of a class name to the tag a match carrying
+ * that class gets, which is how a status badge's color survives into the regions file.
+ */
+async function marksOf(page: Page, selector: string, tags: Record<string, string> = {}): Promise<Mark[]> {
+  return await page.evaluate(
+    ([query, byClass]) =>
+      [...document.querySelectorAll(query)].flatMap((element) => {
+        const { height, width, x, y } = element.getBoundingClientRect()
+        if (!(width > 0 && height > 0)) {
+          return []
+        }
+        const classes = element.getAttribute('class') ?? ''
+        const tag = Object.entries(byClass).find(([fragment]) => classes.includes(fragment))?.[1]
+        return [{ height, tag, width, x, y }]
+      }),
+    [selector, tags] as const
+  )
 }
 
 /** The smallest rectangle around the first visible match of each selector, grown by `pad` pixels. */
@@ -606,7 +637,14 @@ async function around(page: Page, selectors: string[], pad = 16): Promise<Rect> 
  * size, so their viewports are sized to make that part fit without scrolling.
  */
 const SHOT_LIST: Shot[] = [
-  { name: 'fleet', path: () => '/servers?view=grid', viewport: { width: 1440, height: 900 }, settle: 4000 },
+  {
+    name: 'fleet',
+    path: () => '/servers?view=grid',
+    viewport: { width: 1440, height: 900 },
+    settle: 4000,
+    // The server cards, each found from the name it carries.
+    marks: async (page) => ({ cards: await marksOf(page, 'main div.rounded-xl:has(> div h3)') })
+  },
   {
     name: 'network',
     path: () => `/servers/${FOCUS}?tab=network&range=24h`,
@@ -619,7 +657,13 @@ const SHOT_LIST: Shot[] = [
         .click()
     },
     // The carrier columns and the latency chart under them.
-    clip: (page) => around(page, ['[data-slot="tabs-content"] [data-slot="tabs"]', '[data-slot="tabs-content"] figure'])
+    clip: (page) =>
+      around(page, ['[data-slot="tabs-content"] [data-slot="tabs"]', '[data-slot="tabs-content"] figure']),
+    // The three carrier columns, and the plot inside the latency chart: its grid, without axes and labels.
+    marks: async (page) => ({
+      carriers: await marksOf(page, '[data-slot="tabs"] > [data-slot="tabs-content"] > .grid > [data-slot="card"]'),
+      plot: await marksOf(page, '[data-slot="tabs-content"] figure svg > g > rect')
+    })
   },
   {
     name: 'ip-quality',
@@ -632,7 +676,15 @@ const SHOT_LIST: Shot[] = [
         page,
         ['div.space-y-2:has(> h2)', '[data-slot="card"]:nth-last-child(3)', '[data-slot="card"]:nth-last-child(1)'],
         8
-      )
+      ),
+    // Every result in the unlock matrix, row by row, tagged with its status.
+    marks: async (page) => ({
+      cells: await marksOf(page, 'div.space-y-2:has(> h2) table [data-slot="badge"]', {
+        'green-': 'unlocked',
+        'amber-': 'restricted',
+        'red-': 'blocked'
+      })
+    })
   },
   {
     name: 'capabilities',
@@ -640,7 +692,9 @@ const SHOT_LIST: Shot[] = [
     // Wide enough for the English table, whose columns do not shrink.
     viewport: { width: 1680, height: 900 },
     settle: 1500,
-    clip: (page) => around(page, ['[data-slot="table-container"]'], 0)
+    clip: (page) => around(page, ['[data-slot="table-container"]'], 0),
+    // The temporary terminal grant on the focus server.
+    marks: async (page) => ({ grant: await marksOf(page, '[data-slot="table-container"] [data-slot="badge"][title]') })
   },
   {
     name: 'dashboard',
@@ -652,9 +706,69 @@ const SHOT_LIST: Shot[] = [
       const pane = await around(page, ['main'], -1)
       const grid = await around(page, ['.dashboard-grid'])
       return { ...pane, height: grid.y + grid.height - pane.y }
-    }
+    },
+    // The widgets, in the order the dashboard lists them.
+    marks: async (page) => ({ widgets: await marksOf(page, '.dashboard-grid > .react-grid-item') })
   }
 ]
+
+/* ----------------------------------------------------------------- regions */
+
+/**
+ * Where the parts of each shot that the landing page animates sit inside it, so the page can lay its moving pieces
+ * exactly over the capture. Positions are measured in the product's own page when the shot is taken. They are the
+ * same in both themes, so one entry serves the light and the dark capture of a language.
+ */
+const REGIONS = join(SHOTS, 'regions.json')
+
+/** x, y, width and height in percent of the shot, followed by the mark's tag when it has one. */
+type Region = [number, number, number, number] | [number, number, number, number, string]
+
+type RegionFile = Record<string, Record<string, Region[]>>
+
+/** Marks as fractions of the shot. A mark the shot cuts off is cut the same way; one outside it is dropped. */
+function regionsIn(clip: Rect, marks: Record<string, Mark[]>): Record<string, Region[]> {
+  const percent = (value: number, of: number) => Math.round((value / of) * 100_000) / 1000
+  return Object.fromEntries(
+    Object.entries(marks).map(([name, list]) => [
+      name,
+      list.flatMap((mark): Region[] => {
+        const left = Math.max(mark.x, clip.x)
+        const top = Math.max(mark.y, clip.y)
+        const right = Math.min(mark.x + mark.width, clip.x + clip.width)
+        const bottom = Math.min(mark.y + mark.height, clip.y + clip.height)
+        if (right - left < 1 || bottom - top < 1) {
+          return []
+        }
+        const box: [number, number, number, number] = [
+          percent(left - clip.x, clip.width),
+          percent(top - clip.y, clip.height),
+          percent(right - left, clip.width),
+          percent(bottom - top, clip.height)
+        ]
+        return [mark.tag ? [...box, mark.tag] : box]
+      })
+    ])
+  )
+}
+
+function readRegions(): RegionFile {
+  return existsSync(REGIONS) ? (JSON.parse(readFileSync(REGIONS, 'utf8')) as RegionFile) : {}
+}
+
+/** One region per line: the file is read in reviews, and a matrix has over a hundred of them. */
+function writeRegions(regions: RegionFile) {
+  const shots = Object.keys(regions)
+    .sort()
+    .map((shot) => {
+      const parts = Object.entries(regions[shot]).map(
+        ([name, list]) =>
+          `    ${JSON.stringify(name)}: [\n${list.map((r) => `      ${JSON.stringify(r)}`).join(',\n')}\n    ]`
+      )
+      return `  ${JSON.stringify(shot)}: {\n${parts.join(',\n')}\n  }`
+    })
+  writeFileSync(REGIONS, `{\n${shots.join(',\n')}\n}\n`)
+}
 
 async function openContext(
   lang: Lang,
@@ -696,23 +810,49 @@ async function open(page: Page, shot: Shot, lang: Lang) {
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
 }
 
+/** One capture. Its regions are the same in both themes, so the first theme records them. */
+async function captureShot(
+  shot: Shot,
+  lang: Lang,
+  theme: Theme,
+  session: { dashboard: string; storageState: string },
+  regions: RegionFile
+) {
+  const { browser, page } = await openContext(lang, theme, shot.viewport, session.storageState, session.dashboard)
+  try {
+    await open(page, shot, lang)
+    const clip = await shot.clip?.(page)
+    if (shot.marks && theme === THEMES[0]) {
+      const whole = { x: 0, y: 0, ...shot.viewport }
+      regions[`${shot.name}-${lang}`] = regionsIn(clip ?? whole, await shot.marks(page))
+    }
+    if (regionsOnly) {
+      return
+    }
+    const png = await page.screenshot({ type: 'png', clip })
+    const file = join(SHOTS, `${shot.name}-${lang}-${theme}.webp`)
+    await sharp(png).webp({ lossless: true, effort: 6 }).toFile(file)
+    console.log(`shot  ${shot.name}-${lang}-${theme}`)
+  } finally {
+    await browser.close()
+  }
+}
+
 async function captureShots(storageState: string, dashboard: string) {
   mkdirSync(SHOTS, { recursive: true })
+  // A partial run keeps the regions of the shots it does not retake.
+  const regions = readRegions()
   for (const shot of SHOT_LIST.filter((s) => !only || s.name === only)) {
     for (const lang of LANGS) {
-      for (const theme of THEMES) {
-        const { browser, page } = await openContext(lang, theme, shot.viewport, storageState, dashboard)
-        try {
-          await open(page, shot, lang)
-          const png = await page.screenshot({ type: 'png', clip: await shot.clip?.(page) })
-          const file = join(SHOTS, `${shot.name}-${lang}-${theme}.webp`)
-          await sharp(png).webp({ lossless: true, effort: 6 }).toFile(file)
-          console.log(`shot  ${shot.name}-${lang}-${theme}`)
-        } finally {
-          await browser.close()
-        }
+      for (const theme of regionsOnly ? THEMES.slice(0, 1) : THEMES) {
+        await captureShot(shot, lang, theme, { dashboard, storageState }, regions)
       }
     }
+  }
+  writeRegions(regions)
+  for (const [shot, parts] of Object.entries(regions)) {
+    const counts = Object.entries(parts).map(([name, list]) => `${list.length} ${name}`)
+    console.log(`marks ${shot}: ${counts.join(', ')}`)
   }
 }
 
