@@ -564,6 +564,10 @@ async fn seed_servers(db: &DatabaseConnection, now: chrono::DateTime<Utc>) -> Re
             protocol_version: Set(PROTOCOL_VERSION as i32),
             features: Set("[]".to_string()),
             last_remote_addr: Set(Some(spec.ipv4.to_string())),
+            tailscale_ipv4: Set(None),
+            tailscale_ipv6: Set(None),
+            tailscale_dns_name: Set(None),
+            tailscale_tailnet: Set(None),
             created_at: Set(now - Duration::days(45 - index as i64)),
             updated_at: Set(now - Duration::seconds((index % 4) as i64 * 11)),
         }

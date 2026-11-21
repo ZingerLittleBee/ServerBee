@@ -13,7 +13,7 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 
 use crate::middleware::auth::AuthenticatedConnection;
-use crate::middleware::auth::resolve_ws_connection;
+use crate::middleware::auth::resolve_ws_connection_with_peer;
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::capability_gate::require_capability_audited;
@@ -41,7 +41,7 @@ pub(super) async fn admin_capability_gate(
 ) -> Result<WsGate, Box<Response>> {
     let ip = extract_client_ip(addr, headers, &state.config.server.trusted_proxies).to_string();
 
-    let Some(conn) = resolve_ws_connection(headers, state).await else {
+    let Some(conn) = resolve_ws_connection_with_peer(headers, Some(addr.0), state).await else {
         return Err(Box::new(
             axum::http::StatusCode::UNAUTHORIZED.into_response(),
         ));
@@ -119,6 +119,7 @@ mod tests {
     use super::*;
     use crate::config::AppConfig;
     use crate::entity::user;
+    use crate::middleware::auth::resolve_ws_connection;
     use crate::service::auth::{AuthService, LoginParams};
     use crate::test_utils::setup_test_db;
     use sea_orm::{ActiveModelTrait, Set};

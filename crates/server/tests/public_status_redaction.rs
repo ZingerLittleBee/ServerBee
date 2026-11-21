@@ -137,6 +137,10 @@ async fn insert_server_with_ips(
         protocol_version: Set(1),
         features: Set("[]".to_string()),
         last_remote_addr: Set(None),
+        tailscale_ipv4: Set(None),
+        tailscale_ipv6: Set(None),
+        tailscale_dns_name: Set(None),
+        tailscale_tailnet: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -189,8 +193,7 @@ async fn fetch_json(client: &reqwest::Client, url: &str) -> (serde_json::Value, 
     let status = resp.status();
     let text = resp.text().await.expect("body text");
     assert_eq!(status, 200, "expected 200 for {url}, got {status}: {text}");
-    let value: serde_json::Value =
-        serde_json::from_str(&text).expect("response should be JSON");
+    let value: serde_json::Value = serde_json::from_str(&text).expect("response should be JSON");
     (value, text)
 }
 
@@ -208,11 +211,13 @@ async fn public_status_redacts_server_identity_fields() {
         .expect("client");
 
     // /api/status — list of summaries
-    let (list_body, list_raw) =
-        fetch_json(&client, &format!("{}/api/status", base_url)).await;
+    let (list_body, list_raw) = fetch_json(&client, &format!("{}/api/status", base_url)).await;
     let list_data = &list_body["data"];
     assert!(list_data.is_array(), "data should be array");
-    assert!(!list_data.as_array().unwrap().is_empty(), "should contain the seeded server");
+    assert!(
+        !list_data.as_array().unwrap().is_empty(),
+        "should contain the seeded server"
+    );
     assert_no_keys(list_data, FORBIDDEN_KEYS);
     assert!(
         !list_raw.contains(SENSITIVE_IPV4),

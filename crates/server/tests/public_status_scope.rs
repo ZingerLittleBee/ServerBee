@@ -124,6 +124,10 @@ async fn insert_server_with_hidden(
         protocol_version: Set(1),
         features: Set("[]".to_string()),
         last_remote_addr: Set(None),
+        tailscale_ipv4: Set(None),
+        tailscale_ipv6: Set(None),
+        tailscale_dns_name: Set(None),
+        tailscale_tailnet: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -132,11 +136,7 @@ async fn insert_server_with_hidden(
     .expect("insert server");
 }
 
-async fn insert_minimal_snapshot(
-    db: &sea_orm::DatabaseConnection,
-    id: &str,
-    server_id: &str,
-) {
+async fn insert_minimal_snapshot(db: &sea_orm::DatabaseConnection, id: &str, server_id: &str) {
     ip_quality_snapshot::ActiveModel {
         id: Set(id.to_string()),
         server_id: Set(server_id.to_string()),
@@ -234,8 +234,14 @@ async fn public_status_scope_guard_enforces_visibility_rules() {
         .collect();
     assert!(ids.contains(&id_a.to_string()), "A must be listed");
     assert!(ids.contains(&id_b.to_string()), "B must be listed");
-    assert!(!ids.contains(&id_h.to_string()), "hidden H must NOT be listed");
-    assert!(!ids.contains(&id_z.to_string()), "missing Z must NOT be listed");
+    assert!(
+        !ids.contains(&id_h.to_string()),
+        "hidden H must NOT be listed"
+    );
+    assert!(
+        !ids.contains(&id_z.to_string()),
+        "missing Z must NOT be listed"
+    );
 
     // 2. /api/status/servers/{H} → 404 (hidden out-of-scope).
     let resp = client
@@ -269,9 +275,7 @@ async fn public_status_scope_guard_enforces_visibility_rules() {
         .unwrap();
     assert_eq!(resp.status(), 200);
     let body: serde_json::Value = resp.json().await.unwrap();
-    let entries = body["data"]["entries"]
-        .as_array()
-        .expect("entries array");
+    let entries = body["data"]["entries"].as_array().expect("entries array");
     for e in entries {
         let sid = e["server_id"].as_str().unwrap_or("");
         assert_ne!(sid, id_h, "hidden server must not appear in ip-quality");

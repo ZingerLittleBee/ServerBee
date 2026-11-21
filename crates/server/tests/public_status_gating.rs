@@ -114,6 +114,10 @@ async fn insert_minimal_server(db: &sea_orm::DatabaseConnection, id: &str) {
         protocol_version: Set(1),
         features: Set("[]".to_string()),
         last_remote_addr: Set(None),
+        tailscale_ipv4: Set(None),
+        tailscale_ipv6: Set(None),
+        tailscale_dns_name: Set(None),
+        tailscale_tailnet: Set(None),
         created_at: Set(now),
         updated_at: Set(now),
     }
@@ -284,9 +288,11 @@ async fn public_status_disabled_returns_403_everywhere_except_config() {
     let from = (now - chrono::Duration::hours(1)).to_rfc3339();
     let to = now.to_rfc3339();
     let metrics_url = {
-        let mut u =
-            reqwest::Url::parse(&format!("{}/api/status/servers/{}/metrics", base_url, server_id))
-                .unwrap();
+        let mut u = reqwest::Url::parse(&format!(
+            "{}/api/status/servers/{}/metrics",
+            base_url, server_id
+        ))
+        .unwrap();
         u.query_pairs_mut()
             .append_pair("from", &from)
             .append_pair("to", &to)
@@ -343,9 +349,7 @@ async fn public_status_empty_selection_includes_every_server() {
         .or_else(|| body["data"].as_array())
         .expect("servers array");
     assert!(
-        servers
-            .iter()
-            .any(|s| s["id"].as_str() == Some(server_id)),
+        servers.iter().any(|s| s["id"].as_str() == Some(server_id)),
         "empty selection must include every server, got: {servers:?}"
     );
 
@@ -365,9 +369,7 @@ async fn public_status_empty_selection_includes_every_server() {
         .or_else(|| body["data"].as_array())
         .expect("servers array");
     assert!(
-        servers
-            .iter()
-            .all(|s| s["id"].as_str() != Some(server_id)),
+        servers.iter().all(|s| s["id"].as_str() != Some(server_id)),
         "explicit selection must exclude unselected servers"
     );
 }

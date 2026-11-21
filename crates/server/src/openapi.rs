@@ -264,6 +264,12 @@ impl Modify for SecurityAddon {
         crate::router::api::ip_quality::get_server_summary,
         crate::router::api::ip_quality::list_events,
         crate::router::api::ip_quality::check_server,
+        // tailscale
+        crate::router::api::tailscale::get_server_tailscale_status,
+        crate::router::api::tailscale::get_tailnet_overview,
+        crate::router::api::tailscale::get_tailscale_config,
+        crate::router::api::tailscale::update_tailscale_config,
+        crate::router::api::tailscale::test_tailscale_config,
     ),
     components(
         schemas(
@@ -505,6 +511,17 @@ impl Modify for SecurityAddon {
             crate::service::ip_quality::ServerIpQualityData,
             crate::service::ip_quality::UnlockResultDto,
             crate::service::ip_quality::UnlockEventDto,
+            // tailscale
+            crate::router::api::tailscale::ServerTailscaleStatusResponse,
+            serverbee_common::tailscale_types::TailscaleNodeSummary,
+            serverbee_common::tailscale_types::TailscalePeerInfo,
+            serverbee_common::tailscale_types::TailscaleStatusReport,
+            crate::service::tailscale_control::TailnetDeviceItem,
+            crate::service::tailscale_control::TailnetOverviewResponse,
+            crate::service::tailscale_control::TailscaleAdminConfigResponse,
+            crate::service::tailscale_control::UpdateTailscaleConfigRequest,
+            crate::service::tailscale_control::TestTailscaleConfigRequest,
+            crate::service::tailscale_control::TailscaleConnectionTestResponse,
         ),
     ),
     tags(
@@ -542,6 +559,7 @@ impl Modify for SecurityAddon {
         (name = "ip-quality", description = "IP quality: service unlock detection + IP metadata & risk scoring"),
         (name = "geoip", description = "GeoIP MMDB database management (DB-IP Lite Country)"),
         (name = "asn", description = "ASN MMDB database management for traceroute enrichment (DB-IP Lite ASN)"),
+        (name = "tailscale", description = "Tailscale & Headscale host observability and control-plane integration"),
     ),
     security(
         ("session_cookie" = []),

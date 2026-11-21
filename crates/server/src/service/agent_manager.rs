@@ -11,6 +11,7 @@ use serverbee_common::docker_types::*;
 use serverbee_common::protocol::{
     AgentMessage, BrowserMessage, RecordedProtocol, ServerMessage, TemporaryGrant,
 };
+use serverbee_common::tailscale_types::TailscaleStatusReport;
 use serverbee_common::types::{LiveMetrics, SystemReport, TracerouteHop};
 
 use crate::error::AppError;
@@ -117,6 +118,8 @@ pub struct AgentManager {
     docker_containers: DashMap<String, Vec<DockerContainer>>,
     docker_stats: DashMap<String, Vec<DockerContainerStats>>,
     docker_info: DashMap<String, DockerSystemInfo>,
+    // Tailscale status cache (preserved across plain disconnects to back offline UI)
+    tailscale_status: DashMap<String, TailscaleStatusReport>,
     features: DashMap<String, Vec<String>>,
     /// Capabilities the agent reports it supports (from `SystemInfo`). This is
     /// the sole source of truth — capabilities are owned by the agent host and
@@ -164,6 +167,7 @@ impl AgentManager {
             docker_containers: DashMap::new(),
             docker_stats: DashMap::new(),
             docker_info: DashMap::new(),
+            tailscale_status: DashMap::new(),
             features: DashMap::new(),
             agent_local_capabilities: DashMap::new(),
             temporary_grants: DashMap::new(),
@@ -358,6 +362,7 @@ impl AgentManager {
     /// plain disconnect must *not* call this — the cache backs offline display.
     pub fn remove_cached_report(&self, server_id: &str) {
         self.latest_reports.remove(server_id);
+        self.tailscale_status.remove(server_id);
     }
 
     /// Get the mpsc sender for a specific agent to send commands to it.
@@ -660,6 +665,20 @@ impl AgentManager {
         self.docker_containers.remove(server_id);
         self.docker_stats.remove(server_id);
         self.docker_info.remove(server_id);
+    }
+
+    // --- Tailscale cache methods ---
+
+    pub fn update_tailscale_status(&self, server_id: &str, status: TailscaleStatusReport) {
+        self.tailscale_status.insert(server_id.to_string(), status);
+    }
+
+    pub fn get_tailscale_status(&self, server_id: &str) -> Option<TailscaleStatusReport> {
+        self.tailscale_status.get(server_id).map(|v| v.clone())
+    }
+
+    pub fn clear_tailscale_status(&self, server_id: &str) {
+        self.tailscale_status.remove(server_id);
     }
 
     // --- Features cache ---

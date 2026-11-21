@@ -150,6 +150,10 @@ pub struct ServerResponse {
     /// is only returned at mint time. The UI uses this to surface a "show
     /// install command" button on pending or recovering servers.
     pub outstanding_enrollment: Option<OutstandingEnrollmentSummary>,
+    pub tailscale_ipv4: Option<String>,
+    pub tailscale_ipv6: Option<String>,
+    pub tailscale_dns_name: Option<String>,
+    pub tailscale_tailnet: Option<String>,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
 }
@@ -345,6 +349,10 @@ fn build_server_response(
         agent_authority,
         has_token,
         outstanding_enrollment,
+        tailscale_ipv4: s.tailscale_ipv4,
+        tailscale_ipv6: s.tailscale_ipv6,
+        tailscale_dns_name: s.tailscale_dns_name,
+        tailscale_tailnet: s.tailscale_tailnet,
         created_at: s.created_at,
         updated_at: s.updated_at,
     }
@@ -1590,6 +1598,10 @@ mod cleanup_tests {
             protocol_version: 1,
             features: "[]".to_string(),
             last_remote_addr: None,
+            tailscale_ipv4: None,
+            tailscale_ipv6: None,
+            tailscale_dns_name: None,
+            tailscale_tailnet: None,
             created_at: now,
             updated_at: now,
         }
@@ -1719,6 +1731,10 @@ mod delete_audit_tests {
             protocol_version: 1,
             features: "[]".to_string(),
             last_remote_addr: None,
+            tailscale_ipv4: None,
+            tailscale_ipv6: None,
+            tailscale_dns_name: None,
+            tailscale_tailnet: None,
             created_at: now,
             updated_at: now,
         };
