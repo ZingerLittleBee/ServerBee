@@ -543,6 +543,45 @@ for (const locale of locales) {
   invariant(architecture.includes(`\`${protocolVersion}\``), `${locale}/architecture.mdx has a stale protocol version`)
 }
 
+const capabilityBits = new Map(
+  [...constants.matchAll(/pub const (CAP_[A-Z0-9_]+):\s*u32\s*=\s*1\s*<<\s*(\d+);/g)].map(([, name, shift]) => [
+    name,
+    2 ** Number(shift)
+  ])
+)
+const capabilityMetas = [
+  ...constants.matchAll(
+    /CapabilityMeta\s*\{\s*bit:\s*(CAP_[A-Z0-9_]+),\s*key:\s*"([^"]+)",[\s\S]*?default_enabled:\s*(true|false),/g
+  )
+]
+invariant(capabilityMetas.length > 0, 'Unable to read ALL_CAPABILITIES from crates/common/src/constants.rs')
+const expectedValidMask = capabilityMetas.reduce((sum, [, bitConst]) => sum + (capabilityBits.get(bitConst) ?? 0), 0)
+const expectedDefaultMask = capabilityMetas.reduce(
+  (sum, [, bitConst, , defaultEnabled]) =>
+    defaultEnabled === 'true' ? sum + (capabilityBits.get(bitConst) ?? 0) : sum,
+  0
+)
+for (const locale of locales) {
+  const capabilities = await text(join(contentRoot, locale, 'capabilities.mdx'))
+  invariant(
+    capabilities.includes(`\`${expectedValidMask}\``),
+    `${locale}/capabilities.mdx has a stale CAP_VALID_MASK (expected ${expectedValidMask})`
+  )
+  invariant(
+    capabilities.includes(`\`CAP_DEFAULT = ${expectedDefaultMask}\``),
+    `${locale}/capabilities.mdx has a stale CAP_DEFAULT (expected ${expectedDefaultMask})`
+  )
+  for (const [, bitConst, key] of capabilityMetas) {
+    const bitValue = capabilityBits.get(bitConst)
+    invariant(
+      bitValue !== undefined &&
+        capabilities.includes(`\`${key}\``) &&
+        capabilities.includes(`\`${bitConst}\` (${bitValue})`),
+      `${locale}/capabilities.mdx omits capability ${key} (${bitConst} = ${bitValue ?? 'unknown'})`
+    )
+  }
+}
+
 const installer = await text(join(repository, 'deploy/install.sh'))
 invariant(
   installer.includes('DOCS_URL="https://docs.serverbee.app"'),
@@ -598,6 +637,22 @@ const railwayDockerfile = await text(join(repository, 'deploy/railway/Dockerfile
 invariant(
   railwayDockerfile.includes(`ARG SERVERBEE_IMAGE_TAG=${packageVersion}`),
   'Railway image default differs from the workspace package version'
+)
+const tailscaleCompose = await text(join(repository, 'deploy/docker-compose.tailscale.yml'))
+invariant(
+  tailscaleCompose.includes('image: tailscale/tailscale:latest'),
+  'Tailscale Compose template omits the tailscale sidecar image'
+)
+invariant(
+  tailscaleCompose.includes(
+    `image: ghcr.io/zingerlittlebee/serverbee-server:\${SERVERBEE_IMAGE_TAG:-${packageVersion}}`
+  ),
+  'Tailscale Compose image default differs from the workspace package version'
+)
+invariant(
+  tailscaleCompose.includes('SERVERBEE_SERVER__LISTEN=127.0.0.1:9527') &&
+    tailscaleCompose.includes('http://127.0.0.1:9527/healthz'),
+  'Tailscale Compose template does not bind and check ServerBee on IPv4 loopback'
 )
 const releaseWorkflow = await text(join(repository, '.github/workflows/release.yml'))
 invariant(releaseWorkflow.includes('echo "$IMAGE:beta"'), 'Release workflow does not move the prerelease beta tag')

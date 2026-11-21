@@ -12,7 +12,7 @@ This is a deliberate trust-boundary decision. The machine that runs the agent is
 
 ## Capability List
 
-ServerBee defines 11 capability bits across two risk levels. The valid mask is `2047` (bits 0..=10).
+ServerBee defines 12 capability bits across two risk levels. The valid mask is `4095` (bits 0..=11).
 
 ### High Risk (Disabled by Default)
 
@@ -42,14 +42,15 @@ File Manager requires additional agent-side configuration (`root_paths`, `deny_p
 | **Security Events** | `security_events` | `CAP_SECURITY_EVENTS` (256) | Allow agent to report SSH login / brute-force / port-scan events (see [Security Events](/en/docs/security-events)) |
 | **Firewall Blocklist** | `firewall_block` | `CAP_FIREWALL_BLOCK` (512) | Allow agent to apply the server-pushed nftables blocklist. Requires root or `CAP_NET_ADMIN` plus the `nft` CLI on the host. See [Firewall Blocklist](/en/docs/firewall) |
 | **IP Quality** | `ip_quality` | `CAP_IP_QUALITY` (1024) | Allow the Agent to run service-unlock probes and report results; optional metadata and risk enrichment runs on the Server |
+| **Tailscale** | `tailscale` | `CAP_TAILSCALE` (2048) | Allow the Agent to query local `tailscaled` status (Tailscale IPs, MagicDNS, peer Direct/DERP mode, key expiry, routes) and report it to the Server. See [Tailscale Integration](/en/docs/tailscale) |
 
-An agent with no `[capabilities]` overrides defaults to `1852` (auto upgrade + the three ping probes + security events + firewall blocklist + IP quality), which keeps the high-risk terminal, exec, file, and Docker capabilities off.
+An agent with no `[capabilities]` overrides defaults to `3900` (auto upgrade + the three ping probes + security events + firewall blocklist + IP quality + Tailscale), which keeps the high-risk terminal, exec, file, and Docker capabilities off.
 
 ## Configuring Capabilities (on the agent host)
 
 An agent computes its capability bitmask as:
 
-1. Start from the built-in default set (`CAP_DEFAULT = 1852`).
+1. Start from the built-in default set (`CAP_DEFAULT = 3900`).
 2. Apply the config file `[capabilities]` block — `allow` adds bits, `deny` removes bits. Within this layer, `deny` wins over `allow`.
 3. Apply CLI `--allow-cap` / `--deny-cap` flags on top, for ad-hoc overrides. The CLI layer wins over the config layer.
 4. Reconcile against subsystem availability: `file` is dropped unless `[file].enabled = true` with at least one `root_path`, and `firewall_block` is dropped when the startup `nft` probe fails (binary, kernel, or privileges missing). A reported capability always means the agent can actually serve it.
@@ -174,6 +175,7 @@ The server records what each agent reports and rejects control-plane requests fo
 - **Ping and Traceroute**: probe tasks are filtered by capability; traceroute requires `ping_icmp`
 - **File Manager**: file endpoints reject requests before dispatch when `file` is not reported
 - **Docker**: Docker read/action endpoints and the Docker log WebSocket routes require `docker` and agent runtime Docker support
+- **Tailscale**: `GET /api/servers/{id}/tailscale/status` returns 403 when `tailscale` is not reported
 
 Because capabilities are agent-owned, the denial reason is always `agent_capability_disabled`.
 
@@ -204,6 +206,7 @@ The web and iOS clients display capabilities **read-only**:
 - **Terminal button**: hidden for servers whose agent lacks `terminal`
 - **Files button**: hidden for servers whose agent lacks `file`
 - **Docker link**: hidden for servers whose agent lacks `docker`
+- **Tailscale link**: shown on servers whose agent reports `tailscale` and either advertises live `tailscale` support or has persisted Tailscale metadata
 
 ## Runtime capability fields
 

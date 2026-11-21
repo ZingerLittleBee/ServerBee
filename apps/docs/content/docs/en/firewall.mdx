@@ -20,6 +20,7 @@ The server rejects targets that overlap a protected range:
 
 - Loopback (`127.0.0.0/8`, `::1`)
 - RFC 1918 (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `fe80::/10`)
+- RFC 6598 / Tailscale CGNAT (`100.64.0.0/10`)
 - Multicast / unspecified
 - Any CIDR in `firewall.allow_list` (`server.toml`)
 - `server.trusted_proxies`

@@ -105,13 +105,29 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_MOBILE__ACCESS_TTL` | `mobile.access_ttl` | i64 | `900` | Mobile access token lifetime in seconds (15 min) |
 | `SERVERBEE_MOBILE__REFRESH_TTL` | `mobile.refresh_ttl` | i64 | `2592000` | Mobile refresh token lifetime in seconds (30 days) |
 
-### Firewall (Optional)
+### Tailscale (Optional)
 
-Tier-2 guardrail for the firewall blocklist feature. CIDRs / IPs listed here are refused by `POST /api/firewall/blocks` even if a server administrator tries to insert them. Tier 1 (hard-coded protected ranges: loopback, RFC 1918, link-local, multicast, unspecified) is always enforced inside `service::firewall`.
+Configures the global Tailscale / self-hosted Headscale control-plane integration (`GET /api/tailscale/overview`) and optional Tailscale Serve loopback identity authentication. Runtime changes saved via **Settings → Tailscale** layer on top of these file/environment defaults.
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
-| `SERVERBEE_FIREWALL__ALLOW_LIST` | `firewall.allow_list` | string[] | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail. Tier 1 (loopback + RFC 1918 + link-local + multicast + unspecified) is hard-coded and always applied |
+| `SERVERBEE_TAILSCALE__ENABLED` | `tailscale.enabled` | bool | `false` | Enable the Tailscale / Headscale control-plane API integration |
+| `SERVERBEE_TAILSCALE__PROVIDER` | `tailscale.provider` | string | `"tailscale"` | Control-plane provider: `"tailscale"` or `"headscale"` |
+| `SERVERBEE_TAILSCALE__API_BASE_URL` | `tailscale.api_base_url` | string | `"https://api.tailscale.com"` | Control-plane API base URL (set to your Headscale URL when `provider = "headscale"`; loopback and cloud metadata IPs are blocked by SSRF checks while LAN/Tailnet Headscale hosts are permitted) |
+| `SERVERBEE_TAILSCALE__TAILNET` | `tailscale.tailnet` | string | `"-"` | Tailnet name for Tailscale API queries (`"-"` selects the default tailnet of `api_key`) |
+| `SERVERBEE_TAILSCALE__API_KEY` | `tailscale.api_key` | string | `""` | Read-only Tailscale API access token (`tskey-api-...`) or Headscale API key. Never returned in plaintext by `GET /api/tailscale/config` |
+| `SERVERBEE_TAILSCALE__PREFERRED_SERVER_URL` | `tailscale.preferred_server_url` | string | `""` | Explicit Tailnet URL for this ServerBee Server (e.g. `https://serverbee.tailnet-name.ts.net`), surfaced in **Add Server** as the Tailnet URL toggle. Empty falls back to local `tailscaled` discovery when available |
+| `SERVERBEE_TAILSCALE__SOCKET_PATH` | `tailscale.socket_path` | string | `""` | Custom Unix socket path for a local `tailscaled` daemon on the Server host. Empty probes standard `/var/run/tailscale/tailscaled.sock`, `/run/tailscale/tailscaled.sock`, and `/var/run/tailscaled.socket` paths |
+| `SERVERBEE_TAILSCALE__AUTH_ENABLED` | `tailscale.auth_enabled` | bool | `false` | Accept `Tailscale-User-Login` injected by `tailscale serve`. Strictly rejected unless the TCP peer is loopback (`127.0.0.1` / `::1`) and no `X-Forwarded-For` / `Forwarded` headers are present |
+| `SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE` | `tailscale.auto_provision_role` | string | `""` | Auto-provision role on first Tailscale Serve login: `""` (disabled) or `"member"`. Never auto-provisions `"admin"` |
+
+### Firewall (Optional)
+
+Tier-2 guardrail for the firewall blocklist feature. CIDRs / IPs listed here are refused by `POST /api/firewall/blocks` even if a server administrator tries to insert them. Tier 1 (hard-coded protected ranges: loopback, RFC 1918, RFC 6598 / Tailscale CGNAT `100.64.0.0/10`, link-local, multicast, unspecified) is always enforced inside `service::firewall`.
+
+| Environment Variable | TOML Key | Type | Default | Description |
+|---------------------|----------|------|---------|-------------|
+| `SERVERBEE_FIREWALL__ALLOW_LIST` | `firewall.allow_list` | string[] | `[]` | CIDRs / IPs the server refuses to insert into `block_list`. Tier-2 guardrail. Tier 1 (loopback + RFC 1918 + RFC 6598 / Tailscale CGNAT `100.64.0.0/10` + link-local + multicast + unspecified) is hard-coded and always applied |
 
 ### IP Quality
 
@@ -141,7 +157,7 @@ Avg-latency cutoffs used to classify network-probe records as `high_latency` / `
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
-| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `server.trusted_proxies` | string[] | private/loopback CIDRs | CIDR list of trusted reverse proxies for X-Forwarded-For. Defaults to RFC 1918 + loopback. Set to `[]` to disable |
+| `SERVERBEE_SERVER__TRUSTED_PROXIES` | `server.trusted_proxies` | string[] | private/CGNAT/loopback CIDRs | CIDR list of trusted reverse proxies for X-Forwarded-For. Defaults to RFC 1918 + RFC 6598 / Tailscale CGNAT (`100.64.0.0/10`) + loopback. Set to `[]` to disable |
 | `SERVERBEE_DATABASE__PATH` | `database.path` | string | `serverbee.db` | SQLite database file path (relative to `data_dir`) |
 | `SERVERBEE_DATABASE__MAX_CONNECTIONS` | `database.max_connections` | u32 | `10` | Maximum database connection pool size |
 | `SERVERBEE_AUTH__SESSION_TTL` | `auth.session_ttl` | i64 | `86400` | Session token TTL in seconds (default 24h) |
@@ -171,9 +187,11 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | `SERVERBEE_COLLECTOR__INTERVAL` | `collector.interval` | u32 | `3` | Metric report interval in seconds |
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `collector.enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires nvml) |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `collector.enable_temperature` | bool | `true` | Enable CPU temperature monitoring |
+| `SERVERBEE_COLLECTOR__EXCLUDE_TAILSCALE_TRAFFIC` | `collector.exclude_tailscale_traffic` | bool | `true` | Exclude virtual `tailscale*` TUN interfaces (e.g. `tailscale0`) from aggregate host bandwidth and transfer totals so WireGuard traffic is not double-counted with physical NICs |
+| `SERVERBEE_TAILSCALE__SOCKET_PATH` | `tailscale.socket_path` | string | `""` | Custom Unix socket path for querying the host `tailscaled` LocalAPI (`GET /localapi/v0/status`). Empty probes `/var/run/tailscale/tailscaled.sock`, `/run/tailscale/tailscaled.sock`, and `/var/run/tailscaled.socket`, falling back to `tailscale status --json` |
 | `SERVERBEE_FILE__ENABLED` | `file.enabled` | bool | `false` | Enable the file-management subsystem (path sandbox). Also requires the `file` capability in `[capabilities]` |
 | `SERVERBEE_FILE__ROOT_PATHS` | `file.root_paths` | string[] | `[]` | Allowed root paths for file browsing (e.g. `/home,/var/log`). Empty rejects all file operations |
-| `SERVERBEE_CAPABILITIES__ALLOW` | `capabilities.allow` | string[] | `[]` | Capability keys to enable on top of the default set (`CAP_DEFAULT`), e.g. `["terminal","file"]`. Capabilities are agent-owned; the server cannot change them. Valid keys: `terminal`, `exec`, `upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`, `file`, `docker`, `security_events`, `firewall_block`, `ip_quality` |
+| `SERVERBEE_CAPABILITIES__ALLOW` | `capabilities.allow` | string[] | `[]` | Capability keys to enable on top of the default set (`CAP_DEFAULT = 3900`), e.g. `["terminal","file"]`. Capabilities are agent-owned; the server cannot change them. Valid keys: `terminal`, `exec`, `upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`, `file`, `docker`, `security_events`, `firewall_block`, `ip_quality`, `tailscale` |
 | `SERVERBEE_CAPABILITIES__DENY` | `capabilities.deny` | string[] | `[]` | Capability keys to strip from the default set. `deny` wins over `allow`. Unknown keys are rejected at startup |
 | `SERVERBEE_CAPABILITIES__TEMPORARY_MAX_DURATION` | `capabilities.temporary_max_duration` | string | `24h` | Max duration a single temporary capability grant can last (e.g. `30m`, `2h`, `1d`). Used by the host-local `serverbee-agent grant` CLI |
 | `SERVERBEE_CAPABILITIES__STATE_DIR` | `capabilities.state_dir` | string | `/var/lib/serverbee` | Directory where the agent persists `capability_grants.json` (the temporary-grants store). Must be writable by the agent |
