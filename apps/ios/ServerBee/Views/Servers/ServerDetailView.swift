@@ -89,11 +89,23 @@ struct ServerDetailView: View {
         if sectionCaps.isConfigured(.securityEvents) { result.append(.security) }
         if sectionCaps.isConfigured(.ipQuality) { result.append(.ipQuality) }
         if sectionCaps.isConfigured(.docker) { result.append(.docker) }
+        if TailscaleVisibility.shouldShow(
+            capabilities: capabilities,
+            sectionCapabilities: sectionCaps,
+            isOnline: isOnline,
+            features: config?.features ?? live?.features,
+            tailscaleIpv4: config?.tailscaleIpv4 ?? live?.tailscaleIpv4
+        ) {
+            result.append(.tailscale)
+        }
         #if DEBUG
         // Visual-verification hook: the shared demo has no Docker-enabled server,
         // so allow forcing the Docker section into view for screenshots.
         if UITestSupport.autoPresent?.hasPrefix("docker") == true, !result.contains(.docker) {
             result.append(.docker)
+        }
+        if UITestSupport.autoPresent?.hasPrefix("tailscale") == true || UITestSupport.detailSection == "tailscale" {
+            if !result.contains(.tailscale) { result.append(.tailscale) }
         }
         #endif
         return result
@@ -192,6 +204,8 @@ struct ServerDetailView: View {
             ServerIpQualitySection(serverId: serverId, isAdmin: isAdmin, isOnline: isOnline)
         case .docker:
             ServerDockerSection(serverId: serverId, isAdmin: isAdmin)
+        case .tailscale:
+            ServerTailscaleView(serverId: serverId, serverName: displayName, embedded: true)
         }
     }
 }
@@ -424,6 +438,7 @@ enum DetailSection: String, Identifiable, CaseIterable {
     case security
     case ipQuality
     case docker
+    case tailscale
 
     var id: String { rawValue }
 
@@ -437,6 +452,7 @@ enum DetailSection: String, Identifiable, CaseIterable {
         case .security: String(localized: "Security")
         case .ipQuality: String(localized: "IP")
         case .docker: String(localized: "Docker")
+        case .tailscale: String(localized: "Tailscale")
         }
     }
 
@@ -457,6 +473,7 @@ enum DetailSection: String, Identifiable, CaseIterable {
         case .security: "shield"
         case .ipQuality: "checkmark.seal"
         case .docker: "shippingbox"
+        case .tailscale: "circle.grid.3x3"
         }
     }
 }

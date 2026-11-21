@@ -25,7 +25,7 @@ struct SettingsView: View {
     /// push a sub-screen without the cliclick harness scrolling the list.
     enum AdminRoute: Hashable {
         case administration, networkProbes, ipQuality, statusPage, users
-        case groups, pingTasks, tasks, rateLimit, audit, databases
+        case groups, pingTasks, tasks, rateLimit, audit, databases, tailscale
         // Direct children of Settings (not under Administration).
         case password, twoFactor, firewall, apiKeys, devices, deviceName, appearance, language
 
@@ -71,6 +71,7 @@ private extension SettingsView {
                 case .rateLimit: RateLimitView()
                 case .audit: AuditLogView()
                 case .databases: DatabasesView(isAdmin: isAdmin)
+                case .tailscale: TailscaleAdminView(isAdmin: isAdmin)
                 case .password: PasswordChangeView()
                 case .twoFactor: TwoFactorView()
                 case .firewall: FirewallBlocklistView()
@@ -104,6 +105,7 @@ private extension SettingsView {
         case "rate-limit": .rateLimit
         case "audit": .audit
         case "databases": .databases
+        case "tailscale": .tailscale
         case "password": .password
         case "two-factor": .twoFactor
         case "firewall": .firewall
