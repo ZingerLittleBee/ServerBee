@@ -55,6 +55,7 @@ pub const CAP_DOCKER: u32 = 1 << 7; // 128
 pub const CAP_SECURITY_EVENTS: u32 = 1 << 8; // 256
 pub const CAP_FIREWALL_BLOCK: u32 = 1 << 9; // 512
 pub const CAP_IP_QUALITY: u32 = 1 << 10; // 1024
+pub const CAP_TAILSCALE: u32 = 1 << 11; // 2048
 
 pub const CAP_DEFAULT: u32 = CAP_UPGRADE
     | CAP_PING_ICMP
@@ -62,8 +63,9 @@ pub const CAP_DEFAULT: u32 = CAP_UPGRADE
     | CAP_PING_HTTP
     | CAP_SECURITY_EVENTS
     | CAP_FIREWALL_BLOCK
-    | CAP_IP_QUALITY; // 1852 — observability + firewall blocklist + IP quality
-pub const CAP_VALID_MASK: u32 = 0b111_1111_1111; // 2047 — bits 0..=10
+    | CAP_IP_QUALITY
+    | CAP_TAILSCALE; // 3900 — observability + firewall blocklist + IP quality + Tailscale
+pub const CAP_VALID_MASK: u32 = 0b1111_1111_1111; // 4095 — bits 0..=11
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapabilityKey {
@@ -78,6 +80,7 @@ pub enum CapabilityKey {
     SecurityEvents,
     FirewallBlock,
     IpQuality,
+    Tailscale,
 }
 
 impl CapabilityKey {
@@ -94,6 +97,7 @@ impl CapabilityKey {
             Self::SecurityEvents => "security_events",
             Self::FirewallBlock => "firewall_block",
             Self::IpQuality => "ip_quality",
+            Self::Tailscale => "tailscale",
         }
     }
 
@@ -110,6 +114,7 @@ impl CapabilityKey {
             Self::SecurityEvents => CAP_SECURITY_EVENTS,
             Self::FirewallBlock => CAP_FIREWALL_BLOCK,
             Self::IpQuality => CAP_IP_QUALITY,
+            Self::Tailscale => CAP_TAILSCALE,
         }
     }
 }
@@ -130,6 +135,7 @@ impl std::str::FromStr for CapabilityKey {
             "security_events" => Ok(Self::SecurityEvents),
             "firewall_block" => Ok(Self::FirewallBlock),
             "ip_quality" => Ok(Self::IpQuality),
+            "tailscale" => Ok(Self::Tailscale),
             _ => Err(format!("unknown capability: {value}")),
         }
     }
@@ -233,6 +239,13 @@ pub const ALL_CAPABILITIES: &[CapabilityMeta] = &[
         default_enabled: true,
         risk_level: "medium",
     },
+    CapabilityMeta {
+        bit: CAP_TAILSCALE,
+        key: "tailscale",
+        display_name: "Tailscale",
+        default_enabled: true,
+        risk_level: "low",
+    },
 ];
 
 /// Check if a specific capability bit is set.
@@ -283,6 +296,7 @@ mod tests {
         assert!(has_capability(CAP_DEFAULT, CAP_PING_ICMP));
         assert!(has_capability(CAP_DEFAULT, CAP_PING_TCP));
         assert!(has_capability(CAP_DEFAULT, CAP_PING_HTTP));
+        assert!(has_capability(CAP_DEFAULT, CAP_TAILSCALE));
     }
 
     #[test]
@@ -298,7 +312,7 @@ mod tests {
 
     #[test]
     fn test_valid_mask() {
-        assert_eq!(CAP_VALID_MASK, 2047);
+        assert_eq!(CAP_VALID_MASK, 4095);
         for meta in ALL_CAPABILITIES {
             assert!(meta.bit & CAP_VALID_MASK == meta.bit);
         }
@@ -316,7 +330,7 @@ mod tests {
     #[test]
     fn cap_default_includes_security_events() {
         assert!(has_capability(CAP_DEFAULT, CAP_SECURITY_EVENTS));
-        assert_eq!(CAP_DEFAULT, 1852);
+        assert_eq!(CAP_DEFAULT, 3900);
     }
 
     #[test]
@@ -415,6 +429,25 @@ mod tests {
         assert!(entry.unwrap().default_enabled);
     }
 
+    #[test]
+    fn cap_tailscale_bit_and_metadata() {
+        assert_eq!(CAP_TAILSCALE, 2048);
+        assert_eq!(CAP_VALID_MASK & CAP_TAILSCALE, CAP_TAILSCALE);
+        assert_eq!(CAP_DEFAULT & CAP_TAILSCALE, CAP_TAILSCALE);
+        let key: CapabilityKey = "tailscale".parse().unwrap();
+        assert_eq!(key, CapabilityKey::Tailscale);
+        assert_eq!(key.to_bit(), CAP_TAILSCALE);
+        assert_eq!(key.as_str(), "tailscale");
+        let entry = ALL_CAPABILITIES
+            .iter()
+            .find(|m| m.bit == CAP_TAILSCALE)
+            .expect("tailscale capability should exist");
+        assert_eq!(entry.key, "tailscale");
+        assert_eq!(entry.display_name, "Tailscale");
+        assert!(entry.default_enabled);
+        assert_eq!(entry.risk_level, "low");
+    }
+
     /// Exhaustively exercise `as_str`, `to_bit`, and `FromStr` for every
     /// `CapabilityKey` variant so each match arm is covered and the three
     /// representations stay mutually consistent (and aligned with the bit
@@ -434,6 +467,7 @@ mod tests {
             (SecurityEvents, "security_events", CAP_SECURITY_EVENTS),
             (FirewallBlock, "firewall_block", CAP_FIREWALL_BLOCK),
             (IpQuality, "ip_quality", CAP_IP_QUALITY),
+            (Tailscale, "tailscale", CAP_TAILSCALE),
         ];
 
         for (key, name, bit) in table {

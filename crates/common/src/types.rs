@@ -250,6 +250,14 @@ pub struct ServerStatus {
     /// command without an extra fetch. Plaintext code is never included here.
     #[serde(default)]
     pub outstanding_enrollment: Option<OutstandingEnrollmentSummary>,
+    #[serde(default)]
+    pub tailscale_ipv4: Option<String>,
+    #[serde(default)]
+    pub tailscale_ipv6: Option<String>,
+    #[serde(default)]
+    pub tailscale_dns_name: Option<String>,
+    #[serde(default)]
+    pub tailscale_tailnet: Option<String>,
 }
 
 fn default_has_token() -> bool {
@@ -436,6 +444,33 @@ mod tests {
         let mut value = server_status_json_without_token();
         value["has_token"] = json!(false);
         let status: ServerStatus = serde_json::from_value(value).unwrap();
-        assert!(!status.has_token, "explicit has_token=false must be honored");
+        assert!(
+            !status.has_token,
+            "explicit has_token=false must be honored"
+        );
+    }
+
+    #[test]
+    fn test_server_status_tailscale_fields_default_and_round_trip() {
+        let legacy = server_status_json_without_token();
+        let status: ServerStatus = serde_json::from_value(legacy).unwrap();
+        assert!(status.tailscale_ipv4.is_none());
+        assert!(status.tailscale_ipv6.is_none());
+        assert!(status.tailscale_dns_name.is_none());
+        assert!(status.tailscale_tailnet.is_none());
+
+        let mut populated = server_status_json_without_token();
+        populated["tailscale_ipv4"] = json!("100.64.0.5");
+        populated["tailscale_ipv6"] = json!("fd7a:115c:a1e0::5");
+        populated["tailscale_dns_name"] = json!("srv-1.tailnet.ts.net");
+        populated["tailscale_tailnet"] = json!("tailnet.ts.net");
+        let parsed: ServerStatus = serde_json::from_value(populated).unwrap();
+        assert_eq!(parsed.tailscale_ipv4.as_deref(), Some("100.64.0.5"));
+        assert_eq!(parsed.tailscale_ipv6.as_deref(), Some("fd7a:115c:a1e0::5"));
+        assert_eq!(
+            parsed.tailscale_dns_name.as_deref(),
+            Some("srv-1.tailnet.ts.net")
+        );
+        assert_eq!(parsed.tailscale_tailnet.as_deref(), Some("tailnet.ts.net"));
     }
 }

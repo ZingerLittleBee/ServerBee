@@ -10,4 +10,4 @@ chrono.workspace = true
 uuid.workspace = true
 anyhow.workspace = true
 url = "2"
-utoipa = { version = "5", optional = true }
+utoipa = { version = "5", features = ["chrono"], optional = true }

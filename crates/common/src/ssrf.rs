@@ -22,7 +22,11 @@ fn validate_url_inner(raw: &str, restrict_ports: bool) -> Result<Url> {
         );
     }
 
-    if restrict_ports && url.port().is_some_and(|port| !ALLOWED_PORTS.contains(&port)) {
+    if restrict_ports
+        && url
+            .port()
+            .is_some_and(|port| !ALLOWED_PORTS.contains(&port))
+    {
         bail!(
             "SSRF guard: port {} is not allowed (only 80/443 or scheme default)",
             url.port().unwrap()
@@ -575,7 +579,9 @@ mod tests {
     #[test]
     fn monitor_safe_blocks_cloud_metadata() {
         assert!(!is_monitor_safe_addr("169.254.169.254".parse().unwrap()));
-        assert!(!is_monitor_safe_addr("::ffff:169.254.169.254".parse().unwrap()));
+        assert!(!is_monitor_safe_addr(
+            "::ffff:169.254.169.254".parse().unwrap()
+        ));
     }
 
     #[test]
