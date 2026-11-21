@@ -13,7 +13,7 @@ function check(condition: boolean, message: string): void {
 
 async function waitHydrated(page: Page): Promise<void> {
   await page.waitForFunction(() => {
-    const root = document.querySelector('.sb') ?? document.querySelector('#nd-docs-layout')
+    const root = document.querySelector('#nd-docs-layout')
     return (
       document.readyState === 'complete' && root !== null && Object.keys(root).some((key) => key.startsWith('__react'))
     )
@@ -87,7 +87,7 @@ function beforeHydration(path: string): Scenario {
       try {
         const response = await page.goto(new URL(path, baseUrl).href, { waitUntil: 'commit' })
         check(response?.status() === 200, `GET ${path} returned ${response?.status()}`)
-        await page.locator(path === '/en' ? '.sb' : '#nd-docs-layout').waitFor()
+        await page.locator('#nd-docs-layout').waitFor()
         await page.evaluate(() => document.fonts.ready.then(() => undefined))
         await page.mouse.move(700, 450)
         await page.mouse.wheel(0, 1400)
@@ -105,11 +105,6 @@ function beforeHydration(path: string): Scenario {
   }
 }
 
-async function leaveLanding(page: Page): Promise<void> {
-  await follow(page, '.sb .nav a[href="/en/docs/quick-start"]', '/en/docs/quick-start')
-  await expectPosition(page, 0, 'New docs page')
-}
-
 function fragmentHistory(name: string, source: string, selector: string, target: string): Scenario {
   return {
     name,
@@ -120,11 +115,7 @@ function fragmentHistory(name: string, source: string, selector: string, target:
       check(jumped > 0, `The fragment in ${target} must scroll to its target`)
       const reader = await scroll(page, Math.max(500, jumped - 600))
       check(Math.abs(reader - jumped) > 100, 'Scroll away from the fragment before leaving')
-      if (source === '/en') {
-        await leaveLanding(page)
-      } else {
-        await follow(page, 'aside a[href="/en/docs/configuration"]', '/en/docs/configuration')
-      }
+      await follow(page, 'aside a[href="/en/docs/configuration"]', '/en/docs/configuration')
       const destination = new URL(page.url()).pathname
       await back(page, target, reader)
       await forward(page, destination, 0)
@@ -135,14 +126,15 @@ function fragmentHistory(name: string, source: string, selector: string, target:
 
 const scenarios: Scenario[] = [
   {
-    name: 'fresh landing and docs start at the top',
+    name: 'fresh docs home and docs page start at the top',
     async run(page) {
-      await go(page, '/en')
-      await expectPosition(page, 0, 'Fresh landing')
-      await leaveLanding(page)
+      await go(page, '/en/docs')
+      await expectPosition(page, 0, 'Fresh docs home')
+      await follow(page, 'aside a[href="/en/docs/quick-start"]', '/en/docs/quick-start')
+      await expectPosition(page, 0, 'New docs page')
     }
   },
-  beforeHydration('/en'),
+  beforeHydration('/en/docs'),
   beforeHydration('/en/docs/quick-start'),
   beforeHydration('/zh/docs/quick-start'),
   {
@@ -157,7 +149,7 @@ const scenarios: Scenario[] = [
       await forward(page, '/en/docs/quick-start', 0)
     }
   },
-  ...['/en', '/en#faq', '/en/docs/quick-start'].map(
+  ...['/en/docs', '/en/docs/quick-start#manage-the-agent', '/en/docs/quick-start'].map(
     (path): Scenario => ({
       name: `reload keeps the reader's position: ${path}`,
       async run(page) {
@@ -169,8 +161,6 @@ const scenarios: Scenario[] = [
       }
     })
   ),
-  fragmentHistory('landing anchor survives Back and Forward', '/en', '.nav-links a[href="#ipq"]', '/en#ipq'),
-  fragmentHistory('landing note survives Back and Forward', '/en', 'a[href="#how-note-2"]', '/en#how-note-2'),
   fragmentHistory(
     'docs table of contents survives Back and Forward',
     '/en/docs/quick-start',

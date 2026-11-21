@@ -7,7 +7,6 @@ import { getTableOfContents } from 'fumadocs-core/content/toc'
 import { remarkGfm } from 'fumadocs-core/mdx-plugins/remark-gfm'
 import { defaultTranslations, type Translations } from 'fumadocs-ui/i18n'
 
-import { docsPages, landingCopy } from '../src/components/landing/translations'
 import { searchDialogText, uiTranslations } from '../src/lib/ui-translations'
 
 const docsApp = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -16,11 +15,6 @@ const contentRoot = join(docsApp, 'content/docs')
 const locales = ['en', 'zh'] as const
 const markdownTableDivider = /^\|(?:\s*:?-+:?\s*\|)+$/
 const numericTableCell = /^[\d,+~\s]+$/
-const landingTranslations = 'apps/docs/src/components/landing/translations.ts'
-const iosVersionMention = /\biOS (\d+)/g
-const darkClassRoot = /:root\.dark(?![\w-])/g
-const darkMediaRoot = ':root:not(.light):not(.dark)'
-const darkMediaQuery = /^@media \(prefers-color-scheme: ?dark\)$/
 // remark, without a frontmatter plugin, reads a page's frontmatter as a heading.
 const frontmatter = /^---\n[\s\S]*?\n---\n/
 const hslNotation = /^hsla?\(([\d.]+),\s*([\d.]+)%,\s*([\d.]+)%(?:,\s*([\d.]+)(%?))?\)$/
@@ -75,34 +69,6 @@ function firstMarkdownTable(markdown: string): string[][] {
 async function headingIds(mdx: string): Promise<Set<string>> {
   const toc = await getTableOfContents(mdx.replace(frontmatter, ''), [remarkGfm])
   return new Set(toc.map((item) => item.url.slice(1)))
-}
-
-interface LandingDocsLink {
-  hash?: string
-  lang: string
-  page: string
-}
-
-interface LandingCopyParts {
-  links: LandingDocsLink[]
-  strings: string[]
-}
-
-/** Every string and every documentation link (a docsPath() value: { lang, page, hash? }) in the landing copy. */
-function collectLandingCopy(value: unknown, parts: LandingCopyParts): LandingCopyParts {
-  if (typeof value === 'string') {
-    parts.strings.push(value)
-  } else if (typeof value === 'object' && value !== null) {
-    if ('lang' in value && 'page' in value && typeof value.lang === 'string' && typeof value.page === 'string') {
-      const hash = 'hash' in value && typeof value.hash === 'string' ? value.hash : undefined
-      parts.links.push({ hash, lang: value.lang, page: value.page })
-    } else {
-      for (const item of Object.values(value)) {
-        collectLandingCopy(item, parts)
-      }
-    }
-  }
-  return parts
 }
 
 /** The real directory of package `name` as Node's module lookup finds it from `directory`. */
@@ -353,103 +319,8 @@ for (const locale of locales) {
 }
 
 const cargo = await text(join(repository, 'Cargo.toml'))
-const license = cargo.match(/^license\s*=\s*"([^"]+)"/m)?.[1]
 const packageVersion = cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1]
-invariant(license === 'AGPL-3.0-or-later', `Unexpected workspace license: ${license ?? 'missing'}`)
 invariant(packageVersion, 'Unable to read the workspace package version')
-
-const landing = await text(join(docsApp, 'src/components/landing/translations.ts'))
-invariant(!/\bMIT\b/.test(landing), 'Landing page still claims an MIT license')
-invariant(landing.includes(license), 'Landing page does not show the workspace license')
-const landingVersion = landing.match(/export const LANDING_VERSION = '([^']+)'/)?.[1]
-invariant(
-  landingVersion === packageVersion,
-  `LANDING_VERSION is ${landingVersion ?? 'missing'}, expected ${packageVersion}: ` +
-    'update it in apps/docs/src/components/landing/translations.ts'
-)
-
-// Every documentation page the landing can link to exists in both locales, and every heading it links to exists.
-for (const page of docsPages) {
-  for (const locale of locales) {
-    invariant(
-      pagesFor(locale).has(page),
-      `The landing links to missing ${locale}/${page}: update docsPages in ${landingTranslations}`
-    )
-  }
-}
-const landingParts = collectLandingCopy(landingCopy, { links: [], strings: [] })
-invariant(
-  landingParts.links.length > 0,
-  'Found no documentation links in the landing copy: update collectLandingCopy in apps/docs/scripts/check-contracts.ts'
-)
-for (const link of landingParts.links) {
-  invariant(
-    localePages.get(link.lang)?.has(link.page),
-    `The landing links to missing ${link.lang}/${link.page}: update ${landingTranslations}`
-  )
-  if (link.hash) {
-    const target = await text(join(contentRoot, link.lang, `${link.page}.mdx`))
-    invariant(
-      (await headingIds(target)).has(link.hash),
-      `The landing links to missing heading ${link.lang}/${link.page}#${link.hash}: update ${landingTranslations}`
-    )
-  }
-}
-
-// The landing's theme toggle (useTheme in landing/chrome/header.tsx) reaches the ThemeProvider inside fumadocs'
-// RootProvider only while both load the same next-themes module.
-const fumadocsUi = await packageDirectory('fumadocs-ui', docsApp)
-invariant(fumadocsUi, 'apps/docs cannot resolve fumadocs-ui')
-const appNextThemes = await packageDirectory('next-themes', docsApp)
-const fumadocsNextThemes = await packageDirectory('next-themes', fumadocsUi)
-invariant(
-  appNextThemes !== undefined && appNextThemes === fumadocsNextThemes,
-  `apps/docs resolves next-themes to ${appNextThemes ?? 'nothing'}, but fumadocs-ui resolves it to ` +
-    `${fumadocsNextThemes ?? 'nothing'}: pin next-themes in apps/docs/package.json to the version fumadocs-ui uses, ` +
-    'so the landing theme toggle and the docs share one theme'
-)
-
-// Every dark rule is written twice: for the .dark class next-themes sets, and as the prefers-color-scheme fallback
-// that applies before JavaScript runs. The two must declare the same values.
-for (const file of ['landing.css', 'landing-mocks.css']) {
-  const stylesheet = `apps/docs/src/styles/${file}`
-  const blocks = cssBlocks(await text(join(docsApp, 'src/styles', file)))
-  const classRules = new Map<string, CssBlock>()
-  const fallbackRules = new Map<string, CssBlock>()
-  for (const block of blocks) {
-    if (block.prelude.startsWith(':root.dark')) {
-      classRules.set(block.prelude.replace(darkClassRoot, ':root'), block)
-    }
-    if (darkMediaQuery.test(block.prelude)) {
-      for (const rule of block.children) {
-        if (rule.prelude.startsWith(darkMediaRoot)) {
-          fallbackRules.set(rule.prelude.replaceAll(darkMediaRoot, ':root'), rule)
-        }
-      }
-    }
-  }
-  invariant(
-    classRules.size > 0,
-    `${stylesheet} has no :root.dark rules: update the dark palette check in apps/docs/scripts/check-contracts.ts`
-  )
-  for (const [key, rule] of classRules) {
-    const fallback = fallbackRules.get(key)
-    invariant(fallback, `${stylesheet}: "${rule.prelude}" has no prefers-color-scheme: dark fallback`)
-    const declared = cssDeclarations(rule.body)
-    const fallbackDeclared = cssDeclarations(fallback.body)
-    const drift = [...new Set([...declared.keys(), ...fallbackDeclared.keys()])].find(
-      (property) => declared.get(property) !== fallbackDeclared.get(property)
-    )
-    invariant(
-      drift === undefined,
-      `${stylesheet}: ${drift} differs between "${rule.prelude}" and its prefers-color-scheme: dark fallback ` +
-        `"${fallback.prelude}"; keep both dark palettes identical`
-    )
-  }
-  for (const [key, fallback] of fallbackRules) {
-    invariant(classRules.has(key), `${stylesheet}: "${fallback.prelude}" has no :root.dark rule with the same values`)
-  }
-}
 
 // fumadocs' light theme put muted text and the focus ring under the contrast they need on its surfaces, 4.5:1 for text
 // and 3:1 for a focus indicator, and src/styles/app.css raises them. Every theme keeps them, with the colors that the
@@ -701,17 +572,6 @@ invariant(
   !/without durable retry|synchronous tracer bullet|new logical tests|remain under implementation/.test(relayReadme),
   'Relay README retains obsolete test delivery semantics'
 )
-
-const iosMajor = iosTarget.split('.')[0]
-for (const copyText of landingParts.strings) {
-  for (const match of copyText.matchAll(iosVersionMention)) {
-    invariant(
-      match[1] === iosMajor,
-      `The landing copy names iOS ${match[1]}, but apps/ios/project.yml targets iOS ${iosTarget}: ` +
-        `update ${landingTranslations}`
-    )
-  }
-}
 
 const [serverConfig, brandRouter, geoipService, asnService, settingsRouter] = await Promise.all(
   [

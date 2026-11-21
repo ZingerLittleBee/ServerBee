@@ -1,8 +1,6 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
-@import "./landing.css";
-@import "./landing-mocks.css";
 
 /*
  * The breadcrumb of the highlighted search result is muted text on the accent background, under 4.5:1 in both themes.

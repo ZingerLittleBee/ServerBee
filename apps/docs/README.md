@@ -1,13 +1,17 @@
 # Documentation app
 
-This app serves the landing page and bilingual documentation with TanStack Start and Fumadocs. Published content
-lives in the [English](content/docs/en/) and [Chinese](content/docs/zh/) content directories. The app's
+This app serves the bilingual documentation with TanStack Start and Fumadocs. Published content lives in the
+[English](content/docs/en/) and [Chinese](content/docs/zh/) content directories. The app's
 [package manifest](package.json) and [Vite configuration](vite.config.ts) are the source of truth for its framework
 versions and build preset; dated specs under [docs/superpowers](../../docs/superpowers/) describe earlier designs.
 
+The landing page is a separate site: see [apps/landing](../landing/README.md). Here, `/` and `/{lang}` redirect to
+the docs home at `/{lang}/docs`.
+
 | Task | Start here |
 | --- | --- |
-| Landing layout, copy, colors | [Components](src/components/landing/), [styles](src/styles/landing.css) |
+| Landing page | [Landing app](../landing/README.md) |
+| Home redirects | [Root route](src/routes/index.tsx), [language route](src/routes/$lang/index.tsx) |
 | Docs layout and navigation | [Docs route](src/routes/$lang/docs/$.tsx), [framework links](src/components/framework-link.tsx) |
 | Search and Markdown exports | [Search route](src/routes/api/search.ts), [content source](src/lib/source.ts), [LLM exports](src/lib/llms.ts), [MDX configuration](source.config.ts) |
 | Scroll restoration or a router upgrade | [Scroll restoration](src/lib/scroll-restoration.ts), [browser runner](scripts/check-browser.ts), [manual checklist](../../tests/manual/docs-scroll-restoration.md) |
@@ -51,8 +55,8 @@ these commands. Route checks start with two 404 responses followed by a normal S
 the next request. This covers Bun 1.3.4's reuse of the preview's `Connection: close` socket, which returned 503.
 
 The browser runner checks real navigation, scrolling before hydration in both locales, reloads, and Back/Forward
-through long pages, landing anchors, notes, and the docs table of contents. It exits nonzero on a failed scenario
-or an uncaught page error, and prints the number of scenarios actually executed. Documentation CI runs Chromium.
+through long pages and the docs table of contents. It exits nonzero on a failed scenario or an uncaught page error,
+and prints the number of scenarios actually executed. Documentation CI runs Chromium.
 For a local cross-engine pass:
 
 ```bash
@@ -72,7 +76,7 @@ deployment decision.
 
 | Surface | Account pointer and purpose |
 | --- | --- |
-| Docs and landing | [Vercel `serverbee-docs`](https://vercel.com/zingerlittlebees-projects/serverbee-docs), serving `docs.serverbee.app`; app root `apps/docs` |
+| Docs | [Vercel `serverbee-docs`](https://vercel.com/zingerlittlebees-projects/serverbee-docs), serving `docs.serverbee.app`; app root `apps/docs` |
 | DNS | Cloudflare manages `serverbee.app` DNS. DNS ownership does not identify the application's runtime host. |
 | Monitoring backend | Railway runs the Rust Server used by `demo.serverbee.app`. Its GitHub deployment statuses do not identify the deployed docs revision. |
 

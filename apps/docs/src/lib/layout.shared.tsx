@@ -29,7 +29,7 @@ export function baseOptions(lang: string = i18n.defaultLanguage): BaseLayoutProp
   return {
     nav: {
       title: 'ServerBee',
-      url: `/${lang}`
+      url: `/${lang}/docs`
     },
     links: [githubLink],
     i18n

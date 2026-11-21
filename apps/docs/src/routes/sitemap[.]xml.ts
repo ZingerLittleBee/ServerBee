@@ -20,7 +20,7 @@ function urlEntry(url: (lang: DocsLanguage) => string, lang: DocsLanguage): stri
 }
 
 function sitemap(): Response {
-  const urls = i18n.languages.map((lang) => urlEntry((code) => `${SITE}/${code}`, lang))
+  const urls: string[] = []
   for (const lang of i18n.languages) {
     for (const page of source.getPages(lang)) {
       // The page's URL in another language swaps the language prefix, as in its head.
