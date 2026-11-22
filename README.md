@@ -6,7 +6,7 @@
 
 **Self-hosted VPS monitoring, down to every route.**
 
-[Website](https://serverbee.app) · [Documentation](https://docs.serverbee.app/en/docs) · [Live status page](https://demo.serverbee.app/status)
+[Website](https://serverbee.app) · [Docs](https://docs.serverbee.app/en/docs) · [Status page demo](https://demo.serverbee.app/status)
 
 [![CI](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml/badge.svg)](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ZingerLittleBee/ServerBee?include_prereleases&sort=semver)](https://github.com/ZingerLittleBee/ServerBee/releases)
@@ -17,26 +17,26 @@ English | [简体中文](./README.zh-CN.md)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="apps/landing/src/assets/shots/fleet-en-dark.webp" />
-  <img src="apps/landing/src/assets/shots/fleet-en-light.webp" width="900" alt="The ServerBee servers page: one card per VPS with CPU, memory, disk, traffic, latency, packet loss, uptime and cost" />
+  <img src="apps/landing/src/assets/shots/fleet-en-light.webp" width="900" alt="ServerBee Servers page showing one card per VPS, with CPU, memory, disk, traffic, network speed, latency, packet loss, uptime and cost." />
 </picture>
 
 </div>
 
 ---
 
-ServerBee tracks your whole fleet from one panel you host yourself: live load, carrier routes, IP unlock and risk, alerts, and what each server actually costs. A lightweight **agent** on each VPS reports over WebSocket to one **server** binary that carries the web UI and SQLite, so there is no external database to run.
+ServerBee watches your VPS fleet from one panel you host yourself: live load, carrier routes, IP unlock and risk, alerts and what each box costs. A lightweight agent on each VPS dials out over WebSocket to a single server binary with the web UI and SQLite inside, so there is no external database to run.
 
-- 🛰️ **Every route, carrier by carrier.** Up to 20 probe targets per server track latency and packet loss, with China Telecom, Unicom and Mobile compared across 31 provinces.
-- 🌍 **What each IP unlocks, and how clean it is.** Every agent tests 9 streaming, AI and social services from its own egress IP every 12 hours and again the moment the IP changes. Proxy, VPN, Tor, abuser and hosting flags come with it.
-- 🔒 **An agent that is not a backdoor.** Each host decides what its agent may do, and the server can read that policy but never edit it. Terminal, remote exec, file manager and Docker ship disabled; a temporary grant made on the host expires by itself.
-- 💰 **What each server really costs.** Billing-day traffic cycles with a forecast, per-resource unit cost, and a flag on idle boxes you still pay for.
-- 🖥️ **Your own dashboards, and a native iOS app.** Drag, resize and lock 18 widgets on a 12-column grid. The iOS app is written in SwiftUI with no third-party SDKs and no analytics.
-- 🪶 **Light enough for a small VPS.** One Rust server binary with the web UI and SQLite built in. An agent uses about 4.3 MB at cold start and about 27 MB in steady state.
+- 🛰️ **Carrier routes, tracked through peak hours.** Assign up to 20 probe targets per server to measure latency and packet loss continuously. China Telecom, Unicom and Mobile across 31 provinces, plus Cloudflare, Google DNS and AWS Tokyo, come compiled in.
+- 🌍 **IP unlocks and risk, tested automatically.** Each agent checks 9 services every 12 hours and whenever its IP changes, splitting full Netflix from originals-only and reporting ChatGPT's region. Proxy, VPN, Tor, abuser and hosting flags come with it.
+- 🔒 **A monitoring agent, not a backdoor.** Each host controls what its agent may do; the server reads that policy and can never edit it. Terminal, remote exec, file manager and Docker ship disabled, and any temporary grant made on the host expires by itself.
+- 💰 **What each server actually costs.** Traffic cycles follow each server's billing day, paired with a usage forecast. Compare per-resource unit cost across your fleet and flag idle boxes that are still on your bill.
+- 🖥️ **Custom dashboards and a native iOS app.** Build as many dashboards as you want from 18 widgets on a 12-column grid. The SwiftUI iOS app uses Apple frameworks alone for live load and push alerts, with no third-party SDKs or analytics.
+- 🪶 **Small footprint, two commands to start.** One small Rust server binary carries the web UI and SQLite; run it directly, in Docker or on Railway. Each agent uses about 4.3 MB at cold start and about 27 MB in steady state.
 
-Also included: alerts (26 rule types, sent to Webhook, Telegram, Bark, email or APNs), public status pages, web terminal, file manager, Docker, firewall blocklist, and Tailscale or Headscale. The full list is under [Features](#features).
+Also built in: 26 alert rule types (Webhook, Telegram, Bark, email and APNs), a public status page with 90-day uptime and hidden server IPs, a web terminal, a file manager, Docker, a firewall blocklist, plus Tailscale and Headscale; see the full list in the [Features](#features) table below.
 
 > [!NOTE]
-> ServerBee is in beta. Expect rapid iteration.
+> ServerBee is in 1.0 beta; expect frequent updates as it approaches a stable release.
 
 ## Quick Start
 

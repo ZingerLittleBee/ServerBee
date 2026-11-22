@@ -6,7 +6,7 @@
 
 **自托管的 VPS 监控，细到每一条线路。**
 
-[官网](https://serverbee.app/zh/) · [文档](https://docs.serverbee.app/zh/docs) · [在线状态页示例](https://demo.serverbee.app/status)
+[官网](https://serverbee.app/zh/) · [文档](https://docs.serverbee.app/zh/docs) · [状态页演示](https://demo.serverbee.app/status)
 
 [![CI](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml/badge.svg)](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ZingerLittleBee/ServerBee?include_prereleases&sort=semver)](https://github.com/ZingerLittleBee/ServerBee/releases)
@@ -17,26 +17,26 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="apps/landing/src/assets/shots/fleet-zh-dark.webp" />
-  <img src="apps/landing/src/assets/shots/fleet-zh-light.webp" width="900" alt="ServerBee 服务器页面：每台 VPS 一张卡片，显示 CPU、内存、磁盘、流量、延迟、丢包、在线时长和成本" />
+  <img src="apps/landing/src/assets/shots/fleet-zh-light.webp" width="900" alt="ServerBee 服务器页面：每台 VPS 一张卡片，显示 CPU、内存、磁盘、流量、网络速率、延迟、丢包率、在线时长与费用。" />
 </picture>
 
 </div>
 
 ---
 
-ServerBee 把所有 VPS 收进一个自己搭的面板：实时资源、31 省三网延迟、IP 解锁与风控、告警，还有每台机器的真实成本。每台机器上的轻量 **Agent** 通过 WebSocket 上报，**Server** 是内置 Web UI 和 SQLite 的单个二进制，不需要额外的数据库。
+ServerBee 把你手上的 VPS 收到同一个自托管面板里：实时负载、三网线路、IP 解锁、告警和每台机器的成本，打开一页就能看清。每台 VPS 上只跑一个轻量 Agent，通过 WebSocket 主动上报；服务端内置 Web 界面与 SQLite，单个可执行文件就能跑起来，不用另配数据库。
 
-- 🛰️ **三网线路，逐条看清**。每台机器最多 20 个探测点，持续追踪延迟和丢包，按电信、联通、移动拆开对比，覆盖 31 省。
-- 🌍 **这个 IP 干不干净，能解锁什么**。每台 Agent 用自己的出口 IP 每 12 小时检测 9 项流媒体、AI 与社交服务，IP 一变就自动复测，并标出代理、VPN、Tor、滥用和机房 IP。
-- 🔒 **探针不是后门**。每台主机自己决定 Agent 能做什么，服务端只读不改。终端、远程执行、文件管理和 Docker 默认关闭，在主机上给的临时授权到点自动失效。
-- 💰 **每台机器到底花多少钱**。按账单日统计流量周期并预测用量，算出资源单价，标出闲置却还在扣费的机器。
-- 🖥️ **自己的监控墙，加原生 iOS App**。18 种组件在 12 列网格里拖拽、缩放、锁定。iOS 端用 SwiftUI 编写，零第三方 SDK，不埋点。
-- 🪶 **小机器也跑得动**。Server 是内置 Web UI 和 SQLite 的单个 Rust 二进制。Agent 冷启动约 4.3 MB，稳态约 27 MB。
+- 🛰️ **三网 31 省延迟，晚高峰见真章**。每台 VPS 可选最多 20 个探测点，持续追踪延迟和丢包。内置 31 省电信、联通、移动节点，以及 Cloudflare、Google DNS 和 AWS 东京，开箱就能按运营商拆开对比。
+- 🌍 **出口 IP 干不干净，解锁自动测**。每台 Agent 每 12 小时用出口 IP 测 9 项服务，换 IP 自动复测。Netflix 区分全解锁与仅自制剧，ChatGPT 标出地区，同时附带代理、VPN、Tor、滥用与机房标记。
+- 🔒 **探针不该是后门，权限归主机管**。每台主机自己决定 Agent 能开放哪些能力，服务端只读不改。终端、远程执行、文件管理和 Docker 出厂默认关闭；临时需要排障时，在主机上签一段限时授权，到点自动失效。
+- 💰 **每台机器花多少钱，算得明白**。流量统计按每台 VPS 各自的账单日切周期，并给出用量预测。支持核算各项资源的单位成本，还会把闲置却仍在扣费的机器直接标出来。
+- 🖥️ **自定义仪表盘，配原生 iOS App**。18 种组件在 12 列网格里拖拽、缩放、锁定，看板按需建几张都行。iOS 端用 SwiftUI 原生编写，只用 Apple 系统框架，零第三方 SDK、不埋点，随时看实时指标与告警推送。
+- 🪶 **足够轻量，两条命令跑起来**。服务端是内置 Web 界面和 SQLite 的单个 Rust 二进制，可直接运行，也支持 Docker 或 Railway。每台机器的 Agent 冷启动约 4.3 MB，稳态约 27 MB。
 
-此外还有告警（26 种规则，推送到 Webhook、Telegram、Bark、邮件或 APNs）、公开状态页、Web 终端、文件管理、Docker、防火墙封禁，以及 Tailscale 与 Headscale。完整列表见[功能特性](#功能特性)。
+此外还内置 26 种规则告警（支持 Webhook、Telegram、Bark、邮件与 APNs）、隐藏真实 IP 的公开状态页、网页终端、文件管理、Docker、防火墙黑名单，以及 Tailscale 与 Headscale 观测，完整清单见下方的[功能特性](#功能特性)表。
 
 > [!NOTE]
-> ServerBee 目前处于 beta 阶段，迭代频繁。
+> ServerBee 目前处于 1.0 beta 阶段，仍在持续迭代。
 
 ## 快速开始
 
