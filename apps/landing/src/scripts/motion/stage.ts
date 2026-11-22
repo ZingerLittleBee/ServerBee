@@ -161,7 +161,9 @@ export function overlay(figure: HTMLElement, className: string, groundAt: [numbe
   }
   const layer = el('div', `overlay ${className}`)
   layer.setAttribute('aria-hidden', 'true')
-  figure.append(layer)
+  // The frame, not the figure: on a narrow screen the figure is the strip the frame pans in.
+  const frame = figure.querySelector('.shot-frame') ?? figure
+  frame.append(layer)
   watch(figure, (visible) => layer.toggleAttribute('data-visible', visible), 0)
 
   let settle: () => void

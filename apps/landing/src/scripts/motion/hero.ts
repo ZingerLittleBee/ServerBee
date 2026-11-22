@@ -23,6 +23,8 @@ import {
 /** Space between two routes, and the radius of their corners, in pixels. */
 const GAP = 7
 const RADIUS = 9
+/** Air between the hero's content and the first route that passes it. The room the stylesheet keeps includes it. */
+const CLEAR = 14
 /** How long the first route takes to draw, and how much longer each next one takes. */
 const DRAW = 820
 const DRAW_STEP = 70
@@ -35,19 +37,6 @@ interface Lane {
   packet: SVGPathElement
   plug: SVGCircleElement
   route: SVGPathElement
-}
-
-/** How far right the text inside the given elements reaches, in viewport pixels: they are wider than their text. */
-function textRight(elements: Iterable<Element>): number {
-  let right = 0
-  const range = document.createRange()
-  for (const element of elements) {
-    range.selectNodeContents(element)
-    for (const rect of range.getClientRects()) {
-      right = Math.max(right, rect.right)
-    }
-  }
-  return right
 }
 
 /** Where the headline's last line ends, in viewport pixels. `size` is its font size. */
@@ -65,7 +54,8 @@ export function mountHero(): void {
   const heading = hero?.querySelector('h1')
   const figure = hero?.querySelector<HTMLElement>('.hero-shot .shot')
   const frame = hero?.querySelector<HTMLElement>('.hero-shot')
-  if (!(hero && heading && figure && frame)) {
+  const install = hero?.querySelector<HTMLElement>('.install')
+  if (!(hero && heading && figure && frame && install)) {
     return
   }
   const cards = (regionsOf(figure).cards ?? []).map(rectOf)
@@ -115,18 +105,18 @@ export function mountHero(): void {
   /** Lays the routes out from the end of the headline to the panel. False when there is no room for them. */
   const layout = (): boolean => {
     const box = hero.getBoundingClientRect()
-    const wrap = frame.getBoundingClientRect()
     const shot = figure.getBoundingClientRect()
     const size = Number.parseFloat(getComputedStyle(heading).fontSize)
     // The routes leave from the headline's closing full stop, which sits to the left of its box in Chinese. The
     // block gives the height: it does not move while its pieces arrive.
     const startX = lastLineRight(heading, size) - box.left + (zh ? -0.44 : 0.14) * size
     const startY = heading.getBoundingClientRect().bottom - box.top - (zh ? 0.325 : 0.3) * size
-    const factsRight = textRight(hero.querySelectorAll('.hero-facts li')) - box.left
-    const channelRight = wrap.right - box.left - 3
-    const channel = (index: number): number => channelRight - (laneCount - 1 - index) * GAP
+    // The routes go down beside the facts and the install block, never behind them: the stylesheet ends both at
+    // the same edge and keeps room past it.
+    const channelLeft = install.getBoundingClientRect().right - box.left + CLEAR
+    const channel = (index: number): number => channelLeft + index * GAP
     const shotTop = shot.top - box.top
-    const fits = innerWidth >= 1024 && channel(0) - 22 > factsRight && channel(0) - 40 > startX
+    const fits = innerWidth >= 1024 && channel(0) - 40 > startX
     svg.style.display = fits ? '' : 'none'
     const room = channel(0) - startX
     for (const [index, { tag }] of tags.entries()) {

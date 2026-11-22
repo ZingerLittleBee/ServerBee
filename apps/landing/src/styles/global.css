@@ -18,6 +18,8 @@
   --accent-soft: light-dark(#edecfd, #1d1e3a);
   --on-accent: #ffffff;
   --ok: light-dark(#0b8a5c, #34c58b);
+  --warn: light-dark(#b45309, #f5a524);
+  --warn-soft: light-dark(#fff3dd, #33250a);
 
   /* The command bar stays dark in both themes: it is a terminal, not a card. */
   --cmd-bg: light-dark(#15161c, #17181d);
@@ -169,6 +171,13 @@ h3 {
   letter-spacing: -0.01em;
 }
 
+/* The narrowest phones: the first line of the Chinese headline still fits. */
+@media (max-width: 340px) {
+  :lang(zh) h1 {
+    font-size: 1.8rem;
+  }
+}
+
 :lang(zh) h2 {
   font-size: clamp(1.7rem, 3.2vw, 2.6rem);
   font-weight: 600;
@@ -243,8 +252,10 @@ h3 {
   transition: text-decoration-color 0.15s;
 }
 
-.out:hover {
-  text-decoration-color: currentcolor;
+@media (hover: hover) {
+  .out:hover {
+    text-decoration-color: currentcolor;
+  }
 }
 
 .out svg {
@@ -273,8 +284,10 @@ h3 {
     transform 0.12s var(--ease-out);
 }
 
-.btn:hover {
-  background: var(--accent-hover);
+@media (hover: hover) {
+  .btn:hover {
+    background: var(--accent-hover);
+  }
 }
 
 .btn:active {
@@ -345,8 +358,10 @@ h3 {
   transition: color 0.15s;
 }
 
-.nav a:hover {
-  color: var(--ink);
+@media (hover: hover) {
+  .nav a:hover {
+    color: var(--ink);
+  }
 }
 
 .header-tools {
@@ -376,9 +391,11 @@ h3 {
     transform 0.12s var(--ease-out);
 }
 
-.tool:hover {
-  color: var(--ink);
-  background: var(--sunken);
+@media (hover: hover) {
+  .tool:hover {
+    color: var(--ink);
+    background: var(--sunken);
+  }
 }
 
 .tool:active {
@@ -425,8 +442,27 @@ h3 {
   }
 }
 
-@media (max-width: 420px) {
-  .header .tool-github {
+/* A phone's bar holds the logo, the docs, the other language and the install button. The theme toggle moves to
+   the footer, and GitHub is already linked from the hero. */
+@media (max-width: 560px) {
+  .header-bar {
+    gap: 8px;
+  }
+
+  .header .tool-github,
+  .header [data-theme-toggle] {
+    display: none;
+  }
+
+  .header .btn {
+    padding-inline: 12px;
+    margin-left: 4px;
+  }
+}
+
+/* The narrowest phones lose the docs link too: the footer has it. */
+@media (max-width: 340px) {
+  .nav {
     display: none;
   }
 }
@@ -459,8 +495,10 @@ h3 {
   transition: border-color 0.15s;
 }
 
-.pill:hover {
-  border-color: var(--line-strong);
+@media (hover: hover) {
+  .pill:hover {
+    border-color: var(--line-strong);
+  }
 }
 
 .pill-dot {
@@ -587,8 +625,10 @@ h3 {
     background-color 0.15s;
 }
 
-.install-tabs button:hover {
-  color: var(--cmd-ink);
+@media (hover: hover) {
+  .install-tabs button:hover {
+    color: var(--cmd-ink);
+  }
 }
 
 .install-tabs button[aria-selected="true"] {
@@ -640,6 +680,12 @@ h3 {
   display: inline-block;
 }
 
+/* An argument wraps as a whole, and only breaks inside when it is wider than the line. */
+.cmd-word {
+  display: inline-block;
+  max-width: 100%;
+}
+
 .cmd-dim {
   color: var(--cmd-dim);
 }
@@ -669,8 +715,10 @@ h3 {
     transform 0.12s var(--ease-out);
 }
 
-.copy:hover {
-  background: var(--cmd-control-hover);
+@media (hover: hover) {
+  .copy:hover {
+    background: var(--cmd-control-hover);
+  }
 }
 
 .copy:active {
@@ -766,9 +814,20 @@ h3 {
   margin-top: clamp(28px, 3.4vw, 44px);
 }
 
+/* The hero's routes run down the page margin, past the facts and the install block. They take a strip of 69px
+   there: 14px of air, six lanes 7px apart, and 20px to the edge of the page. Where the margin is narrower, the
+   two give up the rest. */
+@media (min-width: 1024px) {
+  .hero-row,
+  .hero .install {
+    margin-right: max(0px, 69px - (100vw - 100%) / 2);
+  }
+}
+
 /* ---------- Product captures ---------- */
 
-.shot {
+/* The frame around a capture. Scenes lay their layer over it. */
+.shot-frame {
   position: relative;
   overflow: hidden;
   background: var(--surface);
@@ -787,18 +846,34 @@ h3 {
 }
 
 /*
- * A whole window shrunk to a phone's width is unreadable. On a narrow screen a capture that sets --zoom is shown
- * that many times larger, cut to its top left corner, or to the column --shift-x (a fraction of its width) starts.
+ * A whole window shrunk to a phone's width is unreadable. On a narrow screen a capture keeps a readable size
+ * instead: its frame is wider than the screen, runs off the right edge, and pans sideways like the row of phones.
+ * The figure is the strip it pans in, from one edge of the screen to the other.
  */
 @media (max-width: 640px) {
-  .shot-zoom {
-    aspect-ratio: var(--ratio, auto);
+  .shot-pan {
+    display: flex;
+    padding: 4px var(--gutter) 32px;
+    margin: -4px calc(-1 * var(--gutter)) -32px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
   }
 
-  .shot-zoom img {
-    width: calc(var(--zoom) * 100%);
+  /* The strip cuts a shadow where it ends, so the shadow stays inside its padding. */
+  .shot-pan .shot-frame {
+    flex: none;
+    width: max(100%, var(--pan-scale) * min(100%, var(--pan-column)));
+    aspect-ratio: var(--pan-aspect);
+    box-shadow:
+      0 1px 2px light-dark(rgb(22 24 60 / 0.05), rgb(0 0 0 / 0.4)),
+      0 12px 28px -14px light-dark(rgb(22 24 60 / 0.2), rgb(0 0 0 / 0.6));
+  }
+
+  .shot-pan img {
+    width: var(--pan-capture);
     max-width: none;
-    margin-left: calc(var(--zoom) * var(--shift-x, 0) * -100%);
+    margin-left: var(--pan-shift);
   }
 }
 
@@ -917,7 +992,7 @@ section[id] {
 }
 
 /* The capture under the command is its result, so the two share one frame. */
-.grant + .shot {
+.grant + .shot .shot-frame {
   border-radius: 0 0 var(--r-l) var(--r-l);
 }
 
@@ -981,6 +1056,19 @@ section[id] {
 @media (max-width: 760px) {
   .grant-notes {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Where the capture pans on its own, the command and the capture each get a whole frame. */
+@media (max-width: 640px) {
+  .grant {
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--cmd-line);
+    border-radius: var(--r-l);
+  }
+
+  .grant + .shot .shot-frame {
+    border-radius: var(--r-l);
   }
 }
 
@@ -1087,7 +1175,7 @@ section[id] {
   }
 }
 
-/* ---------- More ---------- */
+/* ---------- More: the rest of the kit, a small drawing for each feature ---------- */
 
 .more h2 {
   margin-bottom: clamp(32px, 4vw, 56px);
@@ -1095,45 +1183,445 @@ section[id] {
 
 .more-groups {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 40px clamp(24px, 3vw, 44px);
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(32px, 3.4vw, 44px);
 }
 
 .more-group h3 {
   padding-bottom: 14px;
+  margin-bottom: 18px;
   font-size: 0.9375rem;
   color: var(--ink);
   border-bottom: 1px solid var(--ink);
 }
 
-.more-group dl > div {
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
+.more-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 28px clamp(16px, 2vw, 28px);
 }
 
-.more-group dt {
+.more-tile h4 {
+  margin: 14px 0 0;
+  font-size: 1rem;
   font-weight: 700;
+  line-height: 1.3;
 }
 
-:lang(zh) .more-group dt {
+:lang(zh) .more-tile h4 {
   font-weight: 600;
 }
 
-.more-group dd {
-  margin-top: 4px;
-  font-size: 0.9375rem;
-  line-height: 1.5;
+.more-tile p {
+  margin-top: 3px;
+  font-size: 0.9rem;
+  line-height: 1.45;
   color: var(--ink-2);
+  text-wrap: balance;
 }
 
-:lang(zh) .more-group dd {
-  line-height: 1.7;
+:lang(zh) .more-tile p {
+  line-height: 1.6;
 }
 
-@media (max-width: 900px) {
-  .more-groups {
-    grid-template-columns: minmax(0, 1fr);
+/* Four sketches in a row need about 200px each for their longest line. */
+@media (max-width: 1099px) {
+  .more-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* On a phone each group is a strip that pans sideways, like the captures. */
+@media (max-width: 640px) {
+  .more-tiles {
+    display: flex;
+    gap: 14px;
+    padding-inline: var(--gutter);
+    margin-inline: calc(-1 * var(--gutter));
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline: var(--gutter);
+    scrollbar-width: none;
+  }
+
+  .more-tile {
+    flex: none;
+    width: 244px;
+    scroll-snap-align: start;
+  }
+}
+
+/*
+ * A sketch: the feature's own screen, drawn small in the type of a terminal. Every line is one row of its grid,
+ * and none of them wraps.
+ */
+.sketch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  height: 124px;
+  padding: 0 16px;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.71875rem;
+  line-height: 1.65;
+  color: var(--ink-2);
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+
+.sketch b {
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.sk-row {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.sketch .sk-dim {
+  color: var(--ink-3);
+}
+
+.sketch .sk-ok {
+  color: var(--ok);
+}
+
+.sketch .sk-warn {
+  color: var(--warn);
+}
+
+/* Alerts: ten samples against the rule's threshold. */
+.sk-bars {
+  position: relative;
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+  height: 50px;
+  margin: 7px 0;
+}
+
+.sk-bars::after {
+  position: absolute;
+  inset: auto 0 var(--at);
+  content: "";
+  border-top: 1px dashed var(--ink-3);
+}
+
+.sk-bars i {
+  flex: 1;
+  height: var(--h);
+  background: var(--line-strong);
+  border-radius: 2px 2px 0 0;
+}
+
+.sk-bars .over {
+  background: var(--warn);
+}
+
+.sketch-alerts .sk-warn::before {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  vertical-align: 1px;
+  content: "";
+  background: currentcolor;
+  border-radius: 50%;
+}
+
+/* Status page: the uptime bar. */
+.sk-days {
+  display: flex;
+  gap: 1.5px;
+  height: 26px;
+  margin: 9px 0 7px;
+}
+
+.sk-days i {
+  flex: 1;
+  background: var(--ok);
+  border-radius: 1px;
+  opacity: 0.85;
+}
+
+.sk-days .degraded {
+  background: var(--warn);
+}
+
+/* Service monitors: one line per check. */
+.sk-check {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 12px;
+  align-items: center;
+}
+
+.sk-check svg {
+  width: 12px;
+  height: 12px;
+  color: var(--ok);
+  stroke-width: 3;
+}
+
+/* Traffic: what the cycle has used, and where it is heading, against the quota. */
+.sk-meter {
+  position: relative;
+  height: 8px;
+  margin: 8px 0;
+  background: var(--sunken);
+  border-radius: 4px;
+}
+
+.sk-meter i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.sk-meter .sk-used {
+  left: 0;
+  width: var(--used);
+  background: var(--accent);
+  border-radius: 4px 0 0 4px;
+}
+
+.sk-meter .sk-forecast {
+  right: calc(100% - var(--forecast));
+  left: var(--used);
+  background: repeating-linear-gradient(
+    90deg,
+    var(--warn) 0 4px,
+    transparent 4px 7px
+  );
+}
+
+.sk-meter .sk-quota {
+  top: -4px;
+  bottom: -4px;
+  left: var(--quota);
+  border-left: 1.5px solid var(--ink);
+}
+
+/* Terminal: dark in both themes, like the command bar. */
+.sketch-terminal {
+  color: var(--cmd-dim);
+  background: var(--cmd-bg);
+  border-color: var(--cmd-line);
+}
+
+.sketch-terminal b {
+  color: var(--cmd-ink);
+}
+
+.sk-prompt {
+  color: var(--cmd-accent);
+}
+
+.sk-typed {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.sk-cursor {
+  display: inline-block;
+  width: 0.6em;
+  height: 1.15em;
+  margin-left: 1px;
+  vertical-align: -0.2em;
+  background: var(--cmd-ink);
+}
+
+/* Files: what opens, and what the deny patterns keep shut. */
+.sk-file {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.sk-file svg {
+  width: 13px;
+  height: 13px;
+  color: var(--ink-3);
+}
+
+.sk-denied {
+  color: var(--ink-3);
+}
+
+.sk-denied .sk-name {
+  text-decoration: line-through;
+}
+
+/* Docker: containers, their state and their load. */
+.sk-box {
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) 44px auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.sk-state {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--ink-3);
+  border-radius: 50%;
+}
+
+.sk-running {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+
+.sk-load {
+  height: 4px;
+  background: var(--sunken);
+  border-radius: 2px;
+}
+
+.sk-load i {
+  display: block;
+  width: var(--w);
+  height: 100%;
+  background: var(--ink-3);
+  border-radius: 2px;
+}
+
+/* Upgrades: a mark per stage, on the line that joins them. */
+.sk-stages {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  margin: 11px 0 9px;
+}
+
+.sk-stages::before,
+.sk-stages::after {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  left: 5px;
+  height: 1px;
+  content: "";
+  background: var(--line-strong);
+}
+
+.sk-stages::after {
+  background: var(--ok);
+}
+
+.sk-stages i {
+  position: relative;
+  z-index: 1;
+  width: 11px;
+  height: 11px;
+  background: var(--line-strong);
+  border-radius: 50%;
+}
+
+.sk-stages i::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: var(--ok);
+  border-radius: 50%;
+}
+
+/* Security: an address fails too often, and is blocked. */
+.sk-rule {
+  margin: 8px 0;
+  border-top: 1px dashed var(--line-strong);
+}
+
+/* Accounts: the ways in, and the roles. */
+.sk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 5px;
+}
+
+.sk-chip {
+  padding: 1px 8px;
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+}
+
+.sk-current {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+/* Tailscale: one peer reached directly, one through a relay. */
+.sketch-tailscale {
+  row-gap: 5px;
+}
+
+.sk-peer {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+}
+
+.sk-link {
+  position: relative;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.sk-relayed {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--line-strong) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.sk-link em {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  padding: 0 5px;
+  font-size: 0.625rem;
+  font-style: normal;
+  line-height: 1.5;
+  color: var(--ink-3);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  translate: -50% -50%;
+}
+
+/* A packet, on a track as wide as its link. It shows only while it travels. */
+.sk-link i {
+  position: absolute;
+  inset: -1px 0;
+  opacity: 0;
+}
+
+.sk-link i::before {
+  display: block;
+  width: 14px;
+  height: 3px;
+  content: "";
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* Audit log: when, what, who. */
+.sk-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
 }
 
 /* ---------- How it works ---------- */
@@ -1170,6 +1658,13 @@ section[id] {
 
 .steps .cmd {
   grid-column: 2;
+}
+
+/* On a phone the numeral's column is room a command needs: it takes the full width, like the one in the hero. */
+@media (max-width: 640px) {
+  .steps .cmd {
+    grid-column: 1 / -1;
+  }
 }
 
 .step-text {
@@ -1585,14 +2080,89 @@ section[id] {
   gap: 8px 24px;
 }
 
-.footer-links a:hover {
-  color: var(--ink);
+@media (hover: hover) {
+  .footer-links a:hover {
+    color: var(--ink);
+  }
+}
+
+.footer-end {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
 }
 
 .footer-legal {
-  margin-top: 16px;
   font-size: 0.875rem;
   color: var(--ink-3);
+}
+
+/* Shown where the header has no room for its own. */
+.footer .tool {
+  display: none;
+  flex: none;
+  margin-right: -8px;
+}
+
+@media (max-width: 560px) {
+  .footer .tool {
+    display: inline-flex;
+  }
+}
+
+/* ---------- Touch ---------- */
+
+/* A finger needs more room than a pointer: controls grow, and a text link answers around its words as well. */
+@media (pointer: coarse) {
+  .tool {
+    min-width: 44px;
+  }
+
+  .tool,
+  .copy,
+  .header .btn,
+  .install-tabs button {
+    height: 44px;
+  }
+
+  .nav a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .footer-links {
+    row-gap: 0;
+  }
+
+  .footer-links a {
+    display: block;
+    padding-block: 10px;
+  }
+
+  .logo,
+  .pill,
+  .out,
+  .notes a,
+  .stats sup a {
+    position: relative;
+  }
+
+  .logo::after,
+  .pill::after,
+  .out::after,
+  .notes a::after,
+  .stats sup a::after {
+    position: absolute;
+    inset: -10px -6px;
+    content: "";
+  }
+
+  .stats sup a::after {
+    inset: -12px;
+  }
 }
 
 /* ---------- Not found ---------- */

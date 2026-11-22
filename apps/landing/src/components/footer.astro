@@ -1,5 +1,7 @@
 ---
+import Moon from '@lucide/astro/icons/moon'
 import Radar from '@lucide/astro/icons/radar'
+import Sun from '@lucide/astro/icons/sun'
 import { landingCopy } from '@/i18n/copy'
 import { homePath, type Lang } from '@/lib/site'
 
@@ -30,6 +32,12 @@ const copy = landingCopy[lang].footer
         </ul>
       </nav>
     </div>
-    <p class="footer-legal">{copy.legal}</p>
+    <div class="footer-end">
+      <p class="footer-legal">{copy.legal}</p>
+      <button class="tool" type="button" data-theme-toggle aria-label={landingCopy[lang].nav.themeLabel}>
+        <Moon class="theme-light-icon" aria-hidden="true" />
+        <Sun class="theme-dark-icon" aria-hidden="true" />
+      </button>
+    </div>
   </div>
 </footer>

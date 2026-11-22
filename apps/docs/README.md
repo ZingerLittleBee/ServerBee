@@ -77,6 +77,7 @@ deployment decision.
 | Surface | Account pointer and purpose |
 | --- | --- |
 | Docs | [Vercel `serverbee-docs`](https://vercel.com/zingerlittlebees-projects/serverbee-docs), serving `docs.serverbee.app`; app root `apps/docs` |
+| Landing page | [Vercel `serverbee-landing`](https://vercel.com/zingerlittlebees-projects/serverbee-landing), serving `serverbee.app` since 2026-11-22; app root `apps/landing` |
 | DNS | Cloudflare manages `serverbee.app` DNS. DNS ownership does not identify the application's runtime host. |
 | Monitoring backend | Railway runs the Rust Server used by `demo.serverbee.app`. Its GitHub deployment statuses do not identify the deployed docs revision. |
 

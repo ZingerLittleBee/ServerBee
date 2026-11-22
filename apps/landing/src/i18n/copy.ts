@@ -116,6 +116,42 @@ interface HowCopy {
   steps: [{ d: string; t: string }, { d: string; t: string }]
 }
 
+/** A feature of the kit section. The id names the sketch drawn for it. */
+export type KitId =
+  | 'accounts'
+  | 'alerts'
+  | 'audit'
+  | 'docker'
+  | 'files'
+  | 'monitors'
+  | 'security'
+  | 'status'
+  | 'tailscale'
+  | 'terminal'
+  | 'traffic'
+  | 'upgrades'
+
+interface KitCopy {
+  groups: { items: (PointCopy & { id: KitId })[]; t: string }[]
+  h2: string
+  /**
+   * The words inside the sketches. The sample values around them are the same in both languages and live in the
+   * sketch component. A sketch repeats its tile in a picture, so all of it is hidden from assistive technology.
+   */
+  sketch: {
+    alerts: { firing: string; samples: string; window: string }
+    docker: { exited: string; running: string }
+    files: { blocked: string }
+    /** What each check found, in the order SSL, DNS, HTTP, TCP, WHOIS. */
+    monitors: [string, string, string, string, string]
+    security: { blocked: string; blocklist: string; failed: string }
+    status: { ago: string; today: string }
+    tailscale: { direct: string; panel: string; relayed: string; tailnet: string }
+    traffic: { cycle: string; forecast: string; monthly: string; over: string; perCore: string }
+    upgrades: { rollback: string; verified: string }
+  }
+}
+
 /**
  * Text that only appears inside the animated scenes. It replays what the page already says in prose, so all of it
  * is hidden from assistive technology.
@@ -149,7 +185,7 @@ export interface LandingCopy {
   ipq: FeatureCopy
   /** Search and social copy. */
   meta: { description: string; title: string }
-  more: { groups: { items: PointCopy[]; t: string }[]; h2: string }
+  more: KitCopy
   nav: NavCopy
   network: FeatureCopy
   scenes: ScenesCopy
@@ -394,20 +430,24 @@ const zh: LandingCopy = {
         t: '监控与告警',
         items: [
           {
+            id: 'alerts',
             t: '告警与通知',
-            d: '内置 26 种规则。资源告警要求 10 分钟内 70% 样本超标才触发，过滤掉瞬时毛刺；维护窗口内自动静默。支持 Webhook、Telegram、Bark、邮件和 APNs。'
+            d: '26 种规则，推送到 Webhook、Telegram、Bark、邮件或 APNs。'
           },
           {
+            id: 'status',
             t: '公开状态页',
-            d: '自带 /status 状态页，按需展示在线状态、90 天可用率、网络和 IP 质量，主机 IP 不会公开。默认关闭。'
+            d: '在线状态与 90 天可用率，不公开主机 IP。'
           },
           {
+            id: 'monitors',
             t: '服务监控',
-            d: '由服务端定时检查 SSL 证书、DNS 记录、HTTP 关键词、TCP 端口和域名 WHOIS 到期，不装 Agent 的站点也能盯。'
+            d: '由服务端发起检查，目标无需安装 Agent。'
           },
           {
+            id: 'traffic',
             t: '流量与成本',
-            d: '按你的账单日算流量周期并预测周期末会不会超额；折算每核、每 GB 和每 TB 的月均成本，直接标出离线还在扣费或闲置空转的机器。'
+            d: '按账单日算周期，标出闲置却还在扣费的机器。'
           }
         ]
       },
@@ -415,20 +455,24 @@ const zh: LandingCopy = {
         t: '远程运维',
         items: [
           {
+            id: 'terminal',
             t: '网页终端',
-            d: '浏览器里的真实 PTY，支持 vim 和 htop。每台机器最多 3 个并发会话，闲置 10 分钟自动断开，默认关闭。'
+            d: '浏览器里的真实 PTY，默认关闭。'
           },
           {
+            id: 'files',
             t: '文件管理',
-            d: '锁定在白名单根目录内浏览、传文件，用 Monaco 在线改配置。默认拦截 *.key、.env 等敏感文件。'
+            d: '在白名单目录内浏览、传输、在线编辑。'
           },
           {
+            id: 'docker',
             t: 'Docker',
-            d: '查看容器列表、实时资源、日志流与生命周期事件，支持启停、重启和删除。默认关闭。'
+            d: '容器资源、日志与生命周期事件，默认关闭。'
           },
           {
+            id: 'upgrades',
             t: '升级与运维',
-            d: '在面板里逐台升级 Agent，校验 SHA-256 并在失败时自动回滚。也支持 cron 定时任务（需主机开启远程执行）。'
+            d: 'Agent 升级带校验，另有可选开启的定时命令。'
           }
         ]
       },
@@ -436,20 +480,39 @@ const zh: LandingCopy = {
         t: '安全与访问',
         items: [
           {
+            id: 'security',
             t: '安全事件与防火墙',
-            d: '识别 SSH 爆破和新来源登录，开启后还能识别端口扫描，支持把攻击源 IP 写入主机 nftables 黑名单。'
+            d: '识别 SSH 爆破和新来源登录，端口扫描可选开启。'
           },
           {
+            id: 'accounts',
             t: '账号与权限',
-            d: '区分管理员和只读成员，支持 GitHub、Google、OIDC、Tailscale Serve 回环认证、TOTP 两步验证和 API 密钥。'
+            d: '角色与单点登录，TOTP 两步验证和 API 密钥。'
           },
           {
+            id: 'tailscale',
             t: 'Tailscale 与 Headscale',
-            d: 'Agent 可直接走 Tailnet 接入，面板无需暴露公网；并能一眼看出每个对端是 Direct 直连还是走了 DERP 中继。'
+            d: '面板无需暴露公网。'
+          },
+          {
+            id: 'audit',
+            t: '审计日志',
+            d: '登录、终端、文件写入都有记录，保留 180 天。'
           }
         ]
       }
-    ]
+    ],
+    sketch: {
+      alerts: { firing: '触发', samples: '10 个样本 7 个超标', window: '10 分钟' },
+      docker: { exited: '已退出', running: '运行中' },
+      files: { blocked: '已拦截' },
+      monitors: ['43 天后到期', 'A 记录未变', '200，命中关键词', '443 端口可达', '212 天后到期'],
+      security: { blocked: '已拦截', blocklist: 'nftables 黑名单', failed: '登录失败' },
+      status: { ago: '90 天前', today: '今天' },
+      tailscale: { direct: '直连', panel: '面板', relayed: '中继', tailnet: '仅 Tailnet' },
+      traffic: { cycle: '本周期', forecast: '预计', monthly: '$1.50 / 月', over: '2.3 TB，超 0.3', perCore: '每核' },
+      upgrades: { rollback: '启动失败自动回滚', verified: 'sha256 已校验' }
+    }
   },
   how: {
     h2: '两条命令，跑起来。',
@@ -825,20 +888,24 @@ const en: LandingCopy = {
         t: 'Monitoring and alerts',
         items: [
           {
+            id: 'alerts',
             t: 'Alerts & notifications',
-            d: '26 rule types. Metric alerts only fire when 70% of samples over 10 minutes breach, so a brief spike won’t wake you up; maintenance windows mute noise. Webhook, Telegram, Bark, email and APNs.'
+            d: '26 rule types, sent to Webhook, Telegram, Bark, email or APNs.'
           },
           {
+            id: 'status',
             t: 'Public status page',
-            d: 'A built-in /status page with live health, 90-day uptime, network and IP quality. Server IPs are not shown, and the page stays off until you enable it.'
+            d: 'Live health and 90-day uptime, with server IPs hidden.'
           },
           {
+            id: 'monitors',
             t: 'Service monitors',
-            d: 'Server-side checks for SSL expiry, DNS records, HTTP keywords, TCP ports and WHOIS expiry, even for targets without an agent.'
+            d: 'Checked from the server, so targets need no agent.'
           },
           {
+            id: 'traffic',
             t: 'Traffic & cost',
-            d: 'Traffic cycles aligned to your billing day, with end-of-cycle overage forecasts. Breaks down cost per core, GB and TB, and flags idle or offline boxes you’re still paying for.'
+            d: 'Billing-day cycles, and a flag on idle boxes you still pay for.'
           }
         ]
       },
@@ -846,20 +913,24 @@ const en: LandingCopy = {
         t: 'Remote operations',
         items: [
           {
+            id: 'terminal',
             t: 'Web terminal',
-            d: 'A full PTY in the browser, ready for vim or htop. Up to 3 sessions per server, closed after 10 idle minutes, off by default.'
+            d: 'A full PTY in the browser. Off by default.'
           },
           {
+            id: 'files',
             t: 'File manager',
-            d: 'Browse, transfer and edit configs in Monaco inside allowed root paths. Private keys and .env files are blocked by default.'
+            d: 'Browse, transfer and edit inside the paths you allow.'
           },
           {
+            id: 'docker',
             t: 'Docker',
-            d: 'Container list, live stats, log streaming and lifecycle events, plus start, stop, restart and remove. Off by default.'
+            d: 'Stats, logs and lifecycle events. Off by default.'
           },
           {
+            id: 'upgrades',
             t: 'Upgrades & ops',
-            d: 'Upgrade agents right from the panel, SHA-256 verified with automatic rollback if startup fails. Includes cron-scheduled commands when remote exec is enabled.'
+            d: 'Verified agent upgrades, plus opt-in cron commands.'
           }
         ]
       },
@@ -867,20 +938,45 @@ const en: LandingCopy = {
         t: 'Security and access',
         items: [
           {
+            id: 'security',
             t: 'Security events & firewall',
-            d: 'Catches SSH brute force and logins from new IPs, plus port scans when enabled, and can drop offending IPs into an nftables blocklist.'
+            d: 'SSH brute force, new-IP logins and opt-in port scans.'
           },
           {
+            id: 'accounts',
             t: 'Accounts & access',
-            d: 'Admin and read-only roles, GitHub, Google, OIDC and Tailscale Serve loopback sign-in, TOTP 2FA and API keys.'
+            d: 'Roles, single sign-on, TOTP 2FA and API keys.'
           },
           {
+            id: 'tailscale',
             t: 'Tailscale & Headscale',
-            d: 'Enroll agents over your tailnet so the panel never has to sit on the public internet, and check whether each peer is direct or relayed over DERP.'
+            d: 'Keeps the panel off the public internet.'
+          },
+          {
+            id: 'audit',
+            t: 'Audit log',
+            d: 'Logins, terminals and file writes, kept for 180 days.'
           }
         ]
       }
-    ]
+    ],
+    sketch: {
+      alerts: { firing: 'firing', samples: '7 of 10 samples', window: '10 min' },
+      docker: { exited: 'exited', running: 'running' },
+      files: { blocked: 'blocked' },
+      monitors: ['expires in 43 d', 'A record unchanged', '200, keyword found', 'port 443 open', 'expires in 212 d'],
+      security: { blocked: 'blocked', blocklist: 'nftables blocklist', failed: 'failed logins' },
+      status: { ago: '90 days ago', today: 'today' },
+      tailscale: { direct: 'direct', panel: 'panel', relayed: 'relayed', tailnet: 'tailnet only' },
+      traffic: {
+        cycle: 'this cycle',
+        forecast: 'forecast',
+        monthly: '$1.50 / mo',
+        over: '2.3 TB, 0.3 over',
+        perCore: 'per core'
+      },
+      upgrades: { rollback: 'rolls back if startup fails', verified: 'sha256 verified' }
+    }
   },
   how: {
     h2: 'Two commands and you’re live.',

@@ -9,8 +9,6 @@
 
 :root {
   --trace: color-mix(in oklab, var(--ink) 20%, var(--bg));
-  --warn: light-dark(#b45309, #f5a524);
-  --warn-soft: light-dark(#fff3dd, #33250a);
 
   /* A heading arrives a word at a time, or a character at a time in Chinese. */
   --piece-step: 58ms;
@@ -324,9 +322,9 @@
 
 @media (max-width: 640px) {
   /* Follow the enlarged, shifted capture a narrow screen shows. */
-  .shot-zoom > .overlay {
-    inset: 0 auto auto calc(var(--zoom) * var(--shift-x, 0) * -100%);
-    width: calc(var(--zoom) * 100%);
+  .shot-pan .overlay {
+    inset: 0 auto auto var(--pan-shift);
+    width: var(--pan-capture);
     height: auto;
     aspect-ratio: var(--capture-ratio);
   }
@@ -1046,6 +1044,162 @@
 
 .fig-spark circle {
   fill: var(--accent);
+}
+
+/* ---------- Kit: a sketch draws itself once, when its tile comes into view ---------- */
+
+/* How each part arrives. The runtime marks a sketch empty until then, and taking the mark away starts these. */
+.sk-bars i {
+  transform-origin: 50% 100%;
+  transition: transform 500ms var(--ease-out) calc(var(--i) * 45ms + 150ms);
+}
+
+.sk-days i {
+  transition: opacity 250ms ease calc(var(--i) * 9ms + 150ms);
+}
+
+.sk-check svg {
+  transition:
+    opacity 200ms ease calc(var(--i) * 110ms + 250ms),
+    transform 300ms var(--ease-out) calc(var(--i) * 110ms + 250ms);
+}
+
+/* The meter is wiped in from the left. Its resting clip is spelled out, since a shape cannot ease to "none". */
+.sk-meter .sk-used {
+  clip-path: inset(0);
+  transition: clip-path 700ms var(--ease-out) 150ms;
+}
+
+.sk-meter .sk-forecast {
+  clip-path: inset(0);
+  transition: clip-path 600ms var(--ease-out) 800ms;
+}
+
+/* The command is typed a letter at a time, and the cursor moves with it. */
+.sk-typed {
+  width: 4ch;
+  transition: width 450ms steps(4) 500ms;
+}
+
+.sk-load i {
+  transform-origin: 0 50%;
+  transition: transform 500ms var(--ease-out) calc(var(--i) * 90ms + 200ms);
+}
+
+/* The stages complete in turn, and the line between them fills at the same pace. */
+.sk-stages {
+  --stage: 240ms;
+}
+
+.sk-stages::after {
+  transform-origin: 0 50%;
+  transition: transform calc(var(--stage) * 4) linear 300ms;
+}
+
+.sk-stages i::after {
+  transition:
+    opacity 200ms ease calc(var(--i) * var(--stage) + 300ms),
+    transform 300ms var(--ease-out) calc(var(--i) * var(--stage) + 300ms);
+}
+
+.sk-chip {
+  transition: opacity 300ms ease calc(var(--i) * 45ms + 150ms);
+}
+
+.sk-entry {
+  transition:
+    opacity 300ms ease calc(var(--i) * 160ms + 200ms),
+    transform 400ms var(--ease-out) calc(var(--i) * 160ms + 200ms);
+}
+
+/* What follows from the rest of a sketch comes after it: the alert fires once the samples are in. */
+.sk-after {
+  transition: opacity 350ms ease calc(var(--after, 700ms) + var(--i, 0) * 140ms);
+}
+
+.sketch-alerts {
+  --after: 1000ms;
+}
+
+.sketch-files {
+  --after: 450ms;
+}
+
+.sketch-upgrades {
+  --after: 1500ms;
+}
+
+/* The empty sketch. */
+.sketch[data-empty] .sk-days i,
+.sketch[data-empty] .sk-chip,
+.sketch[data-empty] .sk-after {
+  opacity: 0;
+  transition: none;
+}
+
+.sketch[data-empty] .sk-bars i {
+  transform: scaleY(0);
+  transition: none;
+}
+
+.sketch[data-empty] .sk-load i,
+.sketch[data-empty] .sk-stages::after {
+  transform: scaleX(0);
+  transition: none;
+}
+
+.sketch[data-empty] .sk-check svg,
+.sketch[data-empty] .sk-stages i::after {
+  opacity: 0;
+  transform: scale(0.4);
+  transition: none;
+}
+
+.sketch[data-empty] .sk-used,
+.sketch[data-empty] .sk-forecast {
+  clip-path: inset(0 100% 0 0);
+  transition: none;
+}
+
+.sketch[data-empty] .sk-typed {
+  width: 0;
+  transition: none;
+}
+
+.sketch[data-empty] .sk-entry {
+  opacity: 0;
+  transform: translateY(5px);
+  transition: none;
+}
+
+/* The two that keep moving do so only on screen: the terminal's cursor, and the packets on the tailnet. */
+.sketch[data-visible] .sk-cursor {
+  animation: blink 1100ms steps(1) infinite;
+}
+
+.sketch[data-visible] .sk-link i {
+  animation: sk-packet 2600ms linear infinite;
+}
+
+.sketch[data-visible] .sk-relayed i {
+  animation-duration: 4200ms;
+}
+
+@keyframes sk-packet {
+  from {
+    opacity: 0;
+    translate: 0;
+  }
+
+  8%,
+  88% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    translate: calc(100% - 14px);
+  }
 }
 
 /* ---------- A traceroute down the page: each section is a hop, the packet is where the reader is ---------- */
