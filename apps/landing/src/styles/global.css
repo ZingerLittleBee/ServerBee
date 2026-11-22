@@ -169,6 +169,13 @@ h3 {
   letter-spacing: -0.01em;
 }
 
+/* The narrowest phones: the first line of the Chinese headline still fits. */
+@media (max-width: 340px) {
+  :lang(zh) h1 {
+    font-size: 1.8rem;
+  }
+}
+
 :lang(zh) h2 {
   font-size: clamp(1.7rem, 3.2vw, 2.6rem);
   font-weight: 600;
