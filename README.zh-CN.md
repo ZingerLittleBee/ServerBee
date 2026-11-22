@@ -4,32 +4,39 @@
 
 # ServerBee
 
-**轻量、自托管的 VPS 监控系统 —— 一个 Rust 二进制,实时掌握每台服务器。**
+**自托管的 VPS 监控，细到每一条线路。**
+
+[官网](https://serverbee.app/zh/) · [文档](https://docs.serverbee.app/zh/docs) · [在线状态页示例](https://demo.serverbee.app/status)
 
 [![CI](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml/badge.svg)](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ZingerLittleBee/ServerBee?include_prereleases&sort=semver)](https://github.com/ZingerLittleBee/ServerBee/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/ZingerLittleBee/ServerBee?style=flat)](https://github.com/ZingerLittleBee/ServerBee/stargazers)
-[![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 
 [English](./README.md) | 简体中文
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="apps/landing/src/assets/shots/fleet-zh-dark.webp" />
+  <img src="apps/landing/src/assets/shots/fleet-zh-light.webp" width="900" alt="ServerBee 服务器页面：每台 VPS 一张卡片，显示 CPU、内存、磁盘、流量、延迟、丢包、在线时长和成本" />
+</picture>
 
 </div>
 
 ---
 
-ServerBee 在一处统一监控你的所有服务器。中心 **Server** 通过 WebSocket 接收来自轻量 **Agent** 的指标,存入内嵌 SQLite,并提供实时 React 仪表盘 —— 无外部数据库,无沉重运行时。
+ServerBee 把所有 VPS 收进一个自己搭的面板：实时资源、31 省三网延迟、IP 解锁与风控、告警，还有每台机器的真实成本。每台机器上的轻量 **Agent** 通过 WebSocket 上报，**Server** 是内置 Web UI 和 SQLite 的单个二进制，不需要额外的数据库。
 
-- 🪶 **极致轻量** —— Agent 冷启动约 4.3 MB、稳态约 27 MB,Server 即便管理大量节点也保持精简。
-- ⚡ **实时刷新** —— WebSocket 实时仪表盘,涵盖 CPU、内存、磁盘、网络、负载、温度、磁盘 I/O,以及自行使用 `--features gpu` 构建 Agent 后可用的 NVIDIA GPU 指标(预编译二进制不含 GPU 支持)。
-- 📦 **单一二进制** —— Server 与内嵌 Web UI 打包成一个文件,支持 Docker、一行脚本、Railway 部署。
-- 🔋 **开箱即用** —— 告警、通知、Web 终端、文件管理、Docker、防火墙、Tailscale 与 Headscale、状态页等功能。
-- 🔒 **默认安全** —— OAuth + 2FA、RBAC、审计日志、一次性 Agent 注册、Agent 自主掌管的能力门控。
-- ✅ **充分测试** —— 3800+ 自动化测试，Rust 区域覆盖率实测超过 91%；其中集成套件通过 mock-agent 测试桩驱动真实路由、经由 HTTP + WebSocket 演练控制面，每次 CI 全部通过。
+- 🛰️ **三网线路，逐条看清**。每台机器最多 20 个探测点，持续追踪延迟和丢包，按电信、联通、移动拆开对比，覆盖 31 省。
+- 🌍 **这个 IP 干不干净，能解锁什么**。每台 Agent 用自己的出口 IP 每 12 小时检测 9 项流媒体、AI 与社交服务，IP 一变就自动复测，并标出代理、VPN、Tor、滥用和机房 IP。
+- 🔒 **探针不是后门**。每台主机自己决定 Agent 能做什么，服务端只读不改。终端、远程执行、文件管理和 Docker 默认关闭，在主机上给的临时授权到点自动失效。
+- 💰 **每台机器到底花多少钱**。按账单日统计流量周期并预测用量，算出资源单价，标出闲置却还在扣费的机器。
+- 🖥️ **自己的监控墙，加原生 iOS App**。18 种组件在 12 列网格里拖拽、缩放、锁定。iOS 端用 SwiftUI 编写，零第三方 SDK，不埋点。
+- 🪶 **小机器也跑得动**。Server 是内置 Web UI 和 SQLite 的单个 Rust 二进制。Agent 冷启动约 4.3 MB，稳态约 27 MB。
+
+此外还有告警（26 种规则，推送到 Webhook、Telegram、Bark、邮件或 APNs）、公开状态页、Web 终端、文件管理、Docker、防火墙封禁，以及 Tailscale 与 Headscale。完整列表见[功能特性](#功能特性)。
 
 > [!NOTE]
-> ServerBee 正在活跃开发中(`v1.0.0-alpha.12`),迭代频繁。
+> ServerBee 目前处于 beta 阶段，迭代频繁。
 
 ## 快速开始
 
@@ -61,7 +68,7 @@ Agent 首次连接时会保存每服务器 token 并自动重连 —— code 只
 | | |
 |---|---|
 | **📊 监控** | 实时指标(CPU/内存/磁盘/网络/负载/温度/磁盘 I/O,以及可选的自行构建 NVIDIA GPU 支持)· 历史图表(1h–30d)· Docker 容器统计、日志与事件 · 按计费周期统计月度流量并预测 · 成本洞察(burn rate、资源单价、0–100 价值评分) |
-| **🔔 告警** | 14+ 指标类型 · 阈值 / 离线 / 流量 / 到期规则 · Webhook、Telegram、Bark、邮件、APNs 渠道,支持通知组 |
+| **🔔 告警** | 26 种规则 · 阈值 / 离线 / 流量 / 到期 / 安全事件规则 · Webhook、Telegram、Bark、邮件、APNs 渠道,支持通知组 |
 | **🌐 网络** | Ping 探测(ICMP/TCP/HTTP)· 网络质量监控(96 个中国三网 + 国际预设)· Tailscale 与 Headscale 组网观测(`Direct` 直连与 `DERP` 中继、MagicDNS、密钥过期)· 服务监控(SSL/DNS/HTTP 关键字/TCP/WHOIS)· IP 质量与流媒体解锁检测,含欺诈风险评分 |
 | **🛠️ 远程管理** | 浏览器 Web 终端(WS 上的 PTY)· 沙箱化文件管理 + Monaco 编辑器 · 基于 nftables 的防火墙封禁 · Agent 自主掌管的能力门控(支持主机本地临时授权)· Agent 自动更新 |
 | **🔐 安全与访问** | SSH 登录 / 暴力破解 / 端口扫描检测 · OAuth(GitHub/Google/OIDC)+ TOTP 两步验证 · Tailscale Serve 回环身份认证 · Admin/Member 角色 · 审计日志 · 一次性 Agent 注册码 |
