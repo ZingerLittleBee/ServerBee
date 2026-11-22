@@ -768,7 +768,8 @@ h3 {
 
 /* ---------- Product captures ---------- */
 
-.shot {
+/* The frame around a capture. Scenes lay their layer over it. */
+.shot-frame {
   position: relative;
   overflow: hidden;
   background: var(--surface);
@@ -787,18 +788,34 @@ h3 {
 }
 
 /*
- * A whole window shrunk to a phone's width is unreadable. On a narrow screen a capture that sets --zoom is shown
- * that many times larger, cut to its top left corner, or to the column --shift-x (a fraction of its width) starts.
+ * A whole window shrunk to a phone's width is unreadable. On a narrow screen a capture keeps a readable size
+ * instead: its frame is wider than the screen, runs off the right edge, and pans sideways like the row of phones.
+ * The figure is the strip it pans in, from one edge of the screen to the other.
  */
 @media (max-width: 640px) {
-  .shot-zoom {
-    aspect-ratio: var(--ratio, auto);
+  .shot-pan {
+    display: flex;
+    padding: 4px var(--gutter) 32px;
+    margin: -4px calc(-1 * var(--gutter)) -32px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
   }
 
-  .shot-zoom img {
-    width: calc(var(--zoom) * 100%);
+  /* The strip cuts a shadow where it ends, so the shadow stays inside its padding. */
+  .shot-pan .shot-frame {
+    flex: none;
+    width: max(100%, var(--pan-scale) * min(100%, var(--pan-column)));
+    aspect-ratio: var(--pan-aspect);
+    box-shadow:
+      0 1px 2px light-dark(rgb(22 24 60 / 0.05), rgb(0 0 0 / 0.4)),
+      0 12px 28px -14px light-dark(rgb(22 24 60 / 0.2), rgb(0 0 0 / 0.6));
+  }
+
+  .shot-pan img {
+    width: var(--pan-capture);
     max-width: none;
-    margin-left: calc(var(--zoom) * var(--shift-x, 0) * -100%);
+    margin-left: var(--pan-shift);
   }
 }
 
@@ -917,7 +934,7 @@ section[id] {
 }
 
 /* The capture under the command is its result, so the two share one frame. */
-.grant + .shot {
+.grant + .shot .shot-frame {
   border-radius: 0 0 var(--r-l) var(--r-l);
 }
 
@@ -981,6 +998,19 @@ section[id] {
 @media (max-width: 760px) {
   .grant-notes {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Where the capture pans on its own, the command and the capture each get a whole frame. */
+@media (max-width: 640px) {
+  .grant {
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--cmd-line);
+    border-radius: var(--r-l);
+  }
+
+  .grant + .shot .shot-frame {
+    border-radius: var(--r-l);
   }
 }
 

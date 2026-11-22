@@ -324,9 +324,9 @@
 
 @media (max-width: 640px) {
   /* Follow the enlarged, shifted capture a narrow screen shows. */
-  .shot-zoom > .overlay {
-    inset: 0 auto auto calc(var(--zoom) * var(--shift-x, 0) * -100%);
-    width: calc(var(--zoom) * 100%);
+  .shot-pan .overlay {
+    inset: 0 auto auto var(--pan-shift);
+    width: var(--pan-capture);
     height: auto;
     aspect-ratio: var(--capture-ratio);
   }

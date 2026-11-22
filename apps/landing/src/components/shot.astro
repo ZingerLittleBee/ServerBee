@@ -10,14 +10,18 @@ interface Props {
   eager?: boolean
   lang: Lang
   /**
-   * How a narrow screen shows the capture: `zoom` times larger than fitted, starting `shiftX` of its width in from
-   * the left, in a frame of `ratio` (width / height) or as tall as the enlarged capture.
+   * How a narrow screen shows the capture: `zoom` times the width of the column, so it runs off the right of the
+   * screen and pans sideways. It starts `shiftX` of its width in from the left. With `ratio`, its frame is cut to
+   * the height of a box as wide as the column with that width over height; without, it is as tall as the capture.
    */
-  mobile?: { ratio?: string; shiftX?: number; zoom: number }
+  mobile?: { ratio?: number; shiftX?: number; zoom: number }
   name: ShotName
   /** The frame's layout width as a `sizes` value. */
   sizes: string
 }
+
+/** The widest column a capture is enlarged against: past a phone's width it has grown enough to read. */
+const PAN_COLUMN = 400
 
 const { eager = false, lang, mobile, name } = Astro.props
 const files = import.meta.glob<ImageMetadata>('../assets/shots/*.webp', { eager: true, import: 'default' })
@@ -41,36 +45,52 @@ const widths = [640, 960, 1440, 1920].filter((width) => width < light.width)
 const picture = await themedPicture(light, file('dark'), [...widths, light.width])
 // On a narrow screen an enlarged capture is laid out wider than the viewport, so it needs a larger source.
 const sizes = mobile
-  ? `(max-width: 640px) calc(${mobile.zoom} * (100vw - 40px)), ${Astro.props.sizes}`
+  ? `(max-width: 640px) calc(${mobile.zoom} * min(100vw - 40px, ${PAN_COLUMN}px)), ${Astro.props.sizes}`
   : Astro.props.sizes
-const zoomStyle = mobile
-  ? `--zoom: ${mobile.zoom}; --shift-x: ${mobile.shiftX ?? 0}; --ratio: ${mobile.ratio ?? 'auto'}`
-  : undefined
+
+/** The narrow layout as the stylesheet takes it: the frame against the column, the capture against the frame. */
+function pan({ ratio, shiftX = 0, zoom }: NonNullable<Props['mobile']>): string {
+  const kept = 1 - shiftX
+  const round = (value: number): number => Math.round(value * 1000) / 1000
+  return [
+    `--pan-scale: ${round(zoom * kept)}`,
+    `--pan-column: ${PAN_COLUMN}px`,
+    `--pan-capture: ${round(100 / kept)}%`,
+    `--pan-shift: ${round((-100 * shiftX) / kept)}%`,
+    `--pan-aspect: ${ratio ? round(zoom * kept * ratio) : 'auto'}`
+  ].join('; ')
+}
 ---
 
-<figure class:list={['shot', { 'shot-zoom': mobile }]} style={zoomStyle} data-regions={JSON.stringify(regions)}>
-  <picture>
-    {
-      picture.sources.map((source) => (
-        <source
-          type={source.type}
-          srcset={source.srcset}
-          sizes={sizes}
-          media={source.dark ? '(prefers-color-scheme: dark)' : undefined}
-          data-dark={source.dark ? '' : undefined}
-        />
-      ))
-    }
-    <img
-      src={picture.fallback.src}
-      srcset={picture.fallback.srcset}
-      sizes={sizes}
-      width={light.width}
-      height={light.height}
-      alt={landingCopy[lang].shots[name]}
-      loading={eager ? 'eager' : 'lazy'}
-      fetchpriority={eager ? 'high' : undefined}
-      decoding="async"
-    />
-  </picture>
+<figure
+  class:list={['shot', { 'shot-pan': mobile }]}
+  style={mobile ? pan(mobile) : undefined}
+  data-regions={JSON.stringify(regions)}
+>
+  <div class="shot-frame">
+    <picture>
+      {
+        picture.sources.map((source) => (
+          <source
+            type={source.type}
+            srcset={source.srcset}
+            sizes={sizes}
+            media={source.dark ? '(prefers-color-scheme: dark)' : undefined}
+            data-dark={source.dark ? '' : undefined}
+          />
+        ))
+      }
+      <img
+        src={picture.fallback.src}
+        srcset={picture.fallback.srcset}
+        sizes={sizes}
+        width={light.width}
+        height={light.height}
+        alt={landingCopy[lang].shots[name]}
+        loading={eager ? 'eager' : 'lazy'}
+        fetchpriority={eager ? 'high' : undefined}
+        decoding="async"
+      />
+    </picture>
+  </div>
 </figure>
