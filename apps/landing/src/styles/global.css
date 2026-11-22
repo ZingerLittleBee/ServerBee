@@ -1248,6 +1248,13 @@ section[id] {
   grid-column: 2;
 }
 
+/* On a phone the numeral's column is room a command needs: it takes the full width, like the one in the hero. */
+@media (max-width: 640px) {
+  .steps .cmd {
+    grid-column: 1 / -1;
+  }
+}
+
 .step-text {
   display: grid;
   gap: 2px;
