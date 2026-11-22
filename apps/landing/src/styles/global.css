@@ -250,8 +250,10 @@ h3 {
   transition: text-decoration-color 0.15s;
 }
 
-.out:hover {
-  text-decoration-color: currentcolor;
+@media (hover: hover) {
+  .out:hover {
+    text-decoration-color: currentcolor;
+  }
 }
 
 .out svg {
@@ -280,8 +282,10 @@ h3 {
     transform 0.12s var(--ease-out);
 }
 
-.btn:hover {
-  background: var(--accent-hover);
+@media (hover: hover) {
+  .btn:hover {
+    background: var(--accent-hover);
+  }
 }
 
 .btn:active {
@@ -352,8 +356,10 @@ h3 {
   transition: color 0.15s;
 }
 
-.nav a:hover {
-  color: var(--ink);
+@media (hover: hover) {
+  .nav a:hover {
+    color: var(--ink);
+  }
 }
 
 .header-tools {
@@ -383,9 +389,11 @@ h3 {
     transform 0.12s var(--ease-out);
 }
 
-.tool:hover {
-  color: var(--ink);
-  background: var(--sunken);
+@media (hover: hover) {
+  .tool:hover {
+    color: var(--ink);
+    background: var(--sunken);
+  }
 }
 
 .tool:active {
@@ -485,8 +493,10 @@ h3 {
   transition: border-color 0.15s;
 }
 
-.pill:hover {
-  border-color: var(--line-strong);
+@media (hover: hover) {
+  .pill:hover {
+    border-color: var(--line-strong);
+  }
 }
 
 .pill-dot {
@@ -613,8 +623,10 @@ h3 {
     background-color 0.15s;
 }
 
-.install-tabs button:hover {
-  color: var(--cmd-ink);
+@media (hover: hover) {
+  .install-tabs button:hover {
+    color: var(--cmd-ink);
+  }
 }
 
 .install-tabs button[aria-selected="true"] {
@@ -701,8 +713,10 @@ h3 {
     transform 0.12s var(--ease-out);
 }
 
-.copy:hover {
-  background: var(--cmd-control-hover);
+@media (hover: hover) {
+  .copy:hover {
+    background: var(--cmd-control-hover);
+  }
 }
 
 .copy:active {
@@ -1647,8 +1661,10 @@ section[id] {
   gap: 8px 24px;
 }
 
-.footer-links a:hover {
-  color: var(--ink);
+@media (hover: hover) {
+  .footer-links a:hover {
+    color: var(--ink);
+  }
 }
 
 .footer-end {
@@ -1674,6 +1690,59 @@ section[id] {
 @media (max-width: 560px) {
   .footer .tool {
     display: inline-flex;
+  }
+}
+
+/* ---------- Touch ---------- */
+
+/* A finger needs more room than a pointer: controls grow, and a text link answers around its words as well. */
+@media (pointer: coarse) {
+  .tool {
+    min-width: 44px;
+  }
+
+  .tool,
+  .copy,
+  .header .btn,
+  .install-tabs button {
+    height: 44px;
+  }
+
+  .nav a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .footer-links {
+    row-gap: 0;
+  }
+
+  .footer-links a {
+    display: block;
+    padding-block: 10px;
+  }
+
+  .logo,
+  .pill,
+  .out,
+  .notes a,
+  .stats sup a {
+    position: relative;
+  }
+
+  .logo::after,
+  .pill::after,
+  .out::after,
+  .notes a::after,
+  .stats sup a::after {
+    position: absolute;
+    inset: -10px -6px;
+    content: "";
+  }
+
+  .stats sup a::after {
+    inset: -12px;
   }
 }
 
