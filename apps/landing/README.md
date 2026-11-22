@@ -111,6 +111,9 @@ as fixtures; the header of [the script](scripts/capture.ts) lists which. `--only
 Each run also rewrites `src/assets/shots/regions.json`, the positions the animated scenes read. Commit it with the
 captures it describes. `--regions-only` records the regions again without retaking any screenshot.
 
+The repository's [README](../../README.md) and its [Chinese version](../../README.zh-CN.md) show the `fleet` captures
+straight from `src/assets/shots`, so those four files keep their names.
+
 The iOS captures come from the iOS Simulator, signed in to the same demo server. Install a Debug build of
 [apps/ios](../ios/) on a booted simulator, run `capture` first, then:
 

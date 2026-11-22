@@ -4,32 +4,39 @@
 
 # ServerBee
 
-**Lightweight, self-hosted VPS monitoring — one Rust binary, real-time everything.**
+**Self-hosted VPS monitoring, down to every route.**
+
+[Website](https://serverbee.app) · [Docs](https://docs.serverbee.app/en/docs) · [Status page demo](https://demo.serverbee.app/status)
 
 [![CI](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml/badge.svg)](https://github.com/ZingerLittleBee/ServerBee/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/ZingerLittleBee/ServerBee?include_prereleases&sort=semver)](https://github.com/ZingerLittleBee/ServerBee/releases)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/ZingerLittleBee/ServerBee?style=flat)](https://github.com/ZingerLittleBee/ServerBee/stargazers)
-[![Rust](https://img.shields.io/badge/Rust-2024-000000?logo=rust&logoColor=white)](https://www.rust-lang.org)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 
 English | [简体中文](./README.zh-CN.md)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="apps/landing/src/assets/shots/fleet-en-dark.webp" />
+  <img src="apps/landing/src/assets/shots/fleet-en-light.webp" width="900" alt="ServerBee Servers page showing one card per VPS, with CPU, memory, disk, traffic, network speed, latency, packet loss, uptime and cost." />
+</picture>
 
 </div>
 
 ---
 
-ServerBee watches all your servers from one place. A central **server** receives metrics from lightweight **agents** over WebSocket, stores them in embedded SQLite, and serves a real-time React dashboard — no external database, no heavy runtime.
+ServerBee watches your VPS fleet from one panel you host yourself: live load, carrier routes, IP unlock and risk, alerts and what each box costs. A lightweight agent on each VPS dials out over WebSocket to a single server binary with the web UI and SQLite inside, so there is no external database to run.
 
-- 🪶 **Tiny footprint** — agents use ~4.3 MB at cold start and ~27 MB in steady state, and the server stays lightweight as your fleet grows.
-- ⚡ **Real-time** — live WebSocket dashboard for CPU, memory, disk, network, load, temperature, disk I/O, and optional NVIDIA GPU metrics from a self-built Agent (`--features gpu`; prebuilt binaries exclude GPU support).
-- 📦 **Single binary** — server + embedded web UI in one file. Deploy with Docker, a one-line script, or Railway.
-- 🔋 **Batteries included** — alerts, notifications, web terminal, file manager, Docker, firewall, Tailscale & Headscale, status pages, and more.
-- 🔒 **Secure by default** — OAuth + 2FA, RBAC, audit logs, one-time agent enrollment, agent-owned capability gates.
-- ✅ **Battle-tested** — 3,800+ automated tests and over 91% measured Rust region coverage, including integration suites that drive the real router over HTTP + WebSocket via a mock-agent harness; green on every CI run.
+- 🛰️ **Carrier routes, tracked through peak hours.** Assign up to 20 probe targets per server to measure latency and packet loss continuously. China Telecom, Unicom and Mobile across 31 provinces, plus Cloudflare, Google DNS and AWS Tokyo, come compiled in.
+- 🌍 **IP unlocks and risk, tested automatically.** Each agent checks 9 services every 12 hours and whenever its IP changes, splitting full Netflix from originals-only and reporting ChatGPT's region. Proxy, VPN, Tor, abuser and hosting flags come with it.
+- 🔒 **A monitoring agent, not a backdoor.** Each host controls what its agent may do; the server reads that policy and can never edit it. Terminal, remote exec, file manager and Docker ship disabled, and any temporary grant made on the host expires by itself.
+- 💰 **What each server actually costs.** Traffic cycles follow each server's billing day, paired with a usage forecast. Compare per-resource unit cost across your fleet and flag idle boxes that are still on your bill.
+- 🖥️ **Custom dashboards and a native iOS app.** Build as many dashboards as you want from 18 widgets on a 12-column grid. The SwiftUI iOS app uses Apple frameworks alone for live load and push alerts, with no third-party SDKs or analytics.
+- 🪶 **Small footprint, two commands to start.** One small Rust server binary carries the web UI and SQLite; run it directly, in Docker or on Railway. Each agent uses about 4.3 MB at cold start and about 27 MB in steady state.
+
+Also built in: 26 alert rule types (Webhook, Telegram, Bark, email and APNs), a public status page with 90-day uptime and hidden server IPs, a web terminal, a file manager, Docker, a firewall blocklist, plus Tailscale and Headscale; see the full list in the [Features](#features) table below.
 
 > [!NOTE]
-> ServerBee is in active development (`v1.0.0-alpha.12`). Expect rapid iteration.
+> ServerBee is in 1.0 beta; expect frequent updates as it approaches a stable release.
 
 ## Quick Start
 
@@ -61,7 +68,7 @@ The Agent generates and persists its run token before claiming the offer, then r
 | | |
 |---|---|
 | **📊 Monitoring** | Real-time metrics (CPU/mem/disk/network/load/temp/disk I/O, plus optional self-built NVIDIA GPU support) · historical charts (1h–30d) · Docker container stats, logs & events · monthly traffic statistics with billing-cycle prediction · cost insights (burn rate, per-resource unit cost, 0–100 value score) |
-| **🔔 Alerts** | 14+ metric types · threshold / offline / traffic / expiration rules · Webhook, Telegram, Bark, Email & APNs channels with notification groups |
+| **🔔 Alerts** | 26 rule types · threshold / offline / traffic / expiration / security-event rules · Webhook, Telegram, Bark, Email & APNs channels with notification groups |
 | **🌐 Network** | Ping monitoring (ICMP/TCP/HTTP) · network-quality probing (96 China 3-ISP + international presets) · Tailscale & Headscale mesh monitoring (`Direct` vs `DERP`, MagicDNS, key expiry) · service monitors (SSL/DNS/HTTP-keyword/TCP/WHOIS) · IP-quality & streaming-unlock detection with fraud scoring |
 | **🛠️ Remote management** | Browser web terminal (PTY over WS) · sandboxed file manager with Monaco editor · firewall blocklist via nftables · agent-owned capability gates with host-local temporary grants · agent auto-update |
 | **🔐 Security & access** | SSH login / brute-force / port-scan detection · OAuth (GitHub/Google/OIDC) + TOTP 2FA · Tailscale Serve loopback identity auth · Admin/Member RBAC · audit logs · one-time agent enrollment codes |
@@ -137,10 +144,6 @@ make cargo-clippy     # Rust lint
 ### Testing & quality
 
 ServerBee ships with **3,800+ automated tests** — 3,200+ Rust (unit + 42 integration suites that drive the real Axum router over HTTP/WebSocket with a mock-agent harness) and 600+ frontend Vitest tests. Coverage is measured with `cargo-llvm-cov` (over 91% region overall; common ~98%, agent ~90%, server ~92%). CI runs zero-warning Clippy, the Rust suite, and frontend type/lint checks for the areas each change touches. See the [Testing & Quality](https://docs.serverbee.app/en/docs/testing) guide.
-
-### Commit and PR attribution
-
-`bun install` sets up a [Lefthook](https://lefthook.dev) `commit-msg` hook that blocks `Co-authored-by` trailers, "Generated by/with" agent text, `🤖 Generated`, `Assisted-by`, and any email address on `git commit`. The **Check commit attribution** CI job scans every commit in a pull request and the PR title and description, so `--no-verify` or `LEFTHOOK=0` will not get past it. To fix a rejected commit, run `git rebase -i <base-sha>`, drop the matching lines, and force-push. Maintainers should mark **Check commit attribution** as a required check in branch protection; the workflow cannot enable that itself.
 
 ## API
 
