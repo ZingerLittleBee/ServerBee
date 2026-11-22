@@ -425,8 +425,27 @@ h3 {
   }
 }
 
-@media (max-width: 420px) {
-  .header .tool-github {
+/* A phone's bar holds the logo, the docs, the other language and the install button. The theme toggle moves to
+   the footer, and GitHub is already linked from the hero. */
+@media (max-width: 560px) {
+  .header-bar {
+    gap: 8px;
+  }
+
+  .header .tool-github,
+  .header [data-theme-toggle] {
+    display: none;
+  }
+
+  .header .btn {
+    padding-inline: 12px;
+    margin-left: 4px;
+  }
+}
+
+/* The narrowest phones lose the docs link too: the footer has it. */
+@media (max-width: 340px) {
+  .nav {
     display: none;
   }
 }
@@ -1619,10 +1638,30 @@ section[id] {
   color: var(--ink);
 }
 
-.footer-legal {
+.footer-end {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
   margin-top: 16px;
+}
+
+.footer-legal {
   font-size: 0.875rem;
   color: var(--ink-3);
+}
+
+/* Shown where the header has no room for its own. */
+.footer .tool {
+  display: none;
+  flex: none;
+  margin-right: -8px;
+}
+
+@media (max-width: 560px) {
+  .footer .tool {
+    display: inline-flex;
+  }
 }
 
 /* ---------- Not found ---------- */
