@@ -70,6 +70,12 @@ server. The build reads `Cargo.toml` and `apps/ios/project.yml`, so build from a
 Set `SITE_URL` when the page is served from an origin other than `https://serverbee.app`. Canonical links, `hreflang`
 alternates, link preview images, the sitemap and `robots.txt` all use it.
 
+Production is the Vercel project
+[`serverbee-landing`](https://vercel.com/zingerlittlebees-projects/serverbee-landing): root directory `apps/landing`,
+the Astro preset, Node 24.x, no environment variables. It serves `serverbee.app`, redirects `www.serverbee.app` to
+it, and deploys every push to `main`. This was the state on 2026-11-22. Project settings and domain assignments are
+external state: check them live before a deployment decision.
+
 ## Checks
 
 ```bash
