@@ -659,6 +659,12 @@ h3 {
   display: inline-block;
 }
 
+/* An argument wraps as a whole, and only breaks inside when it is wider than the line. */
+.cmd-word {
+  display: inline-block;
+  max-width: 100%;
+}
+
 .cmd-dim {
   color: var(--cmd-dim);
 }

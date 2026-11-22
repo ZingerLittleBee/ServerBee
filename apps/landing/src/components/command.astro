@@ -14,11 +14,32 @@ const copy = landingCopy[lang].hero
 // The installer URL is the longest and least interesting part of a command, so it is dimmed.
 const url = /https:\/\/\S+/.exec(command)?.[0] ?? ''
 const [before, after = ''] = url ? command.split(`${url} `, 2) : [command]
+
+function escapeHtml(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+}
+
+/** Each argument in one piece: a line that breaks after a hyphen of `--server-url` reads as another argument. */
+function words(text: string): string {
+  return text
+    .split(' ')
+    .map((word) => (word ? `<span class="cmd-word">${escapeHtml(word)}</span>` : ''))
+    .join(' ')
+}
+
+/** A narrow screen breaks the URL after a slash of its path rather than in the middle of a name. */
+function breakable(address: string): string {
+  const [scheme, rest = ''] = address.split('://')
+  return `${escapeHtml(scheme)}://${rest.split('/').map(escapeHtml).join('/<wbr>')}`
+}
+
+// Built as one string: the command keeps its white space, so the markup must not add any.
+const html = `${words(before)}<span class="cmd-dim">${breakable(url)}</span> <span class="cmd-seg">${words(after)}</span>`
 ---
 
 <div class="cmd">
   <span class="cmd-prompt" aria-hidden="true">$</span>
-  <code>{before}<span class="cmd-dim">{url}</span>{' '}<span class="cmd-seg">{after}</span></code>
+  <code set:html={html} />
   <button
     class="copy"
     type="button"
