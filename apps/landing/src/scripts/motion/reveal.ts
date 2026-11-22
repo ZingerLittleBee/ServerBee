@@ -7,6 +7,8 @@ type Kind = 'item' | 'shot' | 'text'
 
 /** A group arrives once one of its members is this far up from the bottom of the screen. */
 const LINE = 0.88
+/** An observer's margin that ends the screen at that line. */
+export const BELOW_LINE = `0px 0px -${Math.round((1 - LINE) * 100)}% 0px`
 
 export function mountReveal(): void {
   const groups: HTMLElement[][] = []
@@ -43,7 +45,10 @@ export function mountReveal(): void {
     for (const list of all('.points')) {
       group(list.children, 'item')
     }
-    group(all('.more-group'), 'item')
+    // The kit arrives a group at a time: a title, then its tiles.
+    for (const kit of all('.more-group')) {
+      group(kit.querySelectorAll('h3, .more-tile'), 'item')
+    }
     group(all('.steps > li'), 'item')
     group(all('.flow > *'), 'item')
     group(all('.stats > div'), 'item')
@@ -70,7 +75,7 @@ export function mountReveal(): void {
         }
       }
     },
-    { rootMargin: `0px 0px -${Math.round((1 - LINE) * 100)}% 0px` }
+    { rootMargin: BELOW_LINE }
   )
   for (const members of groups) {
     for (const member of members) {

@@ -1,5 +1,6 @@
 ---
 import Heading from '@/components/heading.astro'
+import Sketch from '@/components/sketch.astro'
 import { landingCopy } from '@/i18n/copy'
 import type { Lang } from '@/lib/site'
 
@@ -9,6 +10,21 @@ interface Props {
 
 const { lang } = Astro.props
 const copy = landingCopy[lang].more
+
+const AFTER_COMMA = /(?<=，)/
+/** How many Chinese characters fit on one line of a tile at its narrowest, on a phone. */
+const LINE = 16
+/** A clause's width in Chinese characters. Latin letters, digits and spaces take about half of one. */
+const width = (text: string): number => [...text].reduce((sum, char) => sum + (char > '\u2e7f' ? 1 : 0.55), 0)
+
+/**
+ * A Chinese caption wraps after a comma before it wraps inside a clause, as the headings do, so a line does not end
+ * mid-word. A clause too long for one line is left to wrap where it must.
+ */
+function clauses(text: string): { clause: string; whole: boolean }[] {
+  const parts = text.split(AFTER_COMMA)
+  return parts.map((clause) => ({ clause, whole: parts.length > 1 && width(clause) <= LINE }))
+}
 ---
 
 <section id="more" class="more">
@@ -19,14 +35,15 @@ const copy = landingCopy[lang].more
         copy.groups.map((group) => (
           <section class="more-group">
             <h3>{group.t}</h3>
-            <dl>
+            <ul class="more-tiles">
               {group.items.map((item) => (
-                <div>
-                  <dt>{item.t}</dt>
-                  <dd>{item.d}</dd>
-                </div>
+                <li class="more-tile">
+                  <Sketch id={item.id} lang={lang} />
+                  <h4>{item.t}</h4>
+                  <p>{clauses(item.d).map(({ clause, whole }) => (whole ? <span class="clause">{clause}</span> : clause))}</p>
+                </li>
               ))}
-            </dl>
+            </ul>
           </section>
         ))
       }

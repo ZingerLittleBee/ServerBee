@@ -16,6 +16,7 @@ every link from this page to the documentation is absolute.
 | Where a scene finds things inside a screenshot | [Capture regions](src/assets/shots/regions.json), written by the web capture script |
 | Head tags, fonts, canonical origin | [Layout](src/layouts/base.astro), [Astro configuration](astro.config.ts) |
 | Product screenshots | [Web captures](scripts/capture.ts), [iOS captures](scripts/capture-ios.ts), [link previews](scripts/capture-og.ts) |
+| The drawings in the kit section | [Sketches](src/components/sketch.astro), their words under `more.sketch` in the [copy](src/i18n/copy.ts), their runtime in [kit.ts](src/scripts/motion/kit.ts) |
 | Contracts with the rest of the repository | [Contract checker](scripts/check-contracts.ts), [Landing CI](../../.github/workflows/landing.yml) |
 
 ## Stack
@@ -27,6 +28,9 @@ every link from this page to the documentation is absolute.
 - Latin fonts are self-hosted through Astro's fonts API. Chinese text uses the reader's system fonts.
 - Screenshots are real captures of the product, kept lossless in `src/assets`. The build resizes them to AVIF, with
   WebP as the fallback, and each one has a light and a dark variant that follows the theme.
+- The kit section draws each feature instead of capturing it: a sketch is markup and CSS around sample data, in
+  the product's own terms. Change a number there only together with the rule it shows, such as an alert firing on
+  7 of 10 samples.
 - English is served at `/` and Simplified Chinese at `/zh/`. Both locales render the same components from one copy
   file, and TypeScript requires every string in both.
 
@@ -43,6 +47,8 @@ script times.
 - A scene animates a real screenshot. It lays a layer over the capture, covers a region with the color sampled
   beside it, and moves a copy of that region. The regions come from `regions.json`, which the capture script
   reads from the product's own DOM, so a scene stays aligned when its capture is retaken.
+- A sketch in the kit section starts empty and draws itself once, when it is in view. Its transitions live on the
+  finished state, and the runtime's `data-empty` mark holds the first frame, so removing the mark plays it.
 - With reduced motion the hero's routes are drawn and still, the page rail follows the scroll, and nothing else
   mounts.
 

@@ -1,0 +1,268 @@
+---
+import Check from '@lucide/astro/icons/check'
+import FileText from '@lucide/astro/icons/file-text'
+import Lock from '@lucide/astro/icons/lock'
+import { type KitId, landingCopy } from '@/i18n/copy'
+import type { Lang } from '@/lib/site'
+
+/*
+ * A feature of the kit section, drawn small: what its screen in the panel shows, with sample data. Not a capture.
+ * The numbers follow the product's rules (an alert fires on 7 of 10 samples, an upgrade has five stages, a failed
+ * login is recorded as "anonymous"), and the addresses are documentation ranges.
+ */
+
+interface Props {
+  id: KitId
+  lang: Lang
+}
+
+const { id, lang } = Astro.props
+const copy = landingCopy[lang].more.sketch
+
+/** CPU samples of the last ten minutes, in percent, against a rule that fires above 80. */
+const SAMPLES = [58, 86, 91, 64, 88, 93, 84, 72, 90, 87]
+const THRESHOLD = 80
+/** The uptime bar's cells, oldest first, and the one day that was degraded. */
+const DAYS = 60
+const DEGRADED = 37
+const CHECKS = ['SSL', 'DNS', 'HTTP', 'TCP', 'WHOIS']
+/** Traffic in TB: used so far, forecast for the end of the cycle, the quota, and where the meter ends. */
+const USED = 1.42
+const FORECAST = 2.3
+const QUOTA = 2
+const METER = 2.5
+const share = (traffic: number): string => `${((traffic / METER) * 100).toFixed(1)}%`
+/** Running containers and their share of a core, in percent. */
+const CONTAINERS: [name: string, cpu: number][] = [
+  ['caddy', 12],
+  ['postgres', 46],
+  ['app', 24]
+]
+/** One mark per stage of an agent upgrade: downloading, verifying, pre-flight, installing, restarting. */
+const STAGES = 5
+const SIGN_INS = ['GitHub', 'Google', 'OIDC', 'Tailscale', 'TOTP 2FA', 'API keys']
+const LOG: [time: string, action: string, user: string][] = [
+  ['12:30', 'login', 'admin'],
+  ['12:31', 'terminal_opened', 'admin'],
+  ['12:42', 'file_write', 'admin'],
+  ['13:07', 'login_failed', 'anonymous']
+]
+---
+
+<div class:list={['sketch', `sketch-${id}`]} aria-hidden="true">
+  {
+    id === 'alerts' && (
+      <>
+        <div class="sk-row">
+          <b>CPU &gt; {THRESHOLD}%</b>
+          <span class="sk-dim">{copy.alerts.window}</span>
+        </div>
+        <div class="sk-bars" style={`--at:${THRESHOLD}%`}>
+          {SAMPLES.map((sample, index) => (
+            <i class:list={{ over: sample > THRESHOLD }} style={`--h:${sample}%;--i:${index}`} />
+          ))}
+        </div>
+        <div class="sk-row">
+          <span>{copy.alerts.samples}</span>
+          <b class="sk-warn sk-after">{copy.alerts.firing}</b>
+        </div>
+      </>
+    )
+  }
+  {
+    id === 'status' && (
+      <>
+        <div class="sk-row">
+          <b>LON · Backup</b>
+          <b class="sk-ok">99.98%</b>
+        </div>
+        <div class="sk-days">
+          {Array.from({ length: DAYS }, (_, day) => (
+            <i class:list={{ degraded: day === DEGRADED }} style={`--i:${day}`} />
+          ))}
+        </div>
+        <div class="sk-row sk-dim">
+          <span>{copy.status.ago}</span>
+          <span>{copy.status.today}</span>
+        </div>
+      </>
+    )
+  }
+  {
+    id === 'monitors' &&
+      CHECKS.map((check, index) => (
+        <div class="sk-check" style={`--i:${index}`}>
+          <b>{check}</b>
+          <span>{copy.monitors[index]}</span>
+          <Check />
+        </div>
+      ))
+  }
+  {
+    id === 'traffic' && (
+      <>
+        <div class="sk-row">
+          <span>{copy.traffic.cycle}</span>
+          <b>
+            {USED} / {QUOTA} TB
+          </b>
+        </div>
+        <div class="sk-meter" style={`--used:${share(USED)};--forecast:${share(FORECAST)};--quota:${share(QUOTA)}`}>
+          <i class="sk-used" />
+          <i class="sk-forecast" />
+          <i class="sk-quota" />
+        </div>
+        <div class="sk-row">
+          <span>{copy.traffic.forecast}</span>
+          <b class="sk-warn">{copy.traffic.over}</b>
+        </div>
+        <div class="sk-row sk-dim">
+          <span>{copy.traffic.perCore}</span>
+          <span>{copy.traffic.monthly}</span>
+        </div>
+      </>
+    )
+  }
+  {
+    id === 'terminal' && (
+      <>
+        <div><span class="sk-prompt">root@lon-backup:~#</span> <b>uptime</b></div>
+        <div>12:30 up 41 days, load 0.43</div>
+        <div><span class="sk-prompt">root@lon-backup:~#</span> <b class="sk-typed">htop</b><i class="sk-cursor" /></div>
+      </>
+    )
+  }
+  {
+    id === 'files' && (
+      <>
+        <div class="sk-dim">/srv/app</div>
+        <div class="sk-file">
+          <FileText />
+          <b>Caddyfile</b>
+          <span class="sk-dim">1.2 kB</span>
+        </div>
+        <div class="sk-file">
+          <FileText />
+          <b>compose.yml</b>
+          <span class="sk-dim">840 B</span>
+        </div>
+        {['.env', 'tls.key'].map((name, index) => (
+          <div class="sk-file sk-denied">
+            <Lock />
+            <span class="sk-name">{name}</span>
+            <span class="sk-after" style={`--i:${index}`}>{copy.files.blocked}</span>
+          </div>
+        ))}
+      </>
+    )
+  }
+  {
+    id === 'docker' && (
+      <>
+        {CONTAINERS.map(([name, cpu], index) => (
+          <div class="sk-box">
+            <i class="sk-state sk-running" />
+            <b>{name}</b>
+            <span class="sk-load">
+              <i style={`--w:${cpu}%;--i:${index}`} />
+            </span>
+            <span>{copy.docker.running}</span>
+          </div>
+        ))}
+        <div class="sk-box sk-dim">
+          <i class="sk-state" />
+          <span>backup</span>
+          <span />
+          <span>{copy.docker.exited}</span>
+        </div>
+      </>
+    )
+  }
+  {
+    id === 'upgrades' && (
+      <>
+        <div class="sk-row">
+          <b>serverbee-agent</b>
+          <span class="sk-dim">LON · Backup</span>
+        </div>
+        <div class="sk-stages">
+          {Array.from({ length: STAGES }, (_, stage) => (
+            <i style={`--i:${stage}`} />
+          ))}
+        </div>
+        <div class="sk-row sk-after">
+          <span>{copy.upgrades.verified}</span>
+          <b class="sk-ok">
+            {STAGES} / {STAGES}
+          </b>
+        </div>
+        <div class="sk-dim">{copy.upgrades.rollback}</div>
+      </>
+    )
+  }
+  {
+    id === 'security' && (
+      <>
+        <div class="sk-row">
+          <span>sshd</span>
+          <b>203.0.113.7</b>
+        </div>
+        <div class="sk-row">
+          <span>{copy.security.failed}</span>
+          <b class="sk-warn">× 14</b>
+        </div>
+        <div class="sk-rule sk-after" />
+        <div class="sk-row sk-after">
+          <span>{copy.security.blocklist}</span>
+          <b class="sk-ok">{copy.security.blocked}</b>
+        </div>
+      </>
+    )
+  }
+  {
+    id === 'accounts' && (
+      <div class="sk-chips">
+        {[...SIGN_INS, 'admin', 'member'].map((chip, index) => (
+          <span class:list={['sk-chip', { 'sk-current': chip === 'admin' }]} style={`--i:${index}`}>
+            {chip}
+          </span>
+        ))}
+      </div>
+    )
+  }
+  {
+    id === 'tailscale' && (
+      <>
+        <div class="sk-peer">
+          <b>blr-dev</b>
+          <span class="sk-link">
+            <i />
+          </span>
+          <span class="sk-ok">{copy.tailscale.direct}</span>
+        </div>
+        <div class="sk-peer">
+          <b>yyz-lab</b>
+          <span class="sk-link sk-relayed">
+            <em>DERP</em>
+            <i />
+          </span>
+          <span class="sk-warn">{copy.tailscale.relayed}</span>
+        </div>
+        <div class="sk-row sk-dim">
+          <span>{copy.tailscale.panel}</span>
+          <span>{copy.tailscale.tailnet}</span>
+        </div>
+      </>
+    )
+  }
+  {
+    id === 'audit' &&
+      LOG.map(([time, action, user], index) => (
+        <div class:list={['sk-entry', { 'sk-warn': action === 'login_failed' }]} style={`--i:${index}`}>
+          <span class="sk-dim">{time}</span>
+          <span>{action}</span>
+          <b>{user}</b>
+        </div>
+      ))
+  }
+</div>

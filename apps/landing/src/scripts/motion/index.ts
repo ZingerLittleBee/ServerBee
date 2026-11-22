@@ -8,6 +8,7 @@ import { mountFlow } from './flow'
 import { mountGrant } from './grant'
 import { mountHero } from './hero'
 import { mountIpQuality } from './ip-quality'
+import { mountKit } from './kit'
 import { mountNetwork } from './network'
 import { mountPush } from './push'
 import { mountRail } from './rail'
@@ -27,5 +28,6 @@ export function mountMotion(): void {
   mountGrant()
   mountDashboard()
   mountPush()
+  mountKit()
   mountFlow()
 }
