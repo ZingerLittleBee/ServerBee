@@ -812,6 +812,16 @@ h3 {
   margin-top: clamp(28px, 3.4vw, 44px);
 }
 
+/* The hero's routes run down the page margin, past the facts and the install block. They take a strip of 69px
+   there: 14px of air, six lanes 7px apart, and 20px to the edge of the page. Where the margin is narrower, the
+   two give up the rest. */
+@media (min-width: 1024px) {
+  .hero-row,
+  .hero .install {
+    margin-right: max(0px, 69px - (100vw - 100%) / 2);
+  }
+}
+
 /* ---------- Product captures ---------- */
 
 /* The frame around a capture. Scenes lay their layer over it. */
