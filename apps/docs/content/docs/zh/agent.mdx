@@ -399,7 +399,7 @@ Agent 采集以下指标（来源于 `sysinfo` 库、Linux 下的 `/proc`，以�
 
 ## 资源开销
 
-Agent CPU 开销可忽略（&lt;1%），内存稳态在数十 MB 级别。完整的 Agent 与 Server CPU/内存/磁盘/网络实测数据见[资源开销](/zh/docs/resource-usage)。
+在 `v1.0.0-beta.7` Linux 实测中，静态 musl Agent 空载稳态占用单核 `0.14%–0.19%` CPU、`~11.1 MiB` `VmRSS`（私有 `RssAnon` 仅 `0.82–0.91 MiB`，其余 `10.27 MiB` 为可回收可执行文件代码页；热缓存 systemd cgroup 内存 `2.62–2.95 MiB`，关闭 `[security] enabled = false` 后为 `1.21 MiB`）以及约 `158 B/s`（约 `412 MB/月`）网络带宽。完整的硬件要求、压测结果、cgroup 下限与 Server 观测数据见[资源开销](/zh/docs/resource-usage)。
 
 <Cards>
   <Card title="Server 安装配置" href="/zh/docs/server" />

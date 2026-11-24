@@ -1,31 +1,75 @@
 ---
 title: 资源开销
-description: ServerBee Agent 与 Server 的历史 CPU、内存、磁盘和网络观测记录。
+description: ServerBee Agent 的实测 CPU、内存、磁盘、网络与硬件要求，以及 Server 的历史资源观测记录。
 icon: Gauge
 ---
 
-本页保留 ServerBee **Agent** 与 **Server** 的历史资源观测记录，不代表当前版本的基准测试。数据库增长估算见[存储与容量规划](/zh/docs/storage-sizing)。
-
-<Callout type="info">
-来源为本页原有的 v0.9.3 测量笔记，除另有说明外，日期为 2026-05-19。原始测试日志及二进制的具体链接方式未随笔记归档。内存和 CPU 数值是历史观测，Agent 网络用量则是按协议估算。设置资源限制前，请测量实际部署版本、分配器、Agent 数量、启用的采集器和查询负载。
-</Callout>
+本页记录 ServerBee **Agent**（`v1.0.0-beta.7`）的实测资源需求与运行性能，同时保留 **Server** 与早期版本的历史资源观测记录。SQLite 数据库增长估算见[存储与容量规划](/zh/docs/storage-sizing)。
 
 ## Agent
 
-原笔记记录的环境为：4 核 AMD EPYC 7B13 / 8 GB / Ubuntu 24.04（KVM），Agent v0.9.3，采集间隔 3 秒，启用温度采集，经 HTTPS WebSocket 上报至远端 Server。
+### 最低与推荐硬件 / 系统要求
 
-| 资源 | 冷启动（约 90 秒） | 运行 8 小时后 | 范围 |
-|------|-------------------|---------------|------|
-| 内存（systemd cgroup） | ~4.3 MB，峰值 ~5.1 MB | ~27 MB，峰值 ~28 MB | Cgroup 统计，与进程 RSS 口径不同 |
-| 内存（`ps` RSS） | ~10 MB | ~34 MB | 进程驻留内存，包含共享映射 |
-| CPU | ~0.7%（单核） | ~0.5%（单核） | 当时的采集负载 |
-| 线程数 | 10 | 9–10 | 当时的 tokio runtime |
-| 二进制大小 | ~11 MB | — | 历史 linux-amd64 二进制 |
-| 网络 | 估算 ≤ 1–2 KB/s | — | 每 3 秒一条 `SystemReport` JSON，加上 ping/pong；随指标项变化 |
+以下配置要求基于 `serverbee-agent` `v1.0.0-beta.7`（静态链接 musl 二进制、服务端下发 3 秒上报间隔、默认能力集）在 Linux VM 上的受控实测。完整场景数据、压力测试与复现方法见 [Agent 性能基准报告](https://github.com/ZingerLittleBee/ServerBee/blob/main/docs/research/2026-11-24-agent-resource-benchmark.md)。
 
-八小时观测期间内存有所增长。仅凭这些读数无法确认长期平台，也无法区分分配器驻留与内存泄漏。主机操作系统不能证明二进制实际使用的 libc。
+| 资源 | 极限下限（极简配置） | 最低可用（默认配置） | 推荐配置（生产 / 活跃使用） | 说明 |
+|------|----------------------|----------------------|-----------------------------|------|
+| **CPU** | 1 vCPU（`CPUQuota=5%`） | 1 vCPU（共享 / 突发） | 1+ vCPU | 稳态仅占单核 `0.14%–0.19%`；降至 `CPUQuota=5%` 仍为 `0` 限流 |
+| **可用内存（Agent 预算）** | **16 MiB**（`[security] enabled = false`，无 swap） | **32 MiB**（冷启动 + 默认 `security_events`） | **64 MiB**（使用 Web 终端或 `>500` 进程建议 **128 MiB**） | 冷缓存默认配置 cgroup 峰值 `21.0 MiB`（`16 MiB` 零回收停顿，`24 MiB` 零压力） |
+| **宿主机 VPS 总内存** | 64–128 MiB Linux VPS | 128–256 MiB Linux VPS | 512 MiB+ Linux VPS | Agent 仅占 512 MiB VPS 的 `<2%–5%`，主机内存主要由内核与 init 占用 |
+| **磁盘空间** | **20 MiB** | **30 MiB** | **50–100 MiB** | 二进制 `13.36 MiB`（`amd64`）/ `12.10 MiB`（`arm64`），总安装约 `13.53 MiB`；需预留 `2×` 二进制空间用于自动升级 `.bak` 回滚 |
+| **网络带宽** | **2 Kbps**（约 `0.45 GB/月`） | **5 Kbps**（约 `0.5 GB/月`） | **100 Kbps+**（交互式 Web 终端 / 文件管理） | 空载稳态实测：`158 B/s` 上行 + `0.8 B/s` 下行（约 `412 MB/月`） |
+| **操作系统与 libc** | 带 `/proc` 的 Linux（无需 `glibc`） | Linux + systemd 或 OpenRC | Linux 5.x/6.x + `systemd`（`cgroup v2`） | 官方 Linux `amd64`/`arm64` 二进制为静态链接 musl（`not a dynamic executable`） |
+| **文件描述符上限（`nofile`）** | `>= 256`（主机进程 `<150`） | `>= 1024`（默认 `ulimit -n`） | **`>= 4096`–`65536`**（主机进程 `>500`） | `sysinfo` 会为进程计数持久打开 `/proc/<pid>/stat` FD（约 1:1 随主机进程增长）；高密主机建议设置 `LimitNOFILE=65536` |
+
+### 实测性能（`v1.0.0-beta.7`）
+
+<Callout type="info">
+实测日期为 2026-11-24：使用官方 `serverbee-agent` `v1.0.0-beta.7`（`linux-amd64` 静态 musl，`deploy/install.sh` 二进制安装）运行于 Ubuntu 24.04.5 LTS（`systemd 255`、`cgroup v2`、KVM AMD EPYC），通过公网 TLS WebSocket 以 3 秒间隔上报至 `v1.0.0-beta.7` Server。
+</Callout>
+
+#### 稳态空载浸泡（300 秒）
+
+| 指标 | 1 vCPU / 4 GiB VM | 2 vCPU / 8 GiB VM | 统计口径 |
+|------|-------------------|-------------------|----------|
+| **CPU（单核均值 / p95 / 峰值）** | `0.144%` / `0.426%` / `0.544%` | `0.190%` / `0.568%` / `0.791%` | Cgroup v2 `cpu.stat`（`/proc` 窗口均值 `0.143%` / `0.190%`） |
+| **Agent `VmRSS`（`RssAnon` + `RssFile`）** | `11.09 MiB`（`0.82` + `10.27 MiB`） | `11.18 MiB`（`0.91` + `10.27 MiB`） | 进程驻留内存（`PSS` 为 `11.08` / `11.18 MiB`） |
+| **Systemd cgroup 内存（热缓存）** | `2.62 MiB`（峰值 `2.75 MiB`） | `2.95 MiB`（峰值 `3.19 MiB`） | 含 `journalctl -f` 子进程；关闭 `[security] enabled = false` 后下降 **54%** 至 `1.21 MiB` |
+| **Systemd cgroup 内存（冷缓存）** | `19.0 MiB`（峰值 `21.0 MiB`） | — | `drop_caches=3` 后以 `MemoryMax=24M` 启动（计入可执行文件代码页） |
+| **内存稳定性（300 秒 `RssAnon` 变化）** | `+12 KiB`（`+1.89 KiB/min`） | `+8 KiB`（`+0.65 KiB/min`） | 连续 100 次采集呈平稳平台，无泄漏 |
+| **线程数 / 打开文件描述符** | `3` / `46`（`43–47`） | `5` / `51`（`48–52`） | Tokio 默认按逻辑核数启动工作线程 |
+| **网络带宽（精确 TCP 套接字）** | 上行 `158.4 B/s`，下行 `0.8 B/s` | 上行 `158.0 B/s`，下行 `0.8 B/s` | `ss -tinp`；每 3 秒 TLS 帧约 `475 B`（约 `412 MB/月`） |
+| **二进制 / 总安装磁盘占用** | `13.36 MiB` / `13.53 MiB` | `13.36 MiB` / `13.53 MiB` | `linux-amd64` 静态 musl（`linux-arm64` 二进制为 `12.10 MiB`） |
+
+#### 活跃负载、压力测试与 Cgroup 下限要点
+
+- **冷启动与注册延迟：** 跨洋公网首次注册耗时 `1.26 s`（本地 Agent 计算仅约 `25 ms`，其余为公网 RTT 与 TLS 握手）；带持久化令牌的 `systemctl restart` 热重启重连耗时 `0.93 s`。
+- **打开面板实时查看：** 对 Agent 的 CPU、内存与网络均无额外开销（Server 侧负责向浏览器扇出已上报指标并响应查询）。
+- **交互式 Web 终端（PTY）：** 新增 `+1` 线程、`+2.39 MiB` cgroup 内存（主要来自交互式 shell 子进程；Agent 自身 `RssAnon` 仅增 `+7 KiB`），周期性命令输出期间 cgroup CPU 均值 `0.44%`（峰值 `3.47%`）、上行 `971 B/s`。
+- **主机 CPU 与 I/O 压力：** 主机双核 100% 满载下上报不中断（Agent CPU `0.175%`）；持续磁盘 fsync 读写叠加 200 条本地 TCP 连接仅增加 `+0.026%` CPU 与 `+83 KiB` cgroup 内存。
+- **高进程数场景（`>500` 进程）：** 新增 500 个休眠进程（总计 `519` 个）后，打开 FD 近似 1:1 增长（`51 → 545`），CPU 升至 `3.0×`（均值 `0.57%`、峰值 `3.00%`），cgroup 内存升至 `2.3×`（`2.95 → 6.80 MiB`），原因是 `sysinfo` 为统计进程数持久持有 `/proc/<pid>/stat` 文件描述符。
+- **断网与自动重连：** 40 秒静默丢包期间内存与 FD 保持平稳、零重启；半开 TCP 连接关闭后 `1.36 s` 内自动重连并恢复上报。
+- **Cgroup v2 硬限制下限（1 vCPU、`MemorySwapMax=0`）：**
+  - 热缓存 OOM 边界（含 300 进程突发）：默认配置在 `6 MiB` 存活、`4 MiB` 触发 OOM；关闭安全日志监听（`security.enabled = false`）在 `4 MiB` 存活、`3 MiB` 触发 OOM。
+  - 冷缓存零抖动下限（`drop_caches=3`，默认配置）：**`16 MiB`**（`0` 回收停顿、`0` OOM）；**`24 MiB`** 零内存压力。低于 `16 MiB`（`12M`–`6M`）虽不触发 OOM，但会持续淘汰并重载代码页（20 秒内 `>137k` 次回收停顿）。
+  - `CPUQuota` 下限：降至 **`5%`** 仍为 `0` 限流；即使压至 `2%` 仍能保持上报连续（45 秒累计限流 `59 ms`）。
+
+### 低配 VPS 与高密主机调优建议
+
+- **低内存 VPS（`<= 256 MiB` 总内存）：** 优先通过 `deploy/install.sh` 使用静态二进制部署，避免 Docker 守护进程开销。如不需要 SSH 日志安全监听，可在 `/opt/serverbee/etc/agent.toml` 中设置 `[security] enabled = false`，移除 `journalctl -f` 子进程并将稳态 cgroup 内存降低约 54%（热缓存 `1.21 MiB`）。保持未使用的能力（`terminal`、`exec`、`file`、`docker`）关闭。建议 systemd 限额为 `MemoryMax=64M`、`CPUQuota=15%`（仅在关闭 `terminal`/`exec` 且主机进程 `<300` 时可下调至 `MemoryMax=32M`；默认配置不建议低于 `24M`）。
+- **高密生产主机（`>500` 进程或容器）：** 建议通过 systemd drop-in 设置 `LimitNOFILE=65536` 与 `MemoryMax=128M`（或不设过紧上限），避免 `sysinfo` 的 `/proc` 文件描述符触及默认 `1024` 上限。
+
+### 历史 `v0.9.3` Agent 观测记录
+
+<Callout type="info">
+以下仅作历史参考：本页原记录的 `v0.9.3` 笔记（2026-05-19，4 核 AMD EPYC 7B13 / 8 GB / Ubuntu 24.04 KVM，3 秒间隔，未归档原始日志与链接方式）显示 8 小时内 `ps` RSS 由 `~10 MB` 升至 `~34 MB`（systemd cgroup 由 `~4.3 MB` 升至 `~27 MB`），CPU 约 `0.5%–0.7%`，`9–10` 线程，二进制约 `11 MB`，按协议估算网络 `<= 1–2 KB/s`。该记录无法确认长期平台与 libc 口径，当前版本请以上方 `v1.0.0-beta.7` 实测数据为准。
+</Callout>
 
 ## Server
+
+<Callout type="info">
+来源为本页原有的 v0.9.3 历史测量笔记，除另有说明外，日期为 2026-05-19。原始测试日志及二进制的具体链接方式未随笔记归档。设置 Server 资源限制前，请测量实际部署版本、分配器、Agent 数量、启用的采集器和查询负载。
+</Callout>
 
 ### 历史 Railway 观测
 
@@ -55,9 +99,8 @@ Server 磁盘占用包括 SQLite、上传的品牌图片、下载的 GeoIP/ASN M
 ## 注意事项
 
 - 历史空载 Server 读数不代表大量 Agent 或高查询负载下的占用。
-- Cgroup 内存与进程 RSS 统计范围不同，应按相同口径比较。
-- Agent 网络用量是估算，没有对应的抓包基准测试。
-- 八小时内读数平稳不能证明长期稳定。排查异常增长时应同时考虑负载与分配器。
+- Cgroup 内存（`memory.current`）与进程 RSS（`VmRSS` / `PSS`）统计口径不同，应按相同口径比较，并在设置 `MemoryMax` 时区分热缓存与冷缓存。
+- 5 分钟浸泡验证了 Agent 常规上报循环的平稳平台，但启用 Docker 监控、高频远程命令或高进程变动的主机仍应结合自身负载验证限额。
 
 ## 相关文档
 
