@@ -399,7 +399,7 @@ The agent collects the following metrics (sourced from the `sysinfo` library, `/
 
 ## Resource Footprint
 
-The Agent has negligible CPU cost (&lt;1%) and a steady-state memory footprint in the tens of MB. For the full measured Agent and Server CPU/memory/disk/network data, see [Resource Usage](/en/docs/resource-usage).
+In `v1.0.0-beta.7` Linux benchmarks, the static musl Agent uses `0.14%–0.19%` of 1 vCPU at idle, `~11.1 MiB` `VmRSS` (`0.82–0.91 MiB` private `RssAnon` + `10.27 MiB` reclaimable executable pages; `2.62–2.95 MiB` warm systemd cgroup memory, or `1.21 MiB` with `[security] enabled = false`), and `~158 B/s` (`~412 MB/month`) of network bandwidth. For full hardware requirements, stress tests, cgroup limits, and Server observations, see [Resource Usage](/en/docs/resource-usage).
 
 <Cards>
   <Card title="Server Setup" href="/en/docs/server" />
