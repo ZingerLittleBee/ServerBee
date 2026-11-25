@@ -269,13 +269,16 @@
       "title": "Network Quality",
       "empty": {
         "noData": "No network probe data available"
-      }
+      },
+      "lossColumn": "Loss"
     },
     "networkOverview": {
       "title": "Network Overview",
       "empty": {
         "noData": "No network probe data available"
-      }
+      },
+      "anomalies_one": "{{count}} anomaly",
+      "anomalies_other": "{{count}} anomalies"
     },
     "gauge": {
       "severity": {

@@ -268,13 +268,15 @@
       "title": "网络质量",
       "empty": {
         "noData": "暂无网络探测数据"
-      }
+      },
+      "lossColumn": "丢包"
     },
     "networkOverview": {
       "title": "网络总览",
       "empty": {
         "noData": "暂无网络探测数据"
-      }
+      },
+      "anomalies": "{{count}} 个异常"
     },
     "gauge": {
       "severity": {
