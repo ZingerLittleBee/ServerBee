@@ -1,9 +1,10 @@
-import { Activity, Cpu, Gauge as GaugeIcon, HardDrive, MemoryStick, Network } from 'lucide-react'
 import { useId, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import { splitValueUnit, WidgetMessage } from '@/components/dashboard/widget-chrome'
 import type { ServerMetrics } from '@/lib/server-catalog'
-import { getUtilizationRingColor } from '@/lib/utilization-colors'
+import { getUtilizationRingColor, getUtilizationSeverity } from '@/lib/utilization-colors'
+import { cn } from '@/lib/utils'
 import { normalizeWidgetColor } from '@/lib/widget-color'
 import { extractLiveMetric, metricLabel } from '@/lib/widget-helpers'
 import type { GaugeConfig } from '@/lib/widget-types'
@@ -19,7 +20,7 @@ const CENTER = VIEWBOX / 2
 // Radius pushes the ring close to the viewBox edge so the gauge fills the
 // card; clamped so the round linecap (STROKE/2 outward) still fits inside.
 const RADIUS = 44
-const STROKE = 8
+const STROKE = 6
 // 270° sweep, gap centered at bottom. Angles in degrees, clockwise from 12 o'clock.
 // Start at 7:30 (225°), sweep clockwise past 9, 12, 3 to 4:30 (135°), leaving a
 // 90° gap centered at 6 o'clock — matches the reference horseshoe orientation.
@@ -39,28 +40,6 @@ function getGaugeGradient(value: number, overrideColor?: string): Gradient {
   }
   const color = getUtilizationRingColor(value)
   return { start: color, end: color }
-}
-
-function getMetricIcon(metric: string) {
-  switch (metric) {
-    case 'cpu':
-      return Cpu
-    case 'memory':
-    case 'swap':
-      return MemoryStick
-    case 'disk':
-      return HardDrive
-    case 'load1':
-    case 'load5':
-    case 'load15':
-      return Activity
-    case 'net_in':
-    case 'net_out':
-    case 'bandwidth':
-      return Network
-    default:
-      return GaugeIcon
-  }
 }
 
 // Convert a polar coordinate (angle in degrees, clockwise from 12 o'clock) to cartesian SVG coords.
@@ -100,15 +79,18 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
 
   if (!server) {
     return (
-      <DashboardCard className="flex h-full items-center justify-center bg-card text-muted-foreground text-sm">
-        {t('widgets.common.empty.serverNotFound')}
+      <DashboardCard className="flex h-full bg-card">
+        <WidgetMessage title={t('widgets.common.empty.serverNotFound')} />
       </DashboardCard>
     )
   }
 
   const label = config.label ?? metricLabel(metric, t)
   const gradient = getGaugeGradient(value, config.color)
-  const Icon = getMetricIcon(metric)
+  const percent = max > 0 ? (value / max) * 100 : 0
+  const severity = getUtilizationSeverity(percent)
+  const reading = splitValueUnit(`${value.toFixed(1)}%`)
+  const [whole, fraction = ''] = reading.value.split('.')
 
   const progressSweep = max > 0 ? (value / max) * SWEEP : 0
   const trackEnd = START_ANGLE + SWEEP
@@ -119,46 +101,10 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
 
   const showProgress = value > 0
 
-  const mainText = (
-    <>
-      <Icon
-        aria-hidden="true"
-        className="@[14rem]:h-4 @[20rem]:h-5 h-3.5 @[14rem]:w-4 @[20rem]:w-5 w-3.5"
-        style={{ color: gradient.start }}
-      />
-      <p
-        className="mt-1 truncate font-medium @[14rem]:text-sm text-xs"
-        data-testid="gauge-label"
-        style={{ color: gradient.start }}
-      >
-        {label}
-      </p>
-      <p
-        className="mt-1 font-bold @[14rem]:text-2xl @[20rem]:text-3xl @[26rem]:text-4xl text-foreground text-xl tabular-nums"
-        data-testid="gauge-value"
-      >
-        {value.toFixed(1)}
-        <span className="ml-0.5 font-medium text-[0.6em] text-muted-foreground/70">%</span>
-      </p>
-    </>
-  )
-
-  // Server name sits at the bottom of the card, inside the arc gap (the 90°
-  // opening centered at 6 o'clock). Anchored via absolute positioning so it
-  // doesn't shift the centered icon/label/value stack.
-  const subtitle = (
-    <p
-      className="absolute inset-x-3 bottom-[8%] z-10 truncate text-center text-muted-foreground text-xs"
-      data-testid="gauge-subtitle"
-    >
-      {server.name}
-    </p>
-  )
-
   const svg = (
     <svg
       aria-hidden="true"
-      className="absolute inset-0 h-full w-full"
+      className="absolute inset-0 h-full w-full overflow-visible"
       data-testid="gauge-svg"
       viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}
     >
@@ -172,9 +118,8 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
         d={trackPathD}
         data-testid="gauge-track"
         fill="none"
-        stroke="var(--color-muted)"
+        stroke="var(--metric-ring-track)"
         strokeLinecap="round"
-        strokeOpacity={0.35}
         strokeWidth={STROKE}
       />
       {showProgress && (
@@ -200,11 +145,48 @@ export function GaugeWidget({ config, servers }: GaugeWidgetProps) {
         className="@container/gauge relative aspect-square overflow-hidden bg-card"
         style={{ width: 'min(100cqi, 100cqb)', height: 'min(100cqi, 100cqb)' }}
       >
-        <div className="absolute inset-3">{svg}</div>
-        <div className="absolute inset-0 z-10 flex min-w-0 flex-col items-center justify-center p-3 text-center">
-          {mainText}
+        <p
+          className="absolute inset-x-4 top-3.5 z-10 truncate font-medium @[14rem]:text-[13px] text-[12px] text-foreground/75"
+          data-testid="gauge-label"
+        >
+          {label}
+        </p>
+        <div className="absolute top-[17%] left-1/2 aspect-square w-[70%] -translate-x-1/2">
+          {svg}
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p
+              className="font-semibold @[14rem]:text-4xl @[20rem]:text-5xl @[26rem]:text-6xl text-3xl tabular-nums leading-none tracking-[-0.04em]"
+              data-testid="gauge-value"
+            >
+              {whole}
+              <span className="font-medium text-[0.5em] text-muted-foreground tracking-[-0.01em]">
+                {fraction ? `.${fraction}` : ''}
+                {reading.unit}
+              </span>
+            </p>
+          </div>
         </div>
-        {subtitle}
+        {/* Server name sits inside the arc's bottom gap; a word on the same line backs
+            up the ring color, so a warning never pushes the name into the ring. */}
+        <div className="absolute inset-x-3 bottom-[7%] z-10 flex items-baseline justify-center gap-1.5 text-center">
+          <p
+            className="min-w-0 truncate @[14rem]:text-[13px] text-muted-foreground text-xs"
+            data-testid="gauge-subtitle"
+          >
+            {server.name}
+          </p>
+          {severity === 'healthy' ? null : (
+            <p
+              className={cn(
+                'shrink-0 font-medium @[14rem]:text-[13px] text-xs',
+                severity === 'danger' ? 'text-status-danger-text' : 'text-status-warning-text'
+              )}
+              data-testid="gauge-severity"
+            >
+              {t(`widgets.gauge.severity.${severity}`)}
+            </p>
+          )}
+        </div>
       </DashboardCard>
     </div>
   )

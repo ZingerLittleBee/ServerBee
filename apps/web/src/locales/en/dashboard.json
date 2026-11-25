@@ -273,6 +273,12 @@
       "empty": {
         "noData": "No network probe data available"
       }
+    },
+    "gauge": {
+      "severity": {
+        "warning": "High",
+        "danger": "Critical"
+      }
     }
   },
   "common": {

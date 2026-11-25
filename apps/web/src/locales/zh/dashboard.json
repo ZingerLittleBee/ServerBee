@@ -272,6 +272,12 @@
       "empty": {
         "noData": "暂无网络探测数据"
       }
+    },
+    "gauge": {
+      "severity": {
+        "warning": "偏高",
+        "danger": "过高"
+      }
     }
   },
   "common": {
