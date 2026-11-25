@@ -2,11 +2,13 @@ import { Link } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import { WidgetHeader, WidgetMessage } from '@/components/dashboard/widget-chrome'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useNetworkOverview } from '@/hooks/use-network-api'
 import { formatLatency, type NetworkServerSummary } from '@/lib/network-types'
 import type { ServerMetrics } from '@/lib/server-catalog'
+import { cn } from '@/lib/utils'
 import type { NetworkOverviewConfig } from '@/lib/widget-types'
 
 interface NetworkOverviewWidgetProps {
@@ -38,50 +40,55 @@ export function NetworkOverviewWidget({ config }: NetworkOverviewWidgetProps) {
 
   if (isLoading) {
     return (
-      <DashboardCard className="flex h-full flex-col gap-2 bg-card p-4">
+      <DashboardCard className="flex h-full flex-col gap-3 bg-card p-5">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="flex-1" />
       </DashboardCard>
     )
   }
 
+  const title = t('widgets.networkOverview.title', 'Network Overview')
+
   if (rows.length === 0) {
     return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <h3 className="mb-1 font-semibold text-sm">{t('widgets.networkOverview.title', 'Network Overview')}</h3>
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-          {t('widgets.networkOverview.empty.noData', 'No network probe data available')}
-        </div>
+      <DashboardCard className="flex h-full flex-col bg-card p-5">
+        <WidgetHeader title={title} />
+        <WidgetMessage title={t('widgets.networkOverview.empty.noData', 'No network probe data available')} />
       </DashboardCard>
     )
   }
 
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-4">
-      <h3 className="mb-2 font-semibold text-sm">{t('widgets.networkOverview.title', 'Network Overview')}</h3>
-      <ScrollArea className="min-h-0 flex-1">
-        <ul className="space-y-1 pr-2">
+    <DashboardCard className="flex h-full flex-col bg-card p-5">
+      <WidgetHeader title={title} />
+      <ScrollArea className="mt-2 min-h-0 flex-1">
+        <ul className="flex flex-col">
           {rows.map((summary) => {
             const latency = avgLatency(summary)
             return (
-              <li key={summary.server_id}>
+              <li className="border-border/60 border-t" key={summary.server_id}>
                 <Link
-                  className="flex items-center gap-3 rounded-md border px-3 py-2 transition-colors hover:bg-muted/50"
+                  className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50"
                   params={{ serverId: summary.server_id }}
                   search={{ range: 'realtime' }}
                   to="/network/$serverId"
                 >
                   <span
                     aria-hidden="true"
-                    className={`size-2 shrink-0 rounded-full ${summary.online ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`}
+                    className={cn(
+                      'size-2 shrink-0 rounded-full',
+                      summary.online ? 'bg-status-healthy' : 'bg-muted-foreground/40'
+                    )}
                   />
                   <span className="min-w-0 flex-1 truncate font-medium text-sm">{summary.server_name}</span>
-                  <span className="font-mono text-sm tabular-nums">{formatLatency(latency)}</span>
                   {summary.anomaly_count > 0 && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-700 text-xs dark:bg-amber-900/30 dark:text-amber-400">
-                      {summary.anomaly_count}
+                    <span className="rounded-full bg-status-warning/15 px-2 py-0.5 font-medium text-status-warning-text text-xs tabular-nums">
+                      {t('widgets.networkOverview.anomalies', { count: summary.anomaly_count })}
                     </span>
                   )}
+                  <span className="w-20 shrink-0 text-right font-semibold text-sm tabular-nums">
+                    {formatLatency(latency)}
+                  </span>
                 </Link>
               </li>
             )

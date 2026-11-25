@@ -260,7 +260,7 @@ export interface GaugeConfig {
 }
 
 export interface LineChartConfig {
-  /** Series stroke/fill color as `#RRGGBB`. Defaults to `#8EC5FF` when omitted. */
+  /** Series stroke/fill color as `#RRGGBB`. Defaults to `DEFAULT_WIDGET_CHART_COLOR` when omitted. */
   color?: string
   hours?: number
   interval?: string
@@ -276,7 +276,7 @@ export interface MultiLineConfig {
 }
 
 export interface TopNConfig {
-  /** Bar fill color as `#RRGGBB`. Defaults to `#8EC5FF` when omitted. */
+  /** Bar fill color as `#RRGGBB`. Defaults to `DEFAULT_WIDGET_CHART_COLOR` when omitted. */
   color?: string
   count?: number
   metric: string

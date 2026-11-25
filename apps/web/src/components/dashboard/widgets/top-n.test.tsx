@@ -1,5 +1,4 @@
 import { render, screen } from '@testing-library/react'
-import { Children, isValidElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { ServerMetrics } from '@/lib/server-catalog'
 
@@ -21,85 +20,6 @@ vi.mock('react-i18next', () => ({
       return key
     }
   })
-}))
-
-function chartChildrenWithoutBarLabels(children: ReactNode): ReactNode[] {
-  const kept: ReactNode[] = []
-  Children.forEach(children, (child) => {
-    if (!isValidElement(child)) {
-      kept.push(child)
-      return
-    }
-    const type = child.type as { displayName?: string; name?: string }
-    if (type.displayName === 'TopNBarLabels' || type.name === 'TopNBarLabels') {
-      return
-    }
-    kept.push(child)
-  })
-  return kept
-}
-
-vi.mock('@/components/charts/bar-chart', () => ({
-  BarChart: ({
-    children,
-    data,
-    margin,
-    orientation,
-    valueDomain,
-    xDataKey
-  }: {
-    children?: ReactNode
-    data: Record<string, unknown>[]
-    margin?: { left?: number }
-    orientation?: string
-    valueDomain?: [number, number]
-    xDataKey?: string
-  }) => (
-    <div
-      data-chart-data={JSON.stringify(data)}
-      data-margin-left={margin?.left ?? ''}
-      data-orientation={orientation}
-      data-rows={data.length}
-      data-testid="bar-chart"
-      data-value-domain={valueDomain ? JSON.stringify(valueDomain) : ''}
-      data-x-key={xDataKey}
-    >
-      {/* Drop post-overlay labels — they need a live ChartProvider. */}
-      {chartChildrenWithoutBarLabels(children)}
-    </div>
-  )
-}))
-
-vi.mock('@/components/charts/bar', () => ({
-  Bar: ({
-    dataKey,
-    fill,
-    lineCap
-  }: {
-    dataKey: string
-    fill?: string | ((point: Record<string, unknown>, index: number) => string)
-    lineCap?: number
-  }) => (
-    <div
-      data-fill={typeof fill === 'string' ? fill : 'resolver'}
-      data-key={dataKey}
-      data-line-cap={lineCap}
-      data-testid="bar-series"
-    />
-  )
-}))
-
-vi.mock('@/components/charts/bar-value-axis', () => ({ BarValueAxis: () => <div data-testid="bar-value-axis" /> }))
-vi.mock('@/components/charts/grid', () => ({ Grid: () => null }))
-vi.mock('@/components/charts/tooltip/chart-tooltip', () => ({ ChartTooltip: () => null }))
-vi.mock('@/components/charts/tooltip/tooltip-content', () => ({ TooltipContent: () => null }))
-vi.mock('@/components/charts/chart-context', () => ({
-  useChart: () => {
-    throw new Error('useChart should not run in unit tests for TopNWidget')
-  },
-  useChartStable: () => {
-    throw new Error('useChartStable should not run in unit tests for TopNWidget')
-  }
 }))
 
 const { TopNWidget } = await import('./top-n')
@@ -140,7 +60,7 @@ function makeServer(id: string, overrides: Partial<ServerMetrics> = {}): ServerM
 }
 
 describe('TopNWidget', () => {
-  it('renders a horizontal bar chart ranked by the selected metric', () => {
+  it('ranks online servers by the selected metric with proportional fills', () => {
     render(
       <TopNWidget
         config={{ metric: 'cpu', count: 3, sort: 'desc' }}
@@ -154,32 +74,21 @@ describe('TopNWidget', () => {
     )
 
     expect(screen.getByRole('heading', { name: 'Top CPU' })).toBeInTheDocument()
-    expect(screen.getByTestId('top-n-bar-chart')).toBeInTheDocument()
 
-    const chart = screen.getByTestId('bar-chart')
-    expect(chart).toHaveAttribute('data-orientation', 'horizontal')
-    expect(chart).toHaveAttribute('data-rows', '3')
-    expect(chart).toHaveAttribute('data-x-key', 'id')
-    expect(chart).toHaveAttribute('data-value-domain', '[0,100]')
-    // No reserved category axis — names render on the bars via TopNBarLabels.
-    expect(chart).toHaveAttribute('data-margin-left', '8')
-    expect(screen.queryByTestId('bar-y-axis')).not.toBeInTheDocument()
+    const rows = screen.getAllByTestId('top-n-row')
+    expect(rows).toHaveLength(3)
+    expect(rows[0]).toHaveTextContent('High')
+    expect(rows[0]).toHaveTextContent('90.0%')
+    expect(rows[1]).toHaveTextContent('Mid')
+    expect(rows[2]).toHaveTextContent('Low')
 
-    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-key', 'value')
-    // Default configurable bar color.
-    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', '#8EC5FF')
-    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-line-cap', '5')
-    expect(screen.getByTestId('bar-value-axis')).toBeInTheDocument()
-
-    // Accessible table lists rank order high → low (desc).
-    const rows = screen.getAllByRole('row')
-    expect(rows[1]).toHaveTextContent('High')
-    expect(rows[1]).toHaveTextContent('90.0%')
-    expect(rows[2]).toHaveTextContent('Mid')
-    expect(rows[3]).toHaveTextContent('Low')
+    // Percent metrics fill against 100%.
+    const fills = screen.getAllByTestId('top-n-fill')
+    expect(fills[0]).toHaveStyle({ width: '90%' })
+    expect(fills[2]).toHaveStyle({ width: '10%' })
   })
 
-  it('uses the configured bar color when provided', () => {
+  it('tints the rows with the configured color when provided', () => {
     render(
       <TopNWidget
         config={{ metric: 'cpu', count: 2, color: '#ff6600' }}
@@ -187,27 +96,29 @@ describe('TopNWidget', () => {
       />
     )
 
-    expect(screen.getByTestId('bar-series')).toHaveAttribute('data-fill', '#FF6600')
+    expect(screen.getAllByTestId('top-n-fill')[0].style.backgroundColor).toContain('rgb(255, 102, 0)')
   })
 
   it('shows an empty state when no online servers are available', () => {
     render(<TopNWidget config={{ metric: 'cpu' }} servers={[makeServer('offline', { online: false })]} />)
 
     expect(screen.getByText('No online servers')).toBeInTheDocument()
-    expect(screen.queryByTestId('top-n-bar-chart')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('top-n-rows')).not.toBeInTheDocument()
   })
 
-  it('uses an open value domain for bandwidth metrics', () => {
+  it('scales open-ended metrics against the largest row', () => {
     render(
       <TopNWidget
         config={{ metric: 'bandwidth', count: 2 }}
         servers={[
-          makeServer('a', { net_in_speed: 1000, net_out_speed: 2000 }),
+          makeServer('a', { net_in_speed: 1000, net_out_speed: 3000 }),
           makeServer('b', { net_in_speed: 500, net_out_speed: 500 })
         ]}
       />
     )
 
-    expect(screen.getByTestId('bar-chart')).toHaveAttribute('data-value-domain', '')
+    const fills = screen.getAllByTestId('top-n-fill')
+    expect(fills[0]).toHaveStyle({ width: '100%' })
+    expect(fills[1]).toHaveStyle({ width: '25%' })
   })
 })

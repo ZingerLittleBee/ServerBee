@@ -3,10 +3,15 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { StackedBarPlot, type StackedBarSeries } from '@/components/charts/stacked-bar-plot'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
-import { Skeleton } from '@/components/ui/skeleton'
+import {
+  WIDGET_PADDING_CLASS_NAME,
+  WidgetHeader,
+  WidgetMessage,
+  WidgetSkeleton
+} from '@/components/dashboard/widget-chrome'
 import { api } from '@/lib/api-client'
 import type { ServerMetrics } from '@/lib/server-catalog'
-import { formatBytes } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 import {
   DEFAULT_WIDGET_CHART_COLOR,
   DEFAULT_WIDGET_CHART_COLOR_SECONDARY,
@@ -96,32 +101,29 @@ export function TrafficBarWidget({ config, servers }: TrafficBarWidgetProps) {
   }, [hasServerId, server_id, servers, t])
 
   if (isLoading) {
-    return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <Skeleton className="mb-2 h-4 w-32" />
-        <Skeleton className="flex-1" />
-      </DashboardCard>
-    )
+    return <WidgetSkeleton />
   }
+
+  const header = (
+    <WidgetHeader
+      aside={t('widgets.common.range.days', { count: days })}
+      context={serverName}
+      title={t('widgets.trafficBar.title')}
+    />
+  )
 
   if (!data || data.length === 0) {
     return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <h3 className="mb-3 font-semibold text-sm">{t('widgets.trafficBar.title')}</h3>
-        <p className="text-muted-foreground text-xs">{serverName}</p>
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-          {t('widgets.trafficBar.empty.noData')}
-        </div>
+      <DashboardCard className={cn('flex h-full flex-col gap-3 bg-card', WIDGET_PADDING_CLASS_NAME)}>
+        {header}
+        <WidgetMessage title={t('widgets.trafficBar.empty.noData')} />
       </DashboardCard>
     )
   }
 
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-4">
-      <div className="mb-3">
-        <h3 className="font-semibold text-sm">{t('widgets.trafficBar.title')}</h3>
-        <p className="text-muted-foreground text-xs">{serverName}</p>
-      </div>
+    <DashboardCard className={cn('flex h-full flex-col gap-3 bg-card', WIDGET_PADDING_CLASS_NAME)}>
+      {header}
       <div className="min-h-0 flex-1">
         <StackedBarPlot
           ariaLabel={t('widgets.trafficBar.title')}

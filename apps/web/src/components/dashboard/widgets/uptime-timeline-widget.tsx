@@ -2,13 +2,26 @@ import { useQueries } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import { WidgetHeader, WidgetMessage } from '@/components/dashboard/widget-chrome'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { UptimeTimeline } from '@/components/uptime/uptime-timeline'
 import { api } from '@/lib/api-client'
 import type { UptimeDailyEntry } from '@/lib/api-schema'
 import type { ServerMetrics } from '@/lib/server-catalog'
+import { cn } from '@/lib/utils'
 import { computeAggregateUptime } from '@/lib/widget-helpers'
 import type { UptimeTimelineConfig } from '@/lib/widget-types'
+
+/** Matches the timeline's red threshold so the percentage and the cells agree. */
+const DOWN_THRESHOLD = 95
+
+function formatPct(pct: number | null, digits: number): string {
+  return pct === null ? '\u2014' : `${pct.toFixed(digits)}%`
+}
+
+function pctClassName(pct: number | null): string {
+  return pct !== null && pct < DOWN_THRESHOLD ? 'text-status-danger-text' : 'text-foreground'
+}
 
 interface UptimeTimelineWidgetProps {
   config: UptimeTimelineConfig
@@ -43,10 +56,13 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
 
   const isLoading = queries.some((q) => q.isLoading)
 
+  const title = t('widgets.uptimeTimeline.title')
+  const rangeLabel = t('widgets.common.range.days', { count: days })
+
   if (serverIds.length === 0) {
     return (
-      <DashboardCard className="flex h-full items-center justify-center bg-card text-muted-foreground text-sm">
-        {t('widgets.common.empty.noServers')}
+      <DashboardCard className="flex h-full bg-card">
+        <WidgetMessage title={t('widgets.common.empty.noServers')} />
       </DashboardCard>
     )
   }
@@ -57,17 +73,18 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
     const name = serverNameMap.get(serverIds[0]) ?? serverIds[0]
     return (
       <DashboardCard className="h-full bg-card">
-        <div className="p-4" data-measure>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="font-semibold text-sm">{name}</h3>
-            <span className="font-medium text-sm">{pct !== null ? `${pct.toFixed(2)}%` : '\u2014'}</span>
-          </div>
+        <div className="flex flex-col gap-3 p-5" data-measure>
+          <WidgetHeader
+            aside={
+              <span className={cn('font-semibold text-sm tabular-nums', pctClassName(pct))}>{formatPct(pct, 2)}</span>
+            }
+            context={rangeLabel}
+            title={name}
+          />
           {isLoading ? (
-            <div className="flex h-[72px] items-center justify-center text-muted-foreground text-xs">
-              {t('states.loading')}
-            </div>
+            <WidgetMessage className="h-[72px]" title={t('states.loading')} />
           ) : (
-            <UptimeTimeline days={uptimeData} rangeDays={days} showLabels />
+            <UptimeTimeline days={uptimeData} rangeDays={days} rounded showLabels />
           )}
         </div>
       </DashboardCard>
@@ -76,30 +93,30 @@ export function UptimeTimelineWidget({ config, servers }: UptimeTimelineWidgetPr
 
   if (isLoading) {
     return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
-          {t('states.loading')}
-        </div>
+      <DashboardCard className="flex h-full flex-col bg-card p-5">
+        <WidgetHeader context={rangeLabel} title={title} />
+        <WidgetMessage title={t('states.loading')} />
       </DashboardCard>
     )
   }
 
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">{t('widgets.uptimeTimeline.title')}</h3>
-      <ScrollArea className="flex-1" contentClassName="space-y-3">
+    <DashboardCard className="flex h-full flex-col bg-card p-5">
+      <WidgetHeader context={rangeLabel} title={title} />
+      <ScrollArea className="mt-3 min-h-0 flex-1" contentClassName="space-y-3.5">
         {serverIds.map((id, i) => {
           const uptimeData = queries[i]?.data ?? []
           const pct = computeAggregateUptime(uptimeData)
           const name = serverNameMap.get(id) ?? id
           return (
             <div key={id}>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="truncate text-xs">{name}</span>
-                <span className="text-muted-foreground text-xs">{pct !== null ? `${pct.toFixed(1)}%` : '\u2014'}</span>
+              <div className="mb-1.5 flex items-baseline justify-between gap-3">
+                <span className="truncate font-medium text-sm">{name}</span>
+                <span className={cn('shrink-0 font-semibold text-sm tabular-nums', pctClassName(pct))}>
+                  {formatPct(pct, 2)}
+                </span>
               </div>
-              <UptimeTimeline days={uptimeData} height={20} rangeDays={days} />
+              <UptimeTimeline days={uptimeData} height={18} rangeDays={days} rounded />
             </div>
           )
         })}

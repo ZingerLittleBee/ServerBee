@@ -9,6 +9,7 @@ import { type ChoroplethFeature, useChoropleth } from '@/components/charts/choro
 import { ChoroplethFeature as ChoroplethFeatureComponent } from '@/components/charts/choropleth/choropleth-feature'
 import { ChoroplethTooltip } from '@/components/charts/choropleth/choropleth-tooltip'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import { WIDGET_PADDING_CLASS_NAME, WidgetHeader } from '@/components/dashboard/widget-chrome'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { api } from '@/lib/api-client'
@@ -111,15 +112,15 @@ export function ServerMapWidget({ config, servers }: ServerMapWidgetProps) {
   const displayLabel = hovered ? getLocalizedName(hovered.alpha3, hovered.name) : t('widgets.serverMap.total')
 
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-3">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <h3 className="font-semibold text-sm">{t('widgets.serverMap.title')}</h3>
-        <div className="flex flex-col items-end text-right">
+    <DashboardCard className={cn('flex h-full flex-col gap-2 bg-card', WIDGET_PADDING_CLASS_NAME)}>
+      <div className="flex items-start justify-between gap-3">
+        <WidgetHeader title={t('widgets.serverMap.title')} />
+        <div className="flex shrink-0 flex-col items-end text-right">
           <ChartStatFlow
             label={displayLabel}
-            labelClassName="max-w-36 truncate text-[10px]"
+            labelClassName="max-w-36 truncate text-muted-foreground text-xs"
             value={displayValue}
-            valueClassName="text-lg font-semibold leading-none"
+            valueClassName="font-semibold text-2xl leading-none tracking-[-0.04em]"
           />
         </div>
       </div>

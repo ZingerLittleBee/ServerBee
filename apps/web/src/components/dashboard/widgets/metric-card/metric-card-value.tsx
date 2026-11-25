@@ -1,12 +1,10 @@
-import { TrendingDown, TrendingUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { DeltaTone, DeltaUnit } from './metric-card-config'
 
-interface MetricCardValueProps {
+interface MetricCardDeltaProps {
   delta: number | null
   deltaTone: DeltaTone
   deltaUnit: DeltaUnit
-  formattedValue: string
   pastLabel: string
 }
 
@@ -19,42 +17,27 @@ function formatDelta(delta: number, unit: DeltaUnit): string {
   return `${sign}${magnitude.toFixed(0)}%`
 }
 
-function deltaColor(delta: number, tone: DeltaTone): string {
-  if (tone === 'neutral') {
-    return 'text-muted-foreground'
+/** Rising utilization reads as a warning; falling reads as relief. Throughput stays neutral. */
+function deltaPillClass(delta: number, tone: DeltaTone): string {
+  if (tone === 'neutral' || delta === 0) {
+    return 'bg-muted text-muted-foreground'
   }
-  if (delta === 0) {
-    return 'text-muted-foreground'
-  }
-  return delta > 0 ? 'text-destructive' : 'text-emerald-500'
+  return delta > 0 ? 'bg-status-warning/15 text-status-warning-text' : 'bg-status-healthy/15 text-status-healthy-text'
 }
 
-export function MetricCardValue({ formattedValue, delta, deltaUnit, deltaTone, pastLabel }: MetricCardValueProps) {
+export function MetricCardDelta({ delta, deltaUnit, deltaTone, pastLabel }: MetricCardDeltaProps) {
   return (
-    <div className="space-y-0.5">
-      <p
-        className="truncate font-bold text-3xl tabular-nums leading-tight tracking-tight"
-        data-testid="metric-card-value"
-      >
-        {formattedValue}
-      </p>
-      <p
-        className={cn(
-          'flex items-center gap-1 text-xs',
-          delta === null ? 'text-muted-foreground' : deltaColor(delta, deltaTone)
-        )}
-        data-testid="metric-card-delta"
-      >
-        {delta === null ? (
-          <span>—</span>
-        ) : (
-          <>
-            {delta < 0 ? <TrendingDown className="size-3" /> : <TrendingUp className="size-3" />}
-            <span className="font-medium tabular-nums">{formatDelta(delta, deltaUnit)}</span>
-          </>
-        )}
-        <span className="text-muted-foreground">· {pastLabel}</span>
-      </p>
-    </div>
+    <p className="flex min-w-0 items-center gap-2 text-muted-foreground text-xs" data-testid="metric-card-delta">
+      {delta === null ? (
+        <span>—</span>
+      ) : (
+        <span className={cn('rounded-full px-2 py-0.5 font-medium tabular-nums', deltaPillClass(delta, deltaTone))}>
+          {delta > 0 ? '▲ ' : ''}
+          {delta < 0 ? '▼ ' : ''}
+          {formatDelta(delta, deltaUnit)}
+        </span>
+      )}
+      <span className="truncate">{pastLabel}</span>
+    </p>
   )
 }

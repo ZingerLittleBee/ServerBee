@@ -1,17 +1,23 @@
 import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import {
+  WIDGET_PADDING_CLASS_NAME,
+  WidgetHeader,
+  WidgetMessage,
+  WidgetSkeleton
+} from '@/components/dashboard/widget-chrome'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
 import { buildMergedDiskIoSeries } from '@/lib/disk-io'
 import type { ServerMetrics } from '@/lib/server-catalog'
-import { formatSpeed } from '@/lib/utils'
+import { cn, formatSpeed } from '@/lib/utils'
 import {
   DEFAULT_WIDGET_CHART_COLOR,
   DEFAULT_WIDGET_CHART_COLOR_SECONDARY,
   resolveWidgetColor
 } from '@/lib/widget-color'
-import { formatChartTime } from '@/lib/widget-helpers'
+import { formatChartTime, widgetRangeLabel } from '@/lib/widget-helpers'
 import type { DiskIoConfig } from '@/lib/widget-types'
 
 interface DiskIoWidgetProps {
@@ -63,32 +69,25 @@ export function DiskIoWidget({ config, servers }: DiskIoWidgetProps) {
   )
 
   if (isLoading) {
-    return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <Skeleton className="mb-2 h-4 w-32" />
-        <Skeleton className="flex-1" />
-      </DashboardCard>
-    )
+    return <WidgetSkeleton />
   }
+
+  const header = (
+    <WidgetHeader aside={widgetRangeLabel(hours, t)} context={serverName} title={t('widgets.diskIo.title')} />
+  )
 
   if (chartData.length === 0) {
     return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <h3 className="mb-3 font-semibold text-sm">{t('widgets.diskIo.title')}</h3>
-        <p className="text-muted-foreground text-xs">{serverName}</p>
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-sm">
-          {t('widgets.diskIo.empty.noData')}
-        </div>
+      <DashboardCard className={cn('flex h-full flex-col gap-3 bg-card', WIDGET_PADDING_CLASS_NAME)}>
+        {header}
+        <WidgetMessage title={t('widgets.diskIo.empty.noData')} />
       </DashboardCard>
     )
   }
 
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-4">
-      <div className="mb-3">
-        <h3 className="font-semibold text-sm">{t('widgets.diskIo.title')}</h3>
-        <p className="text-muted-foreground text-xs">{serverName}</p>
-      </div>
+    <DashboardCard className={cn('flex h-full flex-col gap-3 bg-card', WIDGET_PADDING_CLASS_NAME)}>
+      {header}
       <div className="min-h-0 min-w-0 flex-1">
         <Suspense fallback={<Skeleton className="h-full min-h-0 w-full" />}>
           <LazyMetricLinePlot

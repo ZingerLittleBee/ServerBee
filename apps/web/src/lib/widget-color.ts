@@ -1,8 +1,14 @@
-/** Shared default chart accent for configurable single-host widgets. */
-export const DEFAULT_WIDGET_CHART_COLOR = '#8EC5FF'
+/**
+ * Shared default chart accent for configurable single-host widgets. Matches the
+ * theme's `--chart-1` blue closely enough to read as the same accent in both themes.
+ */
+export const DEFAULT_WIDGET_CHART_COLOR = '#3E9EF0'
 
-/** Secondary series default (disk write / traffic out). */
-export const DEFAULT_WIDGET_CHART_COLOR_SECONDARY = '#34D399'
+/**
+ * Secondary series default (disk write / traffic out). Neutral slate, because
+ * green and red are reserved for status.
+ */
+export const DEFAULT_WIDGET_CHART_COLOR_SECONDARY = '#94A3B8'
 
 const HEX6_RE = /^#[0-9A-Fa-f]{6}$/
 const HEX3_RE = /^#[0-9A-Fa-f]{3}$/
@@ -49,11 +55,11 @@ export function hexRelativeLuminance(hex: string): number {
 /** Swatches shown in widget color pickers. */
 export const WIDGET_COLOR_SWATCHES = [
   DEFAULT_WIDGET_CHART_COLOR,
-  '#60A5FA',
-  DEFAULT_WIDGET_CHART_COLOR_SECONDARY,
+  '#6366F1',
+  '#34D399',
   '#FBBF24',
   '#F87171',
   '#A78BFA',
   '#F472B6',
-  '#94A3B8'
+  DEFAULT_WIDGET_CHART_COLOR_SECONDARY
 ] as const

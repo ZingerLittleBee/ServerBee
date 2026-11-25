@@ -146,8 +146,10 @@
       },
       "title": "告警",
       "empty": {
-        "noEvents": "暂无告警事件"
-      }
+        "noEvents": "暂无告警事件",
+        "allClear": "一切正常"
+      },
+      "firingCount": "{{count}} 条触发中"
     },
     "serviceStatus": {
       "title": "服务状态",
@@ -166,7 +168,8 @@
         "down": "{{count}} 故障",
         "pending": "{{count}} 待检查"
       },
-      "neverChecked": "未检查"
+      "neverChecked": "未检查",
+      "allHealthy": "全部正常"
     },
     "serverMap": {
       "title": "服务器地图",
@@ -243,6 +246,10 @@
         "desc": "从高到低",
         "asc": "从低到高"
       },
+      "range": {
+        "hours": "{{count}} 小时",
+        "days": "{{count}} 天"
+      },
       "hints": {
         "allServersWhenEmpty": "留空表示包含所有服务器",
         "allMonitorsWhenEmpty": "留空表示包含所有监控项"
@@ -261,12 +268,20 @@
       "title": "网络质量",
       "empty": {
         "noData": "暂无网络探测数据"
-      }
+      },
+      "lossColumn": "丢包"
     },
     "networkOverview": {
       "title": "网络总览",
       "empty": {
         "noData": "暂无网络探测数据"
+      },
+      "anomalies": "{{count}} 个异常"
+    },
+    "gauge": {
+      "severity": {
+        "warning": "偏高",
+        "danger": "过高"
       }
     }
   },
@@ -329,8 +344,8 @@
       "diskIo": "磁盘 I/O"
     },
     "past1h": "过去 1 小时",
-    "peak": "24H 峰值",
-    "avg": "24H 均值",
+    "peak": "峰值",
+    "avg": "均值",
     "unknownServer": "未知服务器",
     "unknownMetric": "未配置指标"
   },

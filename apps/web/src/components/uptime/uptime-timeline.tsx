@@ -17,6 +17,8 @@ export interface UptimeTimelineProps {
   height?: number
   rangeDays: number
   redThreshold?: number
+  /** Rounded, more widely spaced day cells (dashboard widget style). Default: false */
+  rounded?: boolean
   showLabels?: boolean
   showLegend?: boolean
   yellowThreshold?: number
@@ -31,6 +33,8 @@ const DAY_GAP_RATIOS: Record<UptimeTimelineAppearance, number> = {
   default: 0.12,
   'status-history': 0.3
 }
+const ROUNDED_DAY_GAP_RATIO = 0.28
+const ROUNDED_CORNER_RADIUS = 2
 
 const STATUS_ORDER: UptimeColor[] = ['green', 'yellow', 'red', 'gray']
 
@@ -79,6 +83,7 @@ export function UptimeTimeline({
   rangeDays,
   yellowThreshold = 100,
   redThreshold = 95,
+  rounded = false,
   showLabels = false,
   showLegend = false,
   height = 28
@@ -106,7 +111,7 @@ export function UptimeTimeline({
         <div aria-hidden="true" data-testid="bklit-uptime-timeline" style={{ height }}>
           <BarChart
             aspectRatio=""
-            barGap={DAY_GAP_RATIOS[appearance]}
+            barGap={rounded ? ROUNDED_DAY_GAP_RATIO : DAY_GAP_RATIOS[appearance]}
             className="h-full w-full"
             data={rows}
             margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
@@ -142,7 +147,13 @@ export function UptimeTimeline({
               showDatePill={false}
             />
             {STATUS_ORDER.map((status) => (
-              <Bar animate={false} dataKey={status} fill={colorValueMap[status]} key={status} lineCap={0} />
+              <Bar
+                animate={false}
+                dataKey={status}
+                fill={colorValueMap[status]}
+                key={status}
+                lineCap={rounded ? ROUNDED_CORNER_RADIUS : 0}
+              />
             ))}
           </BarChart>
         </div>

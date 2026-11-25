@@ -1,12 +1,20 @@
 import { lazy, Suspense, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import { WIDGET_PADDING_CLASS_NAME, WidgetHeader, WidgetSkeleton } from '@/components/dashboard/widget-chrome'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useServerRecords } from '@/hooks/use-api'
 import type { ServerMetrics } from '@/lib/server-catalog'
-import { formatBytes } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 import { DEFAULT_WIDGET_CHART_COLOR, resolveWidgetColor } from '@/lib/widget-color'
-import { extractRecordMetric, formatChartTime, isNetworkMetric, METRIC_UNITS, metricLabel } from '@/lib/widget-helpers'
+import {
+  extractRecordMetric,
+  formatChartTime,
+  isNetworkMetric,
+  METRIC_UNITS,
+  metricLabel,
+  widgetRangeLabel
+} from '@/lib/widget-helpers'
 import type { LineChartConfig } from '@/lib/widget-types'
 
 interface LineChartWidgetProps {
@@ -52,20 +60,12 @@ export function LineChartWidget({ config, servers, title }: LineChartWidgetProps
   const seriesColor = resolveWidgetColor(config.color, DEFAULT_WIDGET_CHART_COLOR)
 
   if (isLoading) {
-    return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <Skeleton className="mb-2 h-4 w-32" />
-        <Skeleton className="flex-1" />
-      </DashboardCard>
-    )
+    return <WidgetSkeleton />
   }
 
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-4">
-      <div className="mb-3">
-        <h3 className="font-semibold text-sm">{title ?? label}</h3>
-        <p className="text-muted-foreground text-xs">{serverName}</p>
-      </div>
+    <DashboardCard className={cn('flex h-full flex-col gap-3 bg-card', WIDGET_PADDING_CLASS_NAME)}>
+      <WidgetHeader aside={widgetRangeLabel(hours, t)} context={serverName} title={title ?? label} />
       <div className="min-h-0 min-w-0 flex-1">
         <Suspense fallback={<Skeleton className="h-full min-h-0 w-full" />}>
           <LazyMetricAreaPlot

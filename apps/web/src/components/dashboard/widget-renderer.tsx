@@ -77,7 +77,7 @@ class WidgetErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySta
 
 function ErrorFallback() {
   return (
-    <DashboardCard className="flex h-full items-center justify-center border-destructive/30 bg-card p-4 text-destructive text-sm">
+    <DashboardCard className="flex h-full items-center justify-center bg-card p-5 text-destructive text-sm ring-1 ring-destructive/30">
       Widget failed to render
     </DashboardCard>
   )

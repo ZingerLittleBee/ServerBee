@@ -2,18 +2,20 @@ import { useQueries } from '@tanstack/react-query'
 import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import { WIDGET_PADDING_CLASS_NAME, WidgetHeader, WidgetSkeleton } from '@/components/dashboard/widget-chrome'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api-client'
 import type { ServerMetricRecord } from '@/lib/api-schema'
 import type { ServerMetrics } from '@/lib/server-catalog'
-import { formatBytes } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 import {
   extractRecordMetric,
   formatChartDateTime,
   formatChartTime,
   isNetworkMetric,
   METRIC_UNITS,
-  metricLabel
+  metricLabel,
+  widgetRangeLabel
 } from '@/lib/widget-helpers'
 import type { MultiLineConfig } from '@/lib/widget-types'
 
@@ -166,23 +168,19 @@ export function MultiLineWidget({ config, servers, title }: MultiLineWidgetProps
   )
 
   const label = metricLabel(metric, t)
+  const heading = title ?? t('widgets.multiLine.title', { metric: label })
 
   if (isLoading) {
-    return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <Skeleton className="mb-2 h-4 w-40" />
-        <Skeleton className="flex-1" />
-      </DashboardCard>
-    )
+    return <WidgetSkeleton />
   }
 
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-4">
-      <h3 className="mb-3 font-semibold text-sm">{title ?? t('widgets.multiLine.title', { metric: label })}</h3>
+    <DashboardCard className={cn('flex h-full flex-col gap-3 bg-card', WIDGET_PADDING_CLASS_NAME)}>
+      <WidgetHeader aside={widgetRangeLabel(hours, t)} title={heading} />
       <div className="min-h-0 min-w-0 flex-1">
         <Suspense fallback={<Skeleton className="h-full min-h-0 w-full" />}>
           <LazyMetricLinePlot
-            ariaLabel={title ?? t('widgets.multiLine.title', { metric: label })}
+            ariaLabel={heading}
             className="h-full min-h-0 w-full"
             data={chartData}
             formatTime={formatChartTime}

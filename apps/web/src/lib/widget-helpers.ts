@@ -30,6 +30,20 @@ export function metricLabel(metric: string, t: (key: string) => string): string 
   return key ? t(key) : metric
 }
 
+/**
+ * Compact history range for widget headers: `6h`, `24h`, `3 days`, or
+ * `Realtime` for the live (0 hour) network range.
+ */
+export function widgetRangeLabel(hours: number, t: (key: string, options?: Record<string, unknown>) => string): string {
+  if (hours <= 0) {
+    return t('common.timeRange.realtime')
+  }
+  if (hours >= 48 && hours % 24 === 0) {
+    return t('widgets.common.range.days', { count: hours / 24 })
+  }
+  return t('widgets.common.range.hours', { count: hours })
+}
+
 export const METRIC_UNITS: Record<string, string> = {
   cpu: '%',
   memory: '%',

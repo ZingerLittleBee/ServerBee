@@ -146,8 +146,10 @@
         "superseded": "Superseded by the next renewal deadline"
       },
       "empty": {
-        "noEvents": "No alert events"
-      }
+        "noEvents": "No alert events",
+        "allClear": "All clear"
+      },
+      "firingCount": "{{count}} firing"
     },
     "serviceStatus": {
       "title": "Service Status",
@@ -166,7 +168,8 @@
         "down": "{{count}} down",
         "pending": "{{count}} pending"
       },
-      "neverChecked": "never"
+      "neverChecked": "never",
+      "allHealthy": "All healthy"
     },
     "serverMap": {
       "title": "Server Map",
@@ -243,6 +246,11 @@
         "desc": "Highest first",
         "asc": "Lowest first"
       },
+      "range": {
+        "hours": "{{count}}h",
+        "days_one": "{{count}} day",
+        "days_other": "{{count}} days"
+      },
       "hints": {
         "allServersWhenEmpty": "Leave empty to include all servers",
         "allMonitorsWhenEmpty": "Leave empty to include all monitors"
@@ -261,12 +269,21 @@
       "title": "Network Quality",
       "empty": {
         "noData": "No network probe data available"
-      }
+      },
+      "lossColumn": "Loss"
     },
     "networkOverview": {
       "title": "Network Overview",
       "empty": {
         "noData": "No network probe data available"
+      },
+      "anomalies_one": "{{count}} anomaly",
+      "anomalies_other": "{{count}} anomalies"
+    },
+    "gauge": {
+      "severity": {
+        "warning": "High",
+        "danger": "Critical"
       }
     }
   },
@@ -329,8 +346,8 @@
       "diskIo": "Disk I/O"
     },
     "past1h": "past 1h",
-    "peak": "24H PEAK",
-    "avg": "24H AVG",
+    "peak": "Peak",
+    "avg": "Avg",
     "unknownServer": "Unknown server",
     "unknownMetric": "Metric not configured"
   },

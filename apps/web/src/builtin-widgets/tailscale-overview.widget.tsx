@@ -29,26 +29,29 @@ const ConfigSchema = z.object({
 
 type TailscaleWidgetConfig = Infer<typeof ConfigSchema>
 
+/** Unboxed reading: a quiet label over a large tabular number. */
 function StatItem({ highlight, label, value }: { highlight?: boolean; label: string; value: string }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 2,
-        padding: '8px 10px',
-        borderRadius: 8,
-        border: '1px solid var(--border)',
-        backgroundColor: 'var(--muted)'
-      }}
-    >
-      <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{label}</span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
       <span
         style={{
-          fontSize: 18,
+          fontSize: 12,
+          color: 'var(--muted-foreground)',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap'
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontSize: 24,
           fontWeight: 600,
+          lineHeight: 1,
+          letterSpacing: '-0.04em',
           fontVariantNumeric: 'tabular-nums',
-          color: highlight ? '#d97706' : 'var(--foreground)'
+          color: highlight ? 'var(--status-warning-text, #b45309)' : 'var(--foreground)'
         }}
       >
         {value}
@@ -66,14 +69,13 @@ function TailscaleOverviewWidget({ config }: WidgetComponentProps<TailscaleWidge
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'space-between',
+        gap: 12,
         height: '100%',
-        padding: 12,
-        fontFamily: 'system-ui, sans-serif',
         color: 'var(--foreground)'
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 600 }}>{config.title}</span>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>{config.title}</span>
         {data?.configured && (
           <span
             style={{
@@ -108,8 +110,7 @@ function TailscaleOverviewWidget({ config }: WidgetComponentProps<TailscaleWidge
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-            gap: 8,
-            marginTop: 8
+            gap: 16
           }}
         >
           <StatItem label="Online / Total" value={`${data.online_devices} / ${data.total_devices}`} />
