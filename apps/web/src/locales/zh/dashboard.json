@@ -146,8 +146,10 @@
       },
       "title": "告警",
       "empty": {
-        "noEvents": "暂无告警事件"
-      }
+        "noEvents": "暂无告警事件",
+        "allClear": "一切正常"
+      },
+      "firingCount": "{{count}} 条触发中"
     },
     "serviceStatus": {
       "title": "服务状态",
@@ -166,7 +168,8 @@
         "down": "{{count}} 故障",
         "pending": "{{count}} 待检查"
       },
-      "neverChecked": "未检查"
+      "neverChecked": "未检查",
+      "allHealthy": "全部正常"
     },
     "serverMap": {
       "title": "服务器地图",

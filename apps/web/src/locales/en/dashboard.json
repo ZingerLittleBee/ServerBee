@@ -146,8 +146,10 @@
         "superseded": "Superseded by the next renewal deadline"
       },
       "empty": {
-        "noEvents": "No alert events"
-      }
+        "noEvents": "No alert events",
+        "allClear": "All clear"
+      },
+      "firingCount": "{{count}} firing"
     },
     "serviceStatus": {
       "title": "Service Status",
@@ -166,7 +168,8 @@
         "down": "{{count}} down",
         "pending": "{{count}} pending"
       },
-      "neverChecked": "never"
+      "neverChecked": "never",
+      "allHealthy": "All healthy"
     },
     "serverMap": {
       "title": "Server Map",

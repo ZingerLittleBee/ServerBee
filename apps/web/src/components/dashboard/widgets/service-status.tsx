@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import { WidgetHeader, WidgetMessage, WidgetValue } from '@/components/dashboard/widget-chrome'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { api } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
@@ -33,13 +34,14 @@ interface ServiceStatusWidgetProps {
   config: ServiceStatusConfig
 }
 
-const STATUS_STYLES: Record<StatusKey, { dot: string; pill: string }> = {
-  healthy: { dot: 'bg-green-500', pill: 'bg-green-500/15 text-green-600 dark:text-green-400' },
-  degraded: { dot: 'bg-yellow-500', pill: 'bg-yellow-500/15 text-yellow-600 dark:text-yellow-400' },
-  down: { dot: 'bg-red-500', pill: 'bg-red-500/15 text-red-600 dark:text-red-400' },
-  pending: { dot: 'bg-gray-400', pill: 'bg-muted text-muted-foreground' }
+const STATUS_STYLES: Record<StatusKey, { dot: string; text: string }> = {
+  healthy: { dot: 'bg-status-healthy', text: 'text-muted-foreground' },
+  degraded: { dot: 'bg-status-warning', text: 'text-status-warning-text' },
+  down: { dot: 'bg-status-danger', text: 'text-status-danger-text' },
+  pending: { dot: 'bg-muted-foreground/50', text: 'text-muted-foreground' }
 }
-const ORDERED_STATUSES: StatusKey[] = ['down', 'degraded', 'healthy', 'pending']
+/** Problems first in the summary line; healthy is implied by the headline count. */
+const ATTENTION_STATUSES: StatusKey[] = ['down', 'degraded', 'pending']
 
 function getStatus(monitor: ServiceMonitor): StatusKey {
   if (monitor.last_status === null) {
@@ -82,75 +84,81 @@ export function ServiceStatusWidget({ config }: ServiceStatusWidgetProps) {
 
   if (!monitors) {
     return (
-      <DashboardCard className="flex h-full flex-col bg-card p-4">
-        <h3 className="mb-3 font-semibold text-sm">{t('widgets.serviceStatus.title')}</h3>
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
-          {t('states.loading')}
-        </div>
+      <DashboardCard className="flex h-full flex-col bg-card p-5">
+        <WidgetHeader title={t('widgets.serviceStatus.title')} />
+        <WidgetMessage title={t('states.loading')} />
       </DashboardCard>
     )
   }
 
+  const attention = ATTENTION_STATUSES.filter((status) => counts[status] > 0)
+
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="font-semibold text-sm">{t('widgets.serviceStatus.title')}</h3>
-        {filtered.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {ORDERED_STATUSES.map((status) =>
-              counts[status] > 0 ? (
-                <span
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium text-xs tabular-nums',
-                    STATUS_STYLES[status].pill
-                  )}
-                  key={status}
-                >
-                  <span className={cn('size-1.5 rounded-full', STATUS_STYLES[status].dot)} />
-                  {t(`widgets.serviceStatus.summary.${status}`, { count: counts[status] })}
-                </span>
-              ) : null
+    <DashboardCard className="flex h-full flex-col bg-card p-5">
+      <WidgetHeader title={t('widgets.serviceStatus.title')} />
+      {filtered.length === 0 ? (
+        <WidgetMessage title={t('widgets.serviceStatus.empty.noMonitors')} />
+      ) : (
+        <>
+          <div className="mt-2 mb-2 flex min-w-0 items-baseline gap-2.5">
+            <WidgetValue
+              className="text-[1.375rem]"
+              data-testid="service-status-healthy-count"
+              formatted={`${counts.healthy} / ${filtered.length}`}
+            />
+            {attention.length === 0 ? (
+              <span className="truncate text-sm text-status-healthy-text">{t('widgets.serviceStatus.allHealthy')}</span>
+            ) : (
+              <span className="truncate font-medium text-sm">
+                {attention.map((status, index) => (
+                  <span className={STATUS_STYLES[status].text} key={status}>
+                    {index > 0 ? ' · ' : ''}
+                    {t(`widgets.serviceStatus.summary.${status}`, { count: counts[status] })}
+                  </span>
+                ))}
+              </span>
             )}
           </div>
-        )}
-      </div>
-      {filtered.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center text-muted-foreground text-xs">
-          {t('widgets.serviceStatus.empty.noMonitors')}
-        </div>
-      ) : (
-        <ScrollArea className="flex-1">
-          <ul className="flex flex-col gap-1">
-            {filtered.map((monitor) => {
-              const status = getStatus(monitor)
-              const typeLabel = t(`service-monitors:monitorTypes.${monitor.monitor_type}`, {
-                defaultValue: monitor.monitor_type.toUpperCase()
-              })
-              const lastChecked = monitor.last_checked_at
-                ? formatRelativeTime(monitor.last_checked_at)
-                : t('widgets.serviceStatus.neverChecked')
-              return (
-                <li key={monitor.id}>
-                  <Link
-                    className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted/50"
-                    params={{ id: monitor.id }}
-                    to="/service-monitors/$id"
-                  >
-                    <span className={cn('inline-block size-2 shrink-0 rounded-full', STATUS_STYLES[status].dot)} />
-                    <span className="min-w-0 flex-1 truncate font-medium">{monitor.name}</span>
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 font-medium text-[10px] text-muted-foreground uppercase">
-                      {typeLabel}
-                    </span>
-                    <span className="hidden min-w-0 max-w-[40%] shrink truncate text-muted-foreground sm:inline">
-                      {monitor.target}
-                    </span>
-                    <span className="shrink-0 text-muted-foreground tabular-nums">{lastChecked}</span>
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        </ScrollArea>
+          <ScrollArea className="min-h-0 flex-1">
+            <ul className="flex flex-col">
+              {filtered.map((monitor) => {
+                const status = getStatus(monitor)
+                const typeLabel = t(`service-monitors:monitorTypes.${monitor.monitor_type}`, {
+                  defaultValue: monitor.monitor_type.toUpperCase()
+                })
+                const lastChecked = monitor.last_checked_at
+                  ? formatRelativeTime(monitor.last_checked_at)
+                  : t('widgets.serviceStatus.neverChecked')
+                return (
+                  <li className="border-border/60 border-t" key={monitor.id}>
+                    <Link
+                      className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50"
+                      params={{ id: monitor.id }}
+                      to="/service-monitors/$id"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={cn('size-2 shrink-0 rounded-full', STATUS_STYLES[status].dot)}
+                      />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate font-medium text-sm">{monitor.name}</span>
+                        <span className="truncate text-muted-foreground text-xs">
+                          {typeLabel} · {monitor.target}
+                        </span>
+                      </span>
+                      <span className="flex shrink-0 flex-col items-end">
+                        <span className={cn('font-medium text-xs', STATUS_STYLES[status].text)}>
+                          {t(`widgets.serviceStatus.status.${status}`)}
+                        </span>
+                        <span className="text-muted-foreground text-xs tabular-nums">{lastChecked}</span>
+                      </span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </ScrollArea>
+        </>
       )}
     </DashboardCard>
   )
