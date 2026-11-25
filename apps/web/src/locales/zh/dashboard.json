@@ -333,8 +333,8 @@
       "diskIo": "磁盘 I/O"
     },
     "past1h": "过去 1 小时",
-    "peak": "24H 峰值",
-    "avg": "24H 均值",
+    "peak": "峰值",
+    "avg": "均值",
     "unknownServer": "未知服务器",
     "unknownMetric": "未配置指标"
   },
