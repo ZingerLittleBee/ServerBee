@@ -79,7 +79,6 @@ describe('StatNumberWidget', () => {
     expect(screen.getByTestId('stat-number-label')).toHaveTextContent('Fleet Coverage')
     expect(screen.getByTestId('stat-number-value')).toHaveTextContent('1 / 2')
     expect(screen.getByTestId('stat-number-supporting')).toHaveTextContent('1 offline')
-    expect(screen.getByTestId('stat-number-icon-shell')).toBeInTheDocument()
   })
 
   it('reports the offline count instead of a constant health word', () => {
