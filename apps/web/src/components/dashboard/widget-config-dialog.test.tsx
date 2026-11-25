@@ -292,7 +292,7 @@ describe('WidgetConfigDialog', () => {
     // Label + ColorPickerPopover trigger both surface the same string.
     expect(screen.getAllByText('Chart color').length).toBeGreaterThanOrEqual(1)
     // Trigger shows hex without the leading #.
-    expect(screen.getByText('8EC5FF')).toBeInTheDocument()
+    expect(screen.getByText('3E9EF0')).toBeInTheDocument()
   })
 
   it('renders a chart color field for line-chart widgets', () => {
