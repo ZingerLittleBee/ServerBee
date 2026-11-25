@@ -17,7 +17,7 @@ vi.mock('@/hooks/use-network-api', () => ({
 }))
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (_k: string, fallback?: string) => fallback ?? _k })
+  useTranslation: () => ({ t: (key: string, fallback?: unknown) => (typeof fallback === 'string' ? fallback : key) })
 }))
 
 // LatencyChart is exercised in its own context; stub it so this test focuses on the widget shell.
