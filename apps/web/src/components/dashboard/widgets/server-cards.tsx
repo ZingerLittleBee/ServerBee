@@ -163,11 +163,9 @@ export function ServerCardsWidget({ config, servers }: ServerCardsWidgetProps) {
           // offline tiles match even when body sections differ.
           <div className="-m-1 flex p-1 [contain-intrinsic-size:auto_280px] [content-visibility:auto]" key={server.id}>
             <ServerCard
-              className={cn(
-                DASHBOARD_CARD_CLASS_NAME,
-                'ring-0',
-                deriveServerStatus(server) === 'offline' && 'border-destructive/35 dark:border-destructive/45'
-              )}
+              // The card's own destructive ring marks offline servers; online ones
+              // drop the ring and keep only the dashboard surface shadow.
+              className={cn(DASHBOARD_CARD_CLASS_NAME, deriveServerStatus(server) !== 'offline' && 'ring-0')}
               server={server}
             />
           </div>

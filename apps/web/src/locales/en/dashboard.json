@@ -243,6 +243,11 @@
         "desc": "Highest first",
         "asc": "Lowest first"
       },
+      "range": {
+        "hours": "{{count}}h",
+        "days_one": "{{count}} day",
+        "days_other": "{{count}} days"
+      },
       "hints": {
         "allServersWhenEmpty": "Leave empty to include all servers",
         "allMonitorsWhenEmpty": "Leave empty to include all monitors"

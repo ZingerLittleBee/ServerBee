@@ -243,6 +243,10 @@
         "desc": "从高到低",
         "asc": "从低到高"
       },
+      "range": {
+        "hours": "{{count}} 小时",
+        "days": "{{count}} 天"
+      },
       "hints": {
         "allServersWhenEmpty": "留空表示包含所有服务器",
         "allMonitorsWhenEmpty": "留空表示包含所有监控项"

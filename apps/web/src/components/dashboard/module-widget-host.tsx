@@ -2,8 +2,10 @@ import type { ActionsHelper } from '@serverbee/widget-sdk'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
+import { WIDGET_PADDING_CLASS_NAME, WidgetHeader } from '@/components/dashboard/widget-chrome'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import type { ServerMetrics } from '@/lib/server-catalog'
+import { cn } from '@/lib/utils'
 import { parseConfig } from '@/lib/widget-helpers'
 import type { DashboardWidget } from '@/lib/widget-types'
 import { useWidgetRegistry } from '@/widgets-runtime/registry'
@@ -19,7 +21,7 @@ const NOOP_ACTIONS: ActionsHelper = {
 
 function Placeholder({ message }: { message: string }) {
   return (
-    <DashboardCard className="flex h-full items-center justify-center border-dashed bg-card p-4 text-center text-muted-foreground text-sm">
+    <DashboardCard className="flex h-full items-center justify-center border border-border border-dashed bg-card p-5 text-center text-muted-foreground text-sm shadow-none">
       {message}
     </DashboardCard>
   )
@@ -63,8 +65,8 @@ export function ModuleWidgetHost({ widget, servers: _servers }: ModuleWidgetHost
   const Component = entry.module.component
   const title = widget.title || entry.manifest.name
   return (
-    <DashboardCard className="flex h-full flex-col bg-card p-4">
-      <div className="mb-3 min-w-0 truncate font-semibold text-sm">{title}</div>
+    <DashboardCard className={cn('flex h-full flex-col gap-3 bg-card', WIDGET_PADDING_CLASS_NAME)}>
+      <WidgetHeader title={title} />
       <ScrollArea className="min-h-0 flex-1">
         <Component
           actions={NOOP_ACTIONS}
