@@ -15,7 +15,7 @@ Browser (xterm.js)  <--WebSocket-->  Server (proxy)  <--WebSocket-->  Agent (PTY
 ```
 
 1. The browser opens a WebSocket connection to the server at `/api/ws/terminal/{server_id}`
-2. The server authenticates the user (session cookie or API key) and verifies the admin role
+2. The server authenticates the user (session cookie, API key, Bearer token, or Tailscale Serve loopback identity) and verifies the admin role
 3. The server sends a `TerminalOpen` command to the agent over its existing WebSocket connection
 4. The agent spawns a PTY (pseudo-terminal) process via the `portable-pty` library, running the system's default shell
 5. Input from the browser is forwarded through the server to the agent's PTY, and output flows back along the same path
@@ -57,15 +57,17 @@ You can open multiple terminal sessions to the same server simultaneously, makin
 ## Authentication and Access Control
 
 <Callout type="warn">
-The web terminal also requires the **terminal** capability (`CAP_TERMINAL`), which is off by default. It must be enabled on the agent host — add `terminal` to the agent's `[capabilities]` allow list (or pass `--allow-cap terminal`) and restart the agent. Capabilities are agent-owned; the server cannot enable them. If the capability is off, the WebSocket upgrade is rejected with 403 Forbidden. See [Capabilities](/en/docs/capabilities).
+The web terminal also requires the **terminal** capability (`CAP_TERMINAL`), which is off by default. It must be enabled on the agent host — either permanently by adding `terminal` to the agent's `[capabilities]` allow list (or passing `--allow-cap terminal`) and restarting the agent, or temporarily without a restart via `serverbee-agent grant terminal --for 30m`. Capabilities are agent-owned; the server cannot enable them. If the capability is off, the WebSocket upgrade is rejected with 403 Forbidden. See [Capabilities → Temporary grants](/en/docs/capabilities#temporary-grants).
 </Callout>
 
-Authentication uses the same mechanisms as the REST API:
+Authentication supports the same mechanisms as the REST API:
 
 - **Session cookie** -- sent automatically by the browser after login
 - **API key** -- sent via the `X-API-Key` header (useful for programmatic access)
+- **Bearer token** -- sent via `Authorization: Bearer <token>` (used by mobile clients)
+- **Tailscale Serve loopback header** -- `Tailscale-User-Login` when `tailscale.auth_enabled = true` on loopback
 
-The server validates the user's identity and role before upgrading the connection to a WebSocket.
+The server validates the user's identity and admin role before upgrading the connection to a WebSocket. Accounts with a pending `must_change_password` flag are rejected until onboarding is completed.
 
 ## Session Limits
 
@@ -128,7 +130,10 @@ The `data` field contains base64-encoded input.
 3. **Close** -- Triggered by any of:
    - User closes the terminal panel
    - Browser WebSocket disconnects
+   - Remote PTY shell exits (for example, `exit` or `Ctrl+D`)
    - Idle timeout (10 minutes)
+   - Mobile bearer token expiry (`token_expired`)
+   - Authorization lease revocation (`authorization_revoked`, e.g., user logout, API key deletion, role demotion from Admin, or disabling Tailscale auth)
    - Agent disconnects
    - Server sends `TerminalClose` to the agent
 
@@ -146,16 +151,17 @@ If this is a concern, run the agent under a dedicated, less-privileged user via 
 [Service]
 User=serverbee
 Group=serverbee
-ExecStart=/usr/local/bin/serverbee-agent
+ExecStart=/opt/serverbee/bin/serverbee-agent
+AmbientCapabilities=CAP_NET_RAW
 ```
 
 <Callout type="warn">
-Running the agent as a non-root user limits the user's permissions in the terminal and may restrict some system-metric collection (such as TCP/UDP connection counts). ICMP ping probes additionally require the `CAP_NET_RAW` capability.
+Running the agent as a non-root user limits the user's permissions in the terminal and may restrict some system-metric collection (such as TCP/UDP connection counts). Keep `AmbientCapabilities=CAP_NET_RAW` if ICMP ping probes are used.
 </Callout>
 
 ### Audit Logging
 
-Terminal connect and disconnect events are written to the audit log. Administrators can review all session access under Settings → Audit Logs, including the operator's username, target server, connect/disconnect times, and source IP address.
+Terminal lifecycle events are written to the audit log under the action names `terminal_opened`, `terminal_closed` (including `duration_ms` and `close_reason`), and `terminal_open_denied`. Administrators can review all session access under Settings → Audit Logs, including the operator's username, target server, timestamps, and source IP address.
 
 ### Transport Encryption
 

@@ -10,15 +10,15 @@ Agent 在每台主机上检测三类主机级入侵信号，并将结构化事�
 
 | 类型 | 触发条件 | 严重度 |
 |------|----------|--------|
-| `ssh_login` | 一次成功的 SSH 登录。`(user, source IP)` 组合首次出现时标记 `first_seen=true` | `info` |
+| `ssh_login` | 一次成功的 SSH 登录。`(user, source IP)` 组合首次出现时标记 `first_seen=true` | `info`（`first_seen=true` 时为 `medium`） |
 | `ssh_brute_force` | 同一源 IP 在滑动窗口内累计大量 SSH 失败尝试 | `medium` / `high` / `critical` |
-| `port_scan` | 同一源 IP 在滑动窗口内命中大量不同的目标端口 | `medium` |
+| `port_scan` | 同一源 IP 在滑动窗口内命中大量不同的目标端口 | `high` |
 
-每个事件都附带结构化证据（失败次数、用户名集合、扫描端口等）和检测来源 —— 取值之一：`journal`、`auth_log`、`conntrack`、`nflog`。
+每个事件都附带结构化证据（失败次数、用户名集合、扫描端口等）和检测来源 `detector_source` —— 取值之一：`journal`、`auth_log`、`conntrack`、`firewall_log`。目前 SSH 事件即使回退到文件跟踪也会标记为 `journal`；内核防火墙日志跟踪用于填充事件中的 `blocked_count` 证据。
 
 ## 前置条件
 
-- **仅支持 Linux。** SSH 检测读取 systemd journal 或 `/var/log/auth.log`；端口扫描检测依赖 `conntrack`。
+- **仅支持 Linux。** SSH 检测读取 systemd journal，或回退到 `/var/log/auth.log`、`/var/log/secure`；端口扫描检测依赖 `conntrack`（仅检测 TCP 连接）。
 - Agent 需上报 **`CAP_SECURITY_EVENTS`**（位值 `256`，默认启用）。能力由 Agent 拥有 —— 如需关闭，在 Agent 的 `[capabilities]` deny 列表中加入 `security_events`。详见 [功能开关](/zh/docs/capabilities)。
 - 端口扫描检测需安装 `conntrack` CLI，并将 `security.port_scan.enabled` 设为 `true`：
   ```bash
@@ -32,9 +32,9 @@ Agent 在每台主机上检测三类主机级入侵信号，并将结构化事�
 
 | 入口 | 路径 | 内容 |
 |------|------|------|
-| 总览 | `/security` | 24 小时分类 KPI、7 天时间线、可筛选事件表 |
+| 总览 | `/security` | `24h / 7d / 30d` 时间范围切换驱动 KPI 卡片（分类计数与 Top Attacker IP）及时间线、可筛选事件表（含 `First-seen only` 过滤），以及管理员一键 **封禁来源 IP** |
 | 单机 | 服务器详情 → **Security** Tab | 仅当前服务器范围的同款视图 |
-| 详情 | 点击任意行 | 完整证据、检测来源、源 IP GeoIP（若已配置）|
+| 详情 | 点击任意行 | 完整证据、检测来源，以及源 IP 的 **VirusTotal** 查询链接 |
 
 新事件通过 WebSocket 实时显示，无需刷新。
 
@@ -45,10 +45,10 @@ Agent 在每台主机上检测三类主机级入侵信号，并将结构化事�
 | TOML 键 | 环境变量 | 默认值 | 说明 |
 |---------|----------|--------|------|
 | `security.enabled` | `SERVERBEE_SECURITY__ENABLED` | `true` | 安全检测器总开关 |
-| `security.ssh.window_seconds` | `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `60` | SSH 失败计数的滑动窗口（秒）|
+| `security.ssh.window_seconds` | `SERVERBEE_SECURITY__SSH__WINDOW_SECONDS` | `60` | SSH 失败计数的滑动窗口（秒） |
 | `security.ssh.failed_threshold` | `SERVERBEE_SECURITY__SSH__FAILED_THRESHOLD` | `10` | 窗口内失败累计达到该值即触发一个 `ssh_brute_force` 事件，触发后队列清空 |
-| `security.port_scan.enabled` | `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `false` | 默认关闭。需要 `conntrack` CLI |
-| `security.port_scan.window_seconds` | `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `30` | 不同端口计数的滑动窗口（秒）|
+| `security.port_scan.enabled` | `SERVERBEE_SECURITY__PORT_SCAN__ENABLED` | `false` | 默认关闭。需要 `conntrack` CLI（仅 TCP 连接） |
+| `security.port_scan.window_seconds` | `SERVERBEE_SECURITY__PORT_SCAN__WINDOW_SECONDS` | `30` | 不同端口计数的滑动窗口（秒） |
 | `security.port_scan.distinct_port_threshold` | `SERVERBEE_SECURITY__PORT_SCAN__DISTINCT_PORT_THRESHOLD` | `20` | 同一源 IP 在窗口内命中的不同端口数达到该值即触发一个 `port_scan` 事件 |
 | `security.data_dir` | `SERVERBEE_SECURITY__DATA_DIR` | `/var/lib/serverbee/security` | 持久化 `first_seen` 存储目录，记录已知 `(user, IP)` 组合 |
 
@@ -76,9 +76,9 @@ sshd 对一次失败尝试通常会写两行日志（`Invalid user …` 后跟 `
 
 | 规则类型 | 触发于 |
 |----------|--------|
-| `ssh_login_detected` | 任意 `ssh_login` 事件 |
-| `ssh_brute_force_detected` | 任意 `ssh_brute_force` 事件 |
-| `port_scan_detected` | 任意 `port_scan` 事件 |
+| `ssh_new_ip_login` | `first_seen = true` 的 `ssh_login` 事件 |
+| `ssh_brute_force_detected` | 满足阈值条件的 `ssh_brute_force` 事件 |
+| `port_scan_detected` | 满足阈值条件的 `port_scan` 事件 |
 
 ### 快速创建
 
@@ -88,18 +88,22 @@ Alerts 页面提供三张 **预设卡片**，一键创建规则。预设已填�
 
 ### 过滤参数
 
-每条安全规则支持：
+安全规则参数（`SecurityRuleParams`）按规则类型生效：
 
-- **`severity_min`** —— 触发所需的最低严重度（例如爆破规则可设为 `high`）。
-- **`exclude_cidrs`** —— 屏蔽来自可信网段的事件，例如 `["10.0.0.0/8", "192.168.0.0/16"]`。
-- **`first_seen_only`** *（仅 `ssh_login`）* —— 仅在出现新 `(user, IP)` 组合时通知。
+- **`min_failed_count`** *（仅 `ssh_brute_force_detected`）* —— 事件中触发告警所需的最小失败次数（预设默认：`20`）。
+- **`min_distinct_ports`** *（仅 `port_scan_detected`）* —— 事件中触发告警所需的最小扫描端口数（预设默认：`50`）。
+- **`exclude_users`** *（仅 `ssh_new_ip_login`）* —— 忽略指定用户名的登录告警。
+- **`exclude_cidrs`** *（仅 `ssh_new_ip_login`）* —— 屏蔽来自可信网段的事件，例如 `["10.0.0.0/8", "192.168.0.0/16"]`。
+- **`dedupe_window_seconds`** *（所有安全规则）* —— 按 `(rule_id, server_id, source_ip)` 去重的时间窗口（秒，默认 `600`）。
 
-### 去重
+### 去重与维护窗口
 
 通知按 `(rule_id, server_id, event_key)` 维度去重。`event_key` 包含源 IP，因此：
 
 - 两个不同攻击者命中同一台服务器 → **两次** 通知。
-- 同一攻击者在去重窗口内反复触发 → **一次** 通知。
+- 同一攻击者在 `dedupe_window_seconds` 去重窗口内反复触发 → **一次** 通知。
+
+安全告警通知同样遵循维护窗口规则，服务器处于计划维护期间时会抑制通知。
 
 <Callout type="warn">
 安全规则不能与指标规则共存于同一条 alert rule，且每条规则只允许 **一个** 安全 item。校验器会拒绝混合或重复配置 —— 请按事件类型分别建规则。
@@ -107,11 +111,22 @@ Alerts 页面提供三张 **预设卡片**，一键创建规则。预设已填�
 
 ### 自动封禁来源 IP
 
-爆破和端口扫描类规则可以附带一个 `block_source_ip` 动作，把触发事件的来源 IP 自动写入 `block_list`。只有 `ssh_brute_force_detected` 和 `port_scan_detected` 规则允许携带该动作；`ssh_login_detected` 故意被禁用，因为一次合法的首次登录会把用户自己锁死。
+爆破和端口扫描类规则可以附带一个 `block_source_ip` 动作，把触发事件的来源 IP 自动写入 `block_list`。只有 `ssh_brute_force_detected` 和 `port_scan_detected` 规则允许携带该动作；`ssh_new_ip_login` 故意被禁用，因为一次合法的首次登录会把用户自己锁死。
 
 自动写入的记录使用 `origin = "auto"` 并保留触发的 `origin_event_id`。系统按规范化目标做去重：若已有手工或更早的自动封禁覆盖了触发事件所在的服务器，则静默跳过；若已存在但 **未** 覆盖该服务器，则把冲突记入审计日志 `firewall_auto_block_skipped_conflict`，并且不创建新的记录。
 
 完整功能、护栏与审计日志，详见 [防火墙黑名单](/zh/docs/firewall)。
+
+## REST API
+
+读取端点对所有已认证用户（Admin 与 Member）开放，删除事件仅限 Admin。
+
+| 方法 | 端点 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/security/events` | 已认证 | 列出并筛选安全事件 |
+| GET | `/api/security/events/{id}` | 已认证 | 获取单条安全事件及完整证据 |
+| GET | `/api/security/stats` | 已认证 | 获取聚合 KPI、Top Attacker IP 与时间线 |
+| DELETE | `/api/security/events/{id}` | Admin | 删除一条安全事件 |
 
 ## 数据保留
 
@@ -121,7 +136,7 @@ Alerts 页面提供三张 **预设卡片**，一键创建规则。预设已填�
 
 ```text
 sshd / 内核
-     │   (journal · auth.log · conntrack)
+     │   (journal · auth.log / secure · conntrack)
      ▼
 Agent 检测器
      │   AgentMessage::SecurityEvent  (WebSocket)
@@ -136,6 +151,6 @@ Server   ─►  security_event 表
 
 <Cards>
   <Card title="告警与通知" href="/zh/docs/alerts" />
-  <Card title="Capabilities" href="/zh/docs/capabilities" />
-  <Card title="配置" href="/zh/docs/configuration" />
+  <Card title="功能开关" href="/zh/docs/capabilities" />
+  <Card title="配置参考" href="/zh/docs/configuration" />
 </Cards>

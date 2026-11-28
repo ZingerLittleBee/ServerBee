@@ -15,7 +15,7 @@ Web 终端采用三段式 WebSocket 中转架构，Server 作为中间代理在�
 ```
 
 1. 浏览器通过 WebSocket 连接到 Server：`/api/ws/terminal/{server_id}`
-2. Server 校验用户身份（Session Cookie 或 API Key）并验证管理员角色
+2. Server 校验用户身份（Session Cookie、API Key、Bearer 令牌或 Tailscale Serve 回环身份）并验证管理员角色
 3. Server 通过已建立的 Agent WebSocket 连接，向 Agent 下发 `TerminalOpen` 指令
 4. Agent 使用 `portable-pty` 库创建伪终端（PTY）进程，并启动系统默认 Shell
 5. 浏览器输入的字符经 Server 转发到 Agent 的 PTY，PTY 的输出再经 Server 原路转发回浏览器
@@ -57,15 +57,17 @@ Web 终端使用 Tokyo Night 配色方案，与 ServerBee 的暗色主题风格�
 ## 认证与访问控制
 
 <Callout type="warn">
-Web 终端还要求 **terminal** 能力（`CAP_TERMINAL`），该能力默认关闭，且必须在 Agent 主机上开启 —— 在 Agent 的 `[capabilities]` allow 列表中加入 `terminal`（或传 `--allow-cap terminal`）并重启 Agent。能力由 Agent 拥有，Server 无法开启。能力关闭时，WebSocket 升级请求会被 403 Forbidden 拒绝。见 [功能开关](/zh/docs/capabilities)。
+Web 终端还要求 **terminal** 能力（`CAP_TERMINAL`），该能力默认关闭，且必须在 Agent 主机上开启：可在 Agent 的 `[capabilities]` allow 列表中永久加入 `terminal`（或传 `--allow-cap terminal`）并重启 Agent，或无需重启通过 `serverbee-agent grant terminal --for 30m` 临时授予。能力由 Agent 拥有，Server 无法开启。能力关闭时，WebSocket 升级请求会被 403 Forbidden 拒绝。详见 [功能开关 → 临时授予](/zh/docs/capabilities#临时授予)。
 </Callout>
 
 终端认证与 REST API 使用相同的机制：
 
 - **Session Cookie**：登录后由浏览器自动携带
 - **API Key**：通过 `X-API-Key` 请求头传递（适用于程序化访问）
+- **Bearer 令牌**：通过 `Authorization: Bearer <token>` 传递（移动端客户端使用）
+- **Tailscale Serve 回环请求头**：开启 `tailscale.auth_enabled = true` 时在回环接口接受 `Tailscale-User-Login`
 
-Server 会在升级 WebSocket 连接前校验用户身份和角色。
+Server 会在升级 WebSocket 连接前校验用户身份和管理员角色。处于 `must_change_password` 状态的账号在完成首次改密前会被拒绝连接。
 
 ## 会话限制
 
@@ -128,7 +130,10 @@ Server 会在升级 WebSocket 连接前校验用户身份和角色。
 3. **关闭**——由以下任一情况触发：
    - 用户关闭终端面板
    - 浏览器 WebSocket 断开
+   - 远端 PTY Shell 进程退出（例如执行 `exit` 或按 `Ctrl+D`）
    - 空闲超时（10 分钟）
+   - 移动端 Bearer 令牌过期（`token_expired`）
+   - 授权租约吊销（`authorization_revoked`，如用户登出、API Key 被删除、管理员角色降级或关闭 Tailscale 认证）
    - Agent 断开连接
    - Server 向 Agent 发送 `TerminalClose`
 
@@ -146,16 +151,17 @@ PTY 进程以 Agent 运行时的系统用户身份执行。安装脚本默认将
 [Service]
 User=serverbee
 Group=serverbee
-ExecStart=/usr/local/bin/serverbee-agent
+ExecStart=/opt/serverbee/bin/serverbee-agent
+AmbientCapabilities=CAP_NET_RAW
 ```
 
 <Callout type="warn">
-以非 root 用户运行 Agent 时，终端操作会受到该用户权限的约束，部分系统指标采集也可能受限（如 TCP/UDP 连接数）。此外，ICMP Ping 探测需要 `CAP_NET_RAW` 权限。
+以非 root 用户运行 Agent 时，终端操作会受到该用户权限的约束，部分系统指标采集也可能受限（如 TCP/UDP 连接数）。如需使用 ICMP Ping 探测，请保留 `AmbientCapabilities=CAP_NET_RAW`。
 </Callout>
 
 ### 审计日志
 
-终端的连接和断开事件会写入审计日志。管理员可以在 Settings → Audit Logs 页面查看所有终端会话的访问记录，包括操作者用户名、目标服务器、连接与断开时间，以及来源 IP 地址。
+终端生命周期事件会按动作名称 `terminal_opened`、`terminal_closed`（包含 `duration_ms` 与 `close_reason`）和 `terminal_open_denied` 写入审计日志。管理员可以在 Settings → Audit Logs 页面查看所有终端会话的访问记录，包括操作者用户名、目标服务器、时间戳以及来源 IP 地址。
 
 ### 连接加密
 

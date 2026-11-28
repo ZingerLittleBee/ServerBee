@@ -1,10 +1,10 @@
 ---
 title: Security
-description: Configure two-factor authentication, OAuth login, Tailscale Serve loopback auth, password management, and login security policies.
+description: Configure two-factor authentication, OAuth login, Tailscale Serve loopback auth, password management, and rate-limiting policies.
 icon: Shield
 ---
 
-ServerBee layers several security controls: two-factor authentication (2FA), OAuth social login (including Tailscale `tsidp` OIDC), optional Tailscale Serve loopback identity authentication, password policies, and login rate limiting.
+ServerBee layers several security controls: two-factor authentication (2FA), OAuth social login (GitHub and Google), optional Tailscale Serve loopback identity authentication, password policies, and IP-level rate limiting.
 
 ## Two-Factor Authentication (2FA)
 
@@ -19,7 +19,7 @@ ServerBee supports TOTP (Time-based One-Time Password) based two-factor authenti
 5. Click **Enable** to finish setup
 
 <Callout type="info">
-Once enabled, a 6-digit TOTP code is required for every login. Codes refresh every 30 seconds.
+Pending 2FA setup secrets expire server-side after **10 minutes** if not confirmed. Once enabled, a 6-digit TOTP code is required for every password login. Codes refresh every 30 seconds.
 </Callout>
 
 ### Disabling 2FA
@@ -33,20 +33,19 @@ Once enabled, a 6-digit TOTP code is required for every login. Codes refresh eve
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/auth/2fa/setup` | POST | Generate TOTP secret and QR code |
+| `/api/auth/2fa/setup` | POST | Generate TOTP secret and QR code (expires in 10 minutes) |
 | `/api/auth/2fa/enable` | POST | Verify code and enable 2FA |
 | `/api/auth/2fa/disable` | POST | Verify password and disable 2FA |
 | `/api/auth/2fa/status` | GET | Check current 2FA status |
 
 ## OAuth Social Login
 
-ServerBee supports three OAuth providers:
+ServerBee supports two OAuth providers:
 
 | Provider | Config Section | Callback URL |
 |----------|---------------|--------------|
 | GitHub | `[oauth.github]` | `{base_url}/api/auth/oauth/github/callback` |
 | Google | `[oauth.google]` | `{base_url}/api/auth/oauth/google/callback` |
-| OIDC | `[oauth.oidc]` | `{base_url}/api/auth/oauth/oidc/callback` |
 
 ### Configuring OAuth
 
@@ -64,12 +63,12 @@ client_secret = "your-github-client-secret"
 
 ### OAuth Account Management
 
-- View linked OAuth accounts in Settings → Security
-- Click **Unlink** to disconnect an OAuth account
-- If `allow_registration = false` (default), first-time OAuth logins do not create new users — an admin must create the user first
+- View linked OAuth accounts in Settings → Security (`GET /api/auth/oauth/accounts`)
+- Click **Unlink** to disconnect an OAuth account (`DELETE /api/auth/oauth/accounts/{id}`)
+- There is no UI or API flow to manually link an OAuth identity to a pre-existing password account. With `allow_registration = false` (default), only already-linked OAuth accounts can sign in; unlinked OAuth logins are rejected. To onboard new OAuth users, temporarily enable `allow_registration = true` so their first OAuth login creates a Member account and links that identity, then turn it back off.
 
 <Callout type="warn">
-Enable `allow_registration = true` only when the OAuth provider itself is access-controlled (self-hosted OIDC or an org-internal IdP). Auto-created accounts get the Member role, which can read **all** monitoring data — including security events and public IPs. With a public provider such as GitHub, enabling it grants that access to every user of the provider.
+Be cautious when enabling `allow_registration = true` with public providers such as GitHub or Google. Auto-created accounts receive the Member role, which can read **all** monitoring data across the fleet — including security events and public IPs. Leaving `allow_registration = true` open on a public instance grants that access to any user of the configured provider.
 </Callout>
 
 ### Login Flow
@@ -77,8 +76,8 @@ Enable `allow_registration = true` only when the OAuth provider itself is access
 1. Click an OAuth provider button on the login page (e.g., "Login with GitHub")
 2. Redirect to the provider's authorization page
 3. After authorization, redirect back to ServerBee
-4. If the OAuth account is linked to an existing user, log in directly
-5. If not linked and `allow_registration = true`, create a new Member user and log in
+4. If the OAuth account is already linked to an existing user, log in directly
+5. If not linked and `allow_registration = true`, create a new Member user, link the OAuth identity, and log in
 6. If not linked and `allow_registration = false`, return an error
 
 ## Tailscale Serve Loopback Authentication
@@ -91,42 +90,53 @@ To prevent header spoofing, ServerBee enforces strict boundary checks before tru
 - **Loopback-only without proxy forwarding headers**: Requests carrying `Tailscale-User-Login` are accepted **only** when the TCP peer (`ConnectInfo`) is strictly `127.0.0.1` or `::1` **and** neither `X-Forwarded-For` nor `Forwarded` is present. When `tailscale.socket_path` points to a reachable local `tailscaled` Unix socket, ServerBee also cross-checks the peer identity via `/localapi/v0/whois`.
 - **Account mapping and role safety**: ServerBee resolves existing users by exact username, unique case-insensitive username, linked OAuth account, or unique email local-part, and preserves `must_change_password` enforcement. Unknown Tailnet users are rejected unless `tailscale.auto_provision_role = "member"` (`admin` is never auto-provisioned). Long-lived WebSocket connections re-check `auth_enabled` and user roles continuously.
 
-Bind `server.listen` to `127.0.0.1:9527` when using this mode so all external traffic passes through `tailscale serve`. For Tailscale OIDC (`tsidp`) and sidecar setup details, see [Tailscale Integration](/en/docs/tailscale).
+Bind `server.listen` to `127.0.0.1:9527` when using this mode so all external traffic passes through `tailscale serve`. For Tailscale Serve and sidecar setup details, see [Tailscale Integration](/en/docs/tailscale).
 
 ## Password Management
 
 ### Changing Password
 
 1. Go to Settings → Security
-2. Enter your current password and new password in "Change Password"
+2. Enter your current password and new password in "Change Password" (minimum **8 characters**)
 3. Click **Change Password**
 
-Passwords are hashed with argon2, following OWASP recommendations.
+Passwords are hashed with argon2, following OWASP recommendations. Changing your password automatically revokes all other active web and mobile sessions for your account.
 
 ### First-Run Admin Credentials
 
 On first start (when no users exist), ServerBee auto-creates an admin account with a randomly generated password and prints it once to the server/container logs as a highlighted credentials banner. The username and password cannot be preset via environment variables. On first login you must change this password, and may optionally choose a different username.
 
-## Login Security
+## Login Security and Rate Limiting
 
 ### Login Rate Limiting
 
-ServerBee enforces IP-level rate limiting on the login endpoint:
+ServerBee enforces IP-level rate limiting on `POST /api/auth/login` **before** credential verification:
 
-- Maximum **5 failed attempts** per 15-minute window by default (configurable via `rate_limit.login_max`)
-- Returns 429 Too Many Requests when exceeded
-- Expired rate limit records are cleaned up by the background session_cleaner task
+- Maximum **5 requests** per 15-minute window by default (configurable via `rate_limit.login_max`). Every request to `POST /api/auth/login` counts toward the window — including successful logins and both steps of a 2FA login, not only failed attempts.
+- Returns `429 Too Many Requests` when exceeded (and writes a `login_rate_limited` audit entry)
+- Expired rate limit entries are cleaned up by the background `session_cleaner` task
 
 ### Agent Registration Rate Limiting
 
-Agent registration endpoints are also rate limited:
+Agent registration endpoints are also rate limited per IP:
 
-- Maximum **10 registration attempts** per 15-minute window by default (configurable via `rate_limit.register_max`). The Railway template deliberately overrides this to **3** as a stricter hosted default
+- Maximum **10 registration requests** per 15-minute window by default (configurable via `rate_limit.register_max`). The Railway template deliberately overrides this to **3** as a stricter hosted default.
+
+### Public Status Page Rate Limiting
+
+Unauthenticated `/api/status/*` endpoints enforce a per-IP **`public`** rate-limit bucket:
+
+- Maximum **60 requests** per **60-second** window (fixed limit)
+
+### Managing Rate Limits
+
+Administrators can inspect active and blocked IPs across the `login`, `register`, and `public` scopes, unblock a single IP, or clear a scope from **Settings → Rate Limits** (`/settings/rate-limits`), or programmatically via `GET /api/admin/rate-limit` and `POST /api/admin/rate-limit/reset` (audited as `rate_limit.reset`). See [Admin Guide → Rate Limit Management](/en/docs/admin#rate-limit-management).
 
 ### Session Security
 
-- Session cookies are set with `HttpOnly` + `Secure` flags by default
-- Session lifetime is 24 hours (configurable via `auth.session_ttl`)
+- Session cookies are set with `HttpOnly` + `Secure` flags by default, with `SameSite=Strict` on password login and `SameSite=Lax` on OAuth login
+- Session tokens are hashed with **SHA-256** at rest in the database (plaintext tokens are never stored)
+- Session lifetime is 24 hours by default (configurable via `auth.session_ttl`), with sliding expiry refreshed on active web requests
 - For HTTP-only development, set `auth.secure_cookie = false`
 
 <Cards>

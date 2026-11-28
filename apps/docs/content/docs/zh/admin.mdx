@@ -1,6 +1,6 @@
 ---
 title: 管理员指南
-description: 用户管理、审计日志、远程命令、计费信息、Agent Authority 与 Tailscale 控制面管理。
+description: 常规设置、外观品牌、限流管理、备份与恢复、用户管理、审计日志、远程命令、计费与续费追踪、Agent Authority 与 Tailscale 控制面管理。
 icon: UserCog
 ---
 
@@ -12,8 +12,8 @@ ServerBee 支持多用户，分为两种角色：
 
 | 角色 | 权限 |
 |------|------|
-| **Admin** | 完全管理权限：用户管理、服务器配置、告警规则、通知渠道、审计日志等 |
-| **Member** | 对**所有**服务器监控数据的只读权限——Dashboard、服务器详情、Ping 结果、安全事件、公网 IP，以及自助设置（自己的密码、2FA、API Key 列表、移动设备） |
+| **Admin** | 完全管理权限：用户管理、服务器配置、告警规则、通知渠道、审计日志、限流管理、外观品牌、创建 API Key 等 |
+| **Member** | 对**所有**服务器监控数据的只读权限——Dashboard、服务器详情、Ping 结果、安全事件、公网 IP，以及自助设置（自己的密码、2FA、查看现有 API Key 列表、移动设备）。创建新 API Key（`POST /api/auth/api-keys`）**仅限 Admin**。 |
 
 <Callout type="warn">
 Member 的可见范围是全部服务器，不支持按服务器隔离。Member 账号仅适合完全信任的协作者。如需向外部人员（如客户）展示部分服务器，请改用[状态页](/zh/docs/status-page)。
@@ -24,7 +24,7 @@ Member 的可见范围是全部服务器，不支持按服务器隔离。Member 
 进入 Settings → Users 页面：
 
 - **创建用户**：输入用户名、密码和角色
-- **编辑角色**：修改用户的角色（Admin/Member）
+- **编辑角色 / 重置密码**：修改用户的角色（Admin/Member，禁止将最后一个 Admin 降级）或重置用户密码（会自动吊销该用户的所有活跃 Web 与移动端会话）
 - **删除用户**：删除用户账号（禁止删除最后一个 Admin）
 
 ### 找回丢失的管理员账号
@@ -44,48 +44,113 @@ Member 的可见范围是全部服务器，不支持按服务器隔离。Member 
 | `/api/users` | GET | 列出所有用户 |
 | `/api/users` | POST | 创建用户 |
 | `/api/users/{id}` | GET | 获取用户详情 |
-| `/api/users/{id}` | PUT | 更新用户角色 |
-| `/api/users/{id}` | DELETE | 删除用户 |
+| `/api/users/{id}` | PUT | 更新用户角色（禁止降级最后一个 Admin）和/或重置密码（吊销全部会话） |
+| `/api/users/{id}` | DELETE | 删除用户（禁止删除最后一个 Admin） |
+
+## 常规设置与备份恢复
+
+### 数据源与关于
+
+进入 **设置**（`/settings`）可管理内置查询数据库并查看服务端版本信息：
+
+- **数据源（Data sources）**：一键下载并查看 DB-IP GeoIP 国家库（`GET /api/geoip/status`、`POST /api/geoip/download`）与 DB-IP ASN 库（`GET /api/asn/status`、`POST /api/asn/download`），数据基于 CC BY 4.0 许可。未配置自定义 `geoip.mmdb_path` / `asn.mmdb_path` 时，下载的 MMDB 文件保存在 `{data_dir}` 下。
+- **关于（About）**：展示当前运行的服务端构建版本（`GET /api/about`）。
+
+### 系统设置与数据库备份恢复
+
+管理员还可以通过设置 API 管理系统配置和 SQLite 数据库备份：
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/settings` | GET | 读取系统设置（`site_name`、`site_description`、`custom_css`、`custom_js`） |
+| `/api/settings` | PUT | 更新系统设置 |
+| `/api/settings/backup` | POST | 以 `application/octet-stream` 流式导出一致性 SQLite 快照（`VACUUM INTO`，记录 `settings.backup` 审计日志） |
+| `/api/settings/restore` | POST | 上传原始 SQLite 二进制文件（`Content-Type: application/octet-stream`）恢复数据库（记录 `settings.restore` 审计日志）。恢复后**必须重启服务端** |
+
+<Callout type="info">
+`/api/settings/backup` 与 `/api/settings/restore` 仅导出和恢复 **SQLite 数据库本身**。独立持久化资产（`{data_dir}/brand/`、已下载的 GeoIP/ASN MMDB 文件以及 `server.toml`）需要单独备份。详见 [部署指南 → 备份哪些内容](/zh/docs/deployment#persistent-data)。
+</Callout>
+
+## 外观与自定义品牌
+
+进入 **设置 → 外观**（`/settings/appearance`）可自定义控制台与状态页的品牌展示：
+
+- **站点标题与页脚文本**：配置 `site_title` 与 `footer_text`。
+- **自定义 Logo 与 Favicon**：支持上传 **PNG** 或 **ICO** 图片，单文件上限 **512 KiB**（通过文件魔数校验）。上传文件保存在 `{data_dir}/brand/` 目录，并通过 `/api/brand/logo` 与 `/api/brand/favicon` 公开提供。
+
+| 端点 | 方法 | 权限 | 说明 |
+|------|------|------|------|
+| `/api/settings/brand` | GET | 公开 | 获取当前品牌配置 |
+| `/api/settings/brand` | PUT | Admin | 更新 `site_title`、`footer_text`、`logo_path`、`favicon_path` |
+| `/api/settings/brand/logo` | POST | Admin | 上传自定义 Logo（`multipart/form-data`，PNG/ICO，最大 512 KiB） |
+| `/api/settings/brand/favicon` | POST | Admin | 上传自定义 Favicon（`multipart/form-data`，PNG/ICO，最大 512 KiB） |
+| `/api/brand/logo` | GET | 公开 | 获取已上传的 Logo 图片 |
+| `/api/brand/favicon` | GET | 公开 | 获取已上传的 Favicon 图片 |
+
+## 限流管理
+
+进入 **设置 → 限流**（`/settings/rate-limits`）可查看并重置内存中按 IP 统计的三个限流作用域：
+
+| 作用域 | 覆盖端点 | 默认上限 | 窗口时长 |
+|--------|----------|----------|----------|
+| `login` | `POST /api/auth/login`（密码校验前统计全部请求） | `5`（`rate_limit.login_max`） | 15 分钟 |
+| `register` | Agent 注册端点 | `10`（`rate_limit.register_max`） | 15 分钟 |
+| `public` | 未认证的 `/api/status/*` 端点 | `60`（固定） | 60 秒 |
+
+管理员可以查看当前被追踪或被拦截的 IP（包含请求计数与窗口剩余秒数），针对单个 IP 解封，或清空某个作用域乃至全部限流记录。每次重置都会写入 `rate_limit.reset` 审计日志。
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/admin/rate-limit` | GET | 列出各作用域当前的 IP 限流条目与配置上限 |
+| `/api/admin/rate-limit/reset` | POST | 重置限流记录；支持可选 JSON 过滤条件 `{ "scope": "login", "ip": "203.0.113.5" }`（省略表示清空更大范围或全部） |
 
 ## 审计日志
 
-ServerBee 自动记录关键操作的审计日志，帮助管理员追踪安全事件。
+ServerBee 自动记录关键操作的审计日志，帮助管理员追踪安全与管理事件。
 
 ### 记录的事件
 
-- 用户登录（成功/失败）
-- 密码修改
-- 2FA 启用/禁用
-- 终端连接/断开
-- Capability 拒绝事件
-- `capability_temporarily_granted` —— 主机本地的临时授予开启了某个默认关闭的能力
-- `capability_grant_expired` —— 临时授予到期，能力自动关回
-- `capability_grant_revoked` —— 主机操作者提前撤销了临时授予
-- `tailscale.config.update` —— 管理员更新了 Tailscale / Headscale 控制面或 Serve 回环认证配置
+- **认证与账号安全**：`login`、`login_failed`、`login_rate_limited`、`onboarding`、密码修改、2FA 启用/禁用
+- **用户与 API Key**：`user.create`、`user.update`、`user.delete`、`api_key.create`、`api_key.delete`
+- **终端与文件管理器**：`terminal_opened`、`terminal_closed`、`terminal_open_denied`、`file_*`（含 `file_read_denied`、`file_download_denied`）
+- **防火墙与 Docker**：`firewall_*`（封禁创建/删除/下发/移除/拒绝/重置/冲突）、`docker_*`（容器生命周期操作）
+- **远程命令与计划任务**：`task_created`、`task_updated`、`task_deleted`、`exec_started`、`exec_finished`、`exec_denied`
+- **能力开关**：`capability_temporarily_granted`、`capability_grant_expired`、`capability_grant_revoked` 以及能力拒绝事件
+- **系统、限流、审计与 Tailscale**：`settings.backup`、`settings.restore`、`rate_limit.reset`、`audit_log_clear`、`tailscale.config.update`、`tailscale.auto_provision`
 
-### 查看审计日志
+### 查看与管理审计日志
 
-进入 Settings → Audit Logs 页面，可以：
+进入 **Settings → Audit Logs** 页面，可以：
 
-- 浏览所有审计记录（分页显示）
+- 分页浏览所有审计记录，并按操作类型或用户筛选
 - 查看用户、操作类型、详情、IP 地址和时间
+- 清空全部审计日志（清空后会写入一条新的 `audit_log_clear` 记录，留存执行管理员与删除条数）
 
 ### API 端点
 
-```
-GET /api/audit-logs?limit=50&offset=0
-```
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/audit-logs` | GET | 分页查询审计日志；支持 `limit`（默认 `50`，最大 `200`）、`offset`、`action`、`user_id` |
+| `/api/audit-logs/options` | GET | 获取筛选下拉框所需的去重 `actions` 与 `users` 列表 |
+| `/api/audit-logs` | DELETE | 清空全部审计日志（同时写入 `audit_log_clear` 记录） |
 
-返回分页的审计记录列表，支持 `limit` 和 `offset` 参数。每条记录包含：
+`GET /api/audit-logs?limit=50&offset=0` 返回示例：
 
 ```json
 {
-  "id": 1,
-  "user_id": "user-uuid",
-  "action": "login",
-  "detail": "Login successful",
-  "ip": "192.168.1.100",
-  "created_at": "2026-03-14T10:30:00Z"
+  "data": {
+    "entries": [
+      {
+        "id": 1,
+        "user_id": "user-uuid",
+        "action": "login",
+        "detail": null,
+        "ip": "192.168.1.100",
+        "created_at": "2026-03-14T10:30:00Z"
+      }
+    ],
+    "total": 1
+  }
 }
 ```
 
@@ -111,9 +176,10 @@ GET /api/audit-logs?limit=50&offset=0
 
 ### 限制
 
-- 命令执行超时：300 秒
-- 需要目标 Agent 具有 `exec` 能力（CAP_EXEC），该能力默认关闭。能力由 Agent 拥有 —— 在 Agent 主机的 `[capabilities]` allow 列表中加入 `exec`（或 `--allow-cap exec`）开启。见 [功能开关](/zh/docs/capabilities)
-- Agent 未上报 CAP_EXEC 的服务器会收到合成结果：`exit_code = -2`，提示功能被禁用
+- 默认命令执行超时：**300 秒**（可通过任务 `timeout` 字段调整；Web 控制台一次性命令表单默认值为 **30 秒**）
+- 命令 stdout/stderr 输出在 **512 KB**（`MAX_TASK_OUTPUT_SIZE`）处截断
+- 需要目标 Agent 具有 `exec` 能力（`CAP_EXEC`），该能力默认关闭。能力由 Agent 拥有 —— 在 Agent 主机的 `[capabilities]` allow 列表中加入 `exec`（或 `--allow-cap exec`）开启。见 [功能开关](/zh/docs/capabilities)
+- Agent 未上报 `CAP_EXEC` 的服务器会收到合成结果：`exit_code = -2`，消息为 `"Capability denied: exec is disabled in the agent's config (capabilities are agent-owned)"`
 - 仅 Admin 角色可以创建任务
 
 ### API 端点
@@ -122,7 +188,7 @@ GET /api/audit-logs?limit=50&offset=0
 |------|------|------|
 | `/api/tasks` | POST | 创建并下发命令 |
 | `/api/tasks/{id}` | GET | 获取任务详情 |
-| `/api/tasks/{id}/results` | GET | 获取执行结果 |
+| `/api/tasks/{id}/results` | GET | 获取执行结果（支持 `?run_id=<uuid>` 筛选；不带过滤条件时上限 `500` 条） |
 
 创建一次性任务请求体：
 
@@ -142,7 +208,7 @@ GET /api/audit-logs?limit=50&offset=0
 
 1. 进入 **Settings → Tasks**。
 2. 切换到计划任务区域。
-3. 填写名称、命令、cron 表达式、目标服务器、超时、重试次数和重试间隔。
+3. 填写名称、命令、6 字段 cron 表达式、目标服务器、超时、重试次数和重试间隔。
 4. 保存任务。启用状态的任务会立即注册到服务端调度器。
 
 计划任务使用服务端 `scheduler.timezone` 配置计算 `next_run_at`。
@@ -153,27 +219,27 @@ GET /api/audit-logs?limit=50&offset=0
 |------|------|
 | `name` | 计划任务显示名称 |
 | `task_type` | cron 任务使用 `scheduled`；省略/默认表示 `oneshot` |
-| `cron_expression` | 服务端调度器解析的 cron 表达式 |
+| `cron_expression` | 带前置秒字段的 **6 字段** cron 表达式（`秒 分 时 日 月 周`，如 `0 0 8 * * *` 表示每日 08:00:00） |
 | `command` | 下发给每个目标 Agent 的 Shell 命令 |
 | `server_ids` | 目标服务器 |
-| `timeout` | 每次尝试的命令超时时间（秒）；默认执行超时为 300 秒 |
-| `retry_count` | 首次尝试后的重试次数，范围 0-10 |
-| `retry_interval` | 重试之间等待秒数，必须至少为 1 |
+| `timeout` | 每次尝试的命令超时时间（秒）；默认执行超时为 `300` 秒 |
+| `retry_count` | 首次尝试后的重试次数，范围 `0`–`10` |
+| `retry_interval` | 重试之间等待秒数，必须至少为 `1` |
 | `enabled` | 禁用后会从调度器移除，不再自动运行 |
 
 ### 执行行为
 
 - 每次计划触发都会生成 `run_id`，用于把所有目标服务器和重试尝试的结果分组。
 - ServerBee 会避免同一个计划任务重叠运行。如果上一次运行仍未结束，新的触发会被跳过。
-- `POST /api/tasks/{id}/run` 可手动运行任务，且手动运行会跳过重试逻辑。
+- `POST /api/tasks/{id}/run` 仅适用于 `scheduled` 计划任务（不支持一次性任务），用于手动触发运行且跳过重试逻辑。
 - 禁用或删除任务会取消当前活动运行。
-- 结果中包含 `attempt`，用于区分重试次数。
+- 结果中包含 `attempt` 用于区分重试次数，stdout/stderr 输出在 **512 KB** 处截断。
 
 合成退出码：
 
 | 退出码 | 含义 |
 |--------|------|
-| `-2` | `CAP_EXEC` 未启用，或被 Agent 本地 capability 策略阻止 |
+| `-2` | `CAP_EXEC` 未启用，或被 Agent 本地 capability 策略阻止（`"Capability denied: exec is disabled in the agent's config (capabilities are agent-owned)"`） |
 | `-3` | 服务器离线或下发失败 |
 | `-4` | 超时前没有收到 Agent 响应 |
 
@@ -200,25 +266,44 @@ GET /api/audit-logs?limit=50&offset=0
 | `/api/tasks` | POST | 创建一次性任务或计划任务 |
 | `/api/tasks/{id}` | PUT | 更新任务字段、启用/禁用状态和调度注册 |
 | `/api/tasks/{id}` | DELETE | 删除任务并取消活动执行 |
-| `/api/tasks/{id}/run` | POST | 手动运行任务 |
-| `/api/tasks/{id}/results` | GET | 获取按 task/run/attempt 分组的任务结果 |
+| `/api/tasks/{id}/run` | POST | 手动触发 `scheduled` 计划任务（不支持 `oneshot` 任务） |
+| `/api/tasks/{id}/results` | GET | 获取按 task/run/attempt 分组的任务结果（支持 `?run_id=<uuid>`；未筛选上限 `500` 条） |
 
 ## 计费信息
 
-管理员可以为每台服务器记录计费相关信息，方便追踪 VPS 费用和到期时间。
+管理员可以为每台服务器记录计费相关信息，方便追踪 VPS 费用、流量额度与到期时间。
 
 ### 管理计费信息
 
-1. 进入服务器详情页 → 点击编辑按钮
-2. 在 "Billing" 区域填写以下信息：
+1. 进入服务器详情页 → 点击**编辑**按钮
+2. 在 **Billing** 区域填写以下信息：
 
 | 字段 | 说明 |
 |------|------|
 | `price` | 价格 |
-| `billing_cycle` | 计费周期（monthly/quarterly/yearly 等） |
-| `currency` | 货币单位（CNY/USD 等） |
-| `expired_at` | 到期时间 |
+| `billing_cycle` | 计费周期（`monthly`、`quarterly`、`yearly` 等） |
+| `currency` | 货币单位（`CNY`、`USD` 等） |
+| `expired_at` / `renewal.expiry_date` | 到期时间（推荐通过 `renewal.expiry_date` 提交 `YYYY-MM-DD` 日历日期，或使用旧版 UTC `expired_at`；二者不可同时提交） |
+| `renewal` | 可选的自动续费追踪配置（`enabled`、IANA `billing_timezone`、`expiry_date`） |
 | `traffic_limit` | 流量限额（字节） |
+| `traffic_limit_type` | 流量统计方向：`sum`（双向合计）、`up`（仅出站）或 `down`（仅入站） |
+| `billing_start_day` | 每月流量周期的重置日（`1`–`31`） |
+
+### 自动续费追踪
+
+自动续费追踪按服务器**自愿开启**（默认关闭），可依据服务商账单日历自动顺延周期性到期日：
+
+- **启用条件**：开启 `renewal.enabled = true` 时，必须提供到期日期（`renewal.expiry_date` 或已有 `expired_at`）、合法的 IANA `billing_timezone`（如 `Asia/Shanghai`、`America/New_York` 或默认 `UTC`），以及受支持的 `billing_cycle`（`monthly`、`quarterly` 或 `yearly`）。
+- **账单日历日期**：客户端在 `renewal.expiry_date` 中提交本地日历日期（`YYYY-MM-DD`），而非原始 UTC 边界；服务端自动根据 `billing_timezone` 计算该本地日期结束时刻对应的 UTC 截止时间。
+- **返回投影与 `deadline_origin`**：服务器接口返回 `renewal` 投影对象（`enabled`、`billing_timezone`、`expiry_date`、`confirmed_expired_at`、`deadline_origin`、`occurrence_id`）。`deadline_origin` 标识当前到期日的来源状态：
+  - `confirmed` —— 操作员人工确认的到期日（未开启自动续费）。
+  - `projected` —— 已开启自动续费，系统按周期自动顺延，并保留原始锚定日（遇到天数较短的月份时回落到月末最后一天）。
+  - `frozen` —— 此前处于 `projected` 状态后关闭了自动续费，最后一次推算的截止日保持冻结，直到操作员重新确认新日期。
+- **离线追赶**：若服务端离线跨过了一个或多个续费周期，续费任务会保留原始锚定日并直接追赶到第一个未过期的未来周期；跳过的历史周期不会作为已付款记录入账。
+
+<Callout type="info">
+自动续费追踪仅用于**日历预测**，不会对接云服务商账单，也不能确认实际扣款是否成功。
+</Callout>
 
 ### 到期告警
 
@@ -255,11 +340,24 @@ ServerBee 不再计算合成价值分，而是为每台已配置成本的服务�
 
 对于 unclaimed Server，管理员可以发出 offer。对于 claimed Server，可以选择 graceful 重新接入（新 claim 完成前保留当前 authority）或 emergency 重新接入（立即吊销并隔离当前 authority）。每个 Server 同时最多一个 outstanding offer，替换或吊销都必须针对准确 offer ID。吊销 Agent Authority 是独立操作，不会隐式生成 offer。
 
-Agent Authority 历史会记录操作者、来源、状态转换、模式、offer 结果和前后状态，但不会保存明文密钥。这些事件在 Server 删除后仍会保留，便于运维追查。
+Agent Authority 历史会记录操作者、来源、状态转换、模式、offer 结果和前后状态，但不会保存明文密钥。这些事件在 Server 删除后仍会保留，便于运维追查，并由清理任务按 `retention.audit_logs_days`（默认 180 天）自动过期清理。
 
 ### 清理未连接的占位服务器
 
-中止的接入可能会留下离线 Server 占位条目。此时 **服务器** 页面会显示 **Clean up unconnected** 操作，它只删除从未完成初始化的离线占位服务器，并刻意保留在线但尚未初始化的 Agent。
+中止的接入可能会留下离线 Server 占位条目。此时 **服务器** 页面会显示 **Clean up unconnected** 操作（`DELETE /api/servers/cleanup`），它只删除从未完成初始化的离线占位服务器，并刻意保留在线但尚未初始化的 Agent。
+
+### Agent Authority API 端点
+
+| 端点 | 方法 | 权限 | 说明 |
+|------|------|------|------|
+| `/api/servers/{id}/agent-authority` | GET | 已认证 | 查看服务器的 Agent Authority 状态与当前 offer 元数据 |
+| `/api/agent-authority/events` | GET | 已认证 | 查询 Agent Authority 状态转换历史 |
+| `/api/servers/{id}/agent-authority/offers` | POST | Admin | 为 unclaimed 服务器签发 enrollment offer |
+| `/api/servers/{id}/agent-authority/re-enrollment` | POST | Admin | 对已接入服务器发起 `graceful` 或 `emergency` 重新接入 |
+| `/api/servers/{id}/agent-authority/offers/{offer_id}/replace` | POST | Admin | 替换现有未消费的 enrollment offer |
+| `/api/servers/{id}/agent-authority/offers/{offer_id}` | DELETE | Admin | 吊销指定的未消费 enrollment offer |
+| `/api/servers/{id}/agent-authority` | DELETE | Admin | 吊销当前生效的 Agent Authority（不会隐式签发新 offer） |
+| `/api/servers/cleanup` | DELETE | Admin | 清理从未初始化的离线占位服务器 |
 
 ## Tailscale 控制面管理
 
