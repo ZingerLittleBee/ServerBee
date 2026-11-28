@@ -34,7 +34,7 @@ const fillerWords = new Set(
 // of 校验和 (checksum) and the 就 (then) of 就地 (in place), also where ICU joins the first character to the word
 // before, as in 也可就地升级 (也, 可就, 地, 升级). Their pieces, less the filler word, are tokens too, so that 校验
 // (validation) still finds a checksum.
-const wholeWords = ['校验和', '就地']
+const wholeWords = ['校验和', '就地', '已用']
 // The words ICU makes of the last character of a whole word and the character after, read as the whole word and the
 // word that character starts where it starts one. For 就地, 地上 (on the ground) and 地下 (underground), which a query
 // hardly means after 就, as in 就地上报 (就, 地上, 报: report in place), 就地上报时 (就, 地上, 报时) and 就地下线 (就,
