@@ -20,7 +20,7 @@ Based on controlled Linux VM benchmarks of `serverbee-agent` `v1.0.0-beta.7` (st
 | **Disk space** | **20 MiB** | **30 MiB** | **50–100 MiB** | Binary is `13.36 MiB` (`amd64`) / `12.10 MiB` (`arm64`); total install is `13.53 MiB`. Reserve `2×` binary size for self-upgrade `.bak` rollback |
 | **Network bandwidth** | **2 Kbps** (`~0.45 GB/mo`) | **5 Kbps** (`~0.5 GB/mo`) | **100 Kbps+** (Web Terminal / File Manager) | Measured idle steady-state: `158 B/s` TX + `0.8 B/s` RX (`~412 MB/month`) |
 | **OS & libc** | Linux with `/proc` (no `glibc` required) | Linux + systemd or OpenRC | Linux 5.x/6.x with `systemd` (`cgroup v2`) | Official Linux `amd64`/`arm64` binaries are statically linked musl (`not a dynamic executable`) |
-| **Open FDs (`nofile`)** | `>= 256` (`<150` host procs) | `>= 1024` (default `ulimit -n`) | **`>= 4096`–`65536`** (`>500` host procs) | `sysinfo` keeps persistent `/proc/<pid>/stat` FDs (~1:1 with host processes); set `LimitNOFILE=65536` on dense hosts |
+| **Open FDs (`nofile`)** | `>= 256` (`<150` host procs on `v1.0.0-beta.7`) | `>= 1024` (default `ulimit -n`) | `>= 1024` on `main` (`>= 4096`–`65536` on `v1.0.0-beta.7` with `>500` procs) | In `v1.0.0-beta.7`, `sysinfo` kept persistent `/proc/<pid>/stat` FDs (~1:1 with host processes); post-`v1.0.0-beta.7` (`main`) counts Linux processes via a direct `/proc` directory scan holding no persistent FDs |
 
 ### Measured Performance (`v1.0.0-beta.7`)
 
@@ -37,7 +37,7 @@ Measured on 2026-11-24 using official `serverbee-agent` `v1.0.0-beta.7` (`linux-
 | **Systemd cgroup memory (warm cache)** | `2.62 MiB` (max `2.75 MiB`) | `2.95 MiB` (max `3.19 MiB`) | Includes `journalctl -f` child; drops **54%** to `1.21 MiB` when `[security] enabled = false` |
 | **Systemd cgroup memory (cold cache)** | `19.0 MiB` (peak `21.0 MiB`) | — | After `drop_caches=3` with `MemoryMax=24M` (includes faulted executable pages) |
 | **Memory stability (300s `RssAnon` delta)** | `+12 KiB` (`+1.89 KiB/min`) | `+8 KiB` (`+0.65 KiB/min`) | Flat plateau over 100 collection cycles, zero leak |
-| **Threads / Open FDs** | `3` / `46` (`43–47`) | `5` / `51` (`48–52`) | Tokio spawns 1 worker thread per vCPU |
+| **Threads / Open FDs** | `3` / `46` (`43–47`) | `5` / `51` (`48–52`) | In `v1.0.0-beta.7`, Tokio spawned 1 worker thread per vCPU; post-`v1.0.0-beta.7` (`main`) caps the runtime at `.worker_threads(2)` |
 | **Network bandwidth (exact TCP socket)** | `158.4 B/s` TX, `0.8 B/s` RX | `158.0 B/s` TX, `0.8 B/s` RX | `ss -tinp`; `~475 B` per 3s TLS frame (`~412 MB/month`) |
 | **Binary / total installed disk** | `13.36 MiB` / `13.53 MiB` | `13.36 MiB` / `13.53 MiB` | `linux-amd64` static musl (`linux-arm64` binary: `12.10 MiB`) |
 
@@ -47,17 +47,17 @@ Measured on 2026-11-24 using official `serverbee-agent` `v1.0.0-beta.7` (`linux-
 - **Active dashboard viewing:** Zero measurable extra agent CPU, memory, or network cost — the Server fans out already-received telemetry to browsers.
 - **Active Web Terminal (PTY):** Adds `+1` thread, `+2.39 MiB` cgroup memory (interactive shell child; agent `RssAnon` rose by `+7 KiB`), `0.44%` avg cgroup CPU (`3.47%` max), and `971 B/s` TX during periodic command output.
 - **Host CPU & I/O stress:** Under 100% host CPU saturation, telemetry remained uninterrupted (`0.175%` agent CPU). Heavy disk fsync loops plus 200 active local TCP sockets added only `+0.026%` CPU and `+83 KiB` cgroup memory.
-- **High process count (`>500` processes):** Spawning 500 sleeping processes (`519` total) scaled open FDs ~1:1 (`51 → 545`), tripled CPU (`0.19% → 0.57%` avg, `3.00%` max), and increased cgroup memory `2.3×` (`2.95 → 6.80 MiB`) because `sysinfo` keeps persistent `/proc/<pid>/stat` FDs to count processes.
+- **High process count (`>500` processes):** In `v1.0.0-beta.7`, spawning 500 sleeping processes (`519` total) scaled open FDs ~1:1 (`51 → 545`), tripled CPU (`0.19% → 0.57%` avg, `3.00%` max), and increased cgroup memory `2.3×` (`2.95 → 6.80 MiB`) because `sysinfo` kept persistent `/proc/<pid>/stat` FDs to count processes. Post-`v1.0.0-beta.7` (`main`) replaced Linux process counting with a direct `/proc` directory scan holding no persistent FDs and capped Tokio to `.worker_threads(2)` (re-benchmarking pending for the next release).
 - **Offline & reconnect recovery:** During a 40s packet blackhole, memory and FDs stayed flat with zero restarts; after the half-open TCP socket closed, reconnection to `Sent SystemInfo` took `1.36 s`.
 - **Hard cgroup v2 floors (1 vCPU, `MemorySwapMax=0`):**
   - Warm-cache OOM boundary (with 300-process burst): survives `6 MiB` (default) / `4 MiB` (`security.enabled = false`), OOMs at `4 MiB` / `3 MiB`.
-  - Cold-cache zero-thrash floor (`drop_caches=3`, default): **`16 MiB`** (`0` reclaim stalls, `0` OOM); **`24 MiB`** has zero reclaim pressure. Setting `MemoryMax` below `16 MiB` avoids OOM down to `6 MiB` but causes heavy executable code-page thrashing (`>137k` reclaim stalls in 20s).
+  - Cold-cache zero-thrash floor (`drop_caches=3`, default): **`16 MiB`** (`0` reclaim stalls, `0` OOM); **`24 MiB`** has zero reclaim pressure. Setting `MemoryMax` below `16 MiB` (`12M`–`6M`) avoids OOM but causes heavy executable code-page thrashing (`>137k` reclaim stalls in 20s).
   - `CPUQuota` floor: `0` throttles down to **`5%`** (`2%` still keeps telemetry flowing with `59 ms` throttled over 45s).
 
 ### Low-Resource VPS & Dense-Host Tuning
 
 - **Low-RAM VPS (`<= 256 MiB` RAM):** Use the static binary (`deploy/install.sh`) rather than Docker. If you do not need SSH journal security watching, set `[security] enabled = false` in `/opt/serverbee/etc/agent.toml` to eliminate the `journalctl -f` child process and cut steady-state cgroup memory by ~54% (`1.21 MiB` warm). Keep unused capabilities (`terminal`, `exec`, `file`, `docker`) disabled. Safe systemd guardrails are `MemoryMax=64M` and `CPUQuota=15%` (use `MemoryMax=32M` only without `terminal`/`exec` and below `300` processes; do not go below `24M` with default config).
-- **Dense hosts (`>500` processes / containers):** Add a systemd drop-in with `LimitNOFILE=65536` and `MemoryMax=128M` (or leave memory uncapped) so `sysinfo`'s `/proc` descriptors do not hit the default `1024` open-file limit.
+- **Dense hosts (`>500` processes / containers):** On `v1.0.0-beta.7`, add a systemd drop-in with `LimitNOFILE=65536` and `MemoryMax=128M` (or leave memory uncapped) so `sysinfo`'s persistent `/proc` descriptors do not hit the default `1024` open-file limit. Post-`v1.0.0-beta.7` (`main`) removes those persistent per-process FDs via a direct Linux `/proc` scan, so the `LimitNOFILE` bump is no longer needed on newer builds (keeping `MemoryMax=128M` or uncapped memory remains good practice when running active terminals or many capabilities).
 
 ### Historical `v0.9.3` Agent Observation
 

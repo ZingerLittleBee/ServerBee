@@ -20,7 +20,7 @@ icon: Gauge
 | **磁盘空间** | **20 MiB** | **30 MiB** | **50–100 MiB** | 二进制 `13.36 MiB`（`amd64`）/ `12.10 MiB`（`arm64`），总安装约 `13.53 MiB`；需预留 `2×` 二进制空间用于自动升级 `.bak` 回滚 |
 | **网络带宽** | **2 Kbps**（约 `0.45 GB/月`） | **5 Kbps**（约 `0.5 GB/月`） | **100 Kbps+**（交互式 Web 终端 / 文件管理） | 空载稳态实测：`158 B/s` 上行 + `0.8 B/s` 下行（约 `412 MB/月`） |
 | **操作系统与 libc** | 带 `/proc` 的 Linux（无需 `glibc`） | Linux + systemd 或 OpenRC | Linux 5.x/6.x + `systemd`（`cgroup v2`） | 官方 Linux `amd64`/`arm64` 二进制为静态链接 musl（`not a dynamic executable`） |
-| **文件描述符上限（`nofile`）** | `>= 256`（主机进程 `<150`） | `>= 1024`（默认 `ulimit -n`） | **`>= 4096`–`65536`**（主机进程 `>500`） | `sysinfo` 会为进程计数持久打开 `/proc/<pid>/stat` FD（约 1:1 随主机进程增长）；高密主机建议设置 `LimitNOFILE=65536` |
+| **文件描述符上限（`nofile`）** | `>= 256`（`v1.0.0-beta.7` 主机进程 `<150`） | `>= 1024`（默认 `ulimit -n`） | `main` 保持 `>= 1024`（`v1.0.0-beta.7` 且主机进程 `>500` 建议 `>= 4096`–`65536`） | `v1.0.0-beta.7` 中 `sysinfo` 会持久持有 `/proc/<pid>/stat` FD（约 1:1 随主机进程增长）；`v1.0.0-beta.7` 之后（`main`）在 Linux 上改为直接扫描 `/proc` 目录，不再持久持有逐进程 FD |
 
 ### 实测性能（`v1.0.0-beta.7`）
 
@@ -37,7 +37,7 @@ icon: Gauge
 | **Systemd cgroup 内存（热缓存）** | `2.62 MiB`（峰值 `2.75 MiB`） | `2.95 MiB`（峰值 `3.19 MiB`） | 含 `journalctl -f` 子进程；关闭 `[security] enabled = false` 后下降 **54%** 至 `1.21 MiB` |
 | **Systemd cgroup 内存（冷缓存）** | `19.0 MiB`（峰值 `21.0 MiB`） | — | `drop_caches=3` 后以 `MemoryMax=24M` 启动（计入可执行文件代码页） |
 | **内存稳定性（300 秒 `RssAnon` 变化）** | `+12 KiB`（`+1.89 KiB/min`） | `+8 KiB`（`+0.65 KiB/min`） | 连续 100 次采集呈平稳平台，无泄漏 |
-| **线程数 / 打开文件描述符** | `3` / `46`（`43–47`） | `5` / `51`（`48–52`） | Tokio 默认按逻辑核数启动工作线程 |
+| **线程数 / 打开文件描述符** | `3` / `46`（`43–47`） | `5` / `51`（`48–52`） | `v1.0.0-beta.7` 中 Tokio 默认按逻辑核数启动工作线程；`v1.0.0-beta.7` 之后（`main`）已限制为 `.worker_threads(2)` |
 | **网络带宽（精确 TCP 套接字）** | 上行 `158.4 B/s`，下行 `0.8 B/s` | 上行 `158.0 B/s`，下行 `0.8 B/s` | `ss -tinp`；每 3 秒 TLS 帧约 `475 B`（约 `412 MB/月`） |
 | **二进制 / 总安装磁盘占用** | `13.36 MiB` / `13.53 MiB` | `13.36 MiB` / `13.53 MiB` | `linux-amd64` 静态 musl（`linux-arm64` 二进制为 `12.10 MiB`） |
 
@@ -47,7 +47,7 @@ icon: Gauge
 - **打开面板实时查看：** 对 Agent 的 CPU、内存与网络均无额外开销（Server 侧负责向浏览器扇出已上报指标并响应查询）。
 - **交互式 Web 终端（PTY）：** 新增 `+1` 线程、`+2.39 MiB` cgroup 内存（主要来自交互式 shell 子进程；Agent 自身 `RssAnon` 仅增 `+7 KiB`），周期性命令输出期间 cgroup CPU 均值 `0.44%`（峰值 `3.47%`）、上行 `971 B/s`。
 - **主机 CPU 与 I/O 压力：** 主机双核 100% 满载下上报不中断（Agent CPU `0.175%`）；持续磁盘 fsync 读写叠加 200 条本地 TCP 连接仅增加 `+0.026%` CPU 与 `+83 KiB` cgroup 内存。
-- **高进程数场景（`>500` 进程）：** 新增 500 个休眠进程（总计 `519` 个）后，打开 FD 近似 1:1 增长（`51 → 545`），CPU 升至 `3.0×`（均值 `0.57%`、峰值 `3.00%`），cgroup 内存升至 `2.3×`（`2.95 → 6.80 MiB`），原因是 `sysinfo` 为统计进程数持久持有 `/proc/<pid>/stat` 文件描述符。
+- **高进程数场景（`>500` 进程）：** 在 `v1.0.0-beta.7` 中，新增 500 个休眠进程（总计 `519` 个）后，打开 FD 近似 1:1 增长（`51 → 545`），CPU 升至 `3.0×`（均值 `0.57%`、峰值 `3.00%`），cgroup 内存升至 `2.3×`（`2.95 → 6.80 MiB`），原因是 `sysinfo` 为统计进程数持久持有 `/proc/<pid>/stat` 文件描述符。`v1.0.0-beta.7` 之后（`main`）已在 Linux 上改为直接扫描 `/proc` 目录（不再持久持有 FD），并将 Tokio 运行时限制为 `.worker_threads(2)`（下个版本将重新基准测试）。
 - **断网与自动重连：** 40 秒静默丢包期间内存与 FD 保持平稳、零重启；半开 TCP 连接关闭后 `1.36 s` 内自动重连并恢复上报。
 - **Cgroup v2 硬限制下限（1 vCPU、`MemorySwapMax=0`）：**
   - 热缓存 OOM 边界（含 300 进程突发）：默认配置在 `6 MiB` 存活、`4 MiB` 触发 OOM；关闭安全日志监听（`security.enabled = false`）在 `4 MiB` 存活、`3 MiB` 触发 OOM。
@@ -57,7 +57,7 @@ icon: Gauge
 ### 低配 VPS 与高密主机调优建议
 
 - **低内存 VPS（`<= 256 MiB` 总内存）：** 优先通过 `deploy/install.sh` 使用静态二进制部署，避免 Docker 守护进程开销。如不需要 SSH 日志安全监听，可在 `/opt/serverbee/etc/agent.toml` 中设置 `[security] enabled = false`，移除 `journalctl -f` 子进程并将稳态 cgroup 内存降低约 54%（热缓存 `1.21 MiB`）。保持未使用的能力（`terminal`、`exec`、`file`、`docker`）关闭。建议 systemd 限额为 `MemoryMax=64M`、`CPUQuota=15%`（仅在关闭 `terminal`/`exec` 且主机进程 `<300` 时可下调至 `MemoryMax=32M`；默认配置不建议低于 `24M`）。
-- **高密生产主机（`>500` 进程或容器）：** 建议通过 systemd drop-in 设置 `LimitNOFILE=65536` 与 `MemoryMax=128M`（或不设过紧上限），避免 `sysinfo` 的 `/proc` 文件描述符触及默认 `1024` 上限。
+- **高密生产主机（`>500` 进程或容器）：** 在 `v1.0.0-beta.7` 上建议通过 systemd drop-in 设置 `LimitNOFILE=65536` 与 `MemoryMax=128M`（或不设过紧上限），避免 `sysinfo` 持久打开的 `/proc` 文件描述符触及默认 `1024` 上限。`v1.0.0-beta.7` 之后（`main`）改为直接扫描 Linux `/proc` 目录，不再持久占用逐进程 FD，因此新版本不再需要调高 `LimitNOFILE`（若需开启交互式终端或多项能力，仍建议保留 `MemoryMax=128M` 或不设过紧内存上限）。
 
 ### 历史 `v0.9.3` Agent 观测记录
 

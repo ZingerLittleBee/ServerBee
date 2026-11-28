@@ -35,9 +35,8 @@ These variables are for local repo tooling and development workflows. They are n
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_SERVER__DATA_DIR` | `server.data_dir` | string | `./data` | Data directory for SQLite and backups |
 | `SERVERBEE_AUTH__MAX_SERVERS` | `auth.max_servers` | u32 | `0` | Maximum servers allowed via enrollment (0 = no limit). Best-effort soft cap |
-| `SERVERBEE_SCHEDULER__TIMEZONE` | `scheduler.timezone` | string | `UTC` | Timezone for daily traffic aggregation and cron scheduling (e.g. `Asia/Shanghai`) |
-| `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
-| `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |
+| `SERVERBEE_SCHEDULER__TIMEZONE` | `scheduler.timezone` | string | `UTC` | Timezone for daily traffic aggregation, cron scheduling, and billing cycle computation (e.g. `Asia/Shanghai`) |
+| `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` (logs to stdout; `RUST_LOG` takes precedence) |
 
 ### Development Only
 
@@ -86,12 +85,12 @@ These variables are for local repo tooling and development workflows. They are n
 | `SERVERBEE_RETENTION__RECORDS_HOURLY_DAYS` | `retention.records_hourly_days` | u32 | `90` | Hourly aggregated records retention in days |
 | `SERVERBEE_RETENTION__GPU_RECORDS_DAYS` | `retention.gpu_records_days` | u32 | `7` | GPU metric records retention in days |
 | `SERVERBEE_RETENTION__PING_RECORDS_DAYS` | `retention.ping_records_days` | u32 | `7` | Ping probe records retention in days |
-| `SERVERBEE_RETENTION__NETWORK_PROBE_DAYS` | `retention.network_probe_days` | u32 | `7` | Raw network probe records retention in days |
+| `SERVERBEE_RETENTION__NETWORK_PROBE_DAYS` | `retention.network_probe_days` | u32 | `7` | Raw network probe and traceroute records retention in days |
 | `SERVERBEE_RETENTION__NETWORK_PROBE_HOURLY_DAYS` | `retention.network_probe_hourly_days` | u32 | `90` | Hourly network probe aggregates retention in days |
-| `SERVERBEE_RETENTION__AUDIT_LOGS_DAYS` | `retention.audit_logs_days` | u32 | `180` | Audit log retention in days |
+| `SERVERBEE_RETENTION__AUDIT_LOGS_DAYS` | `retention.audit_logs_days` | u32 | `180` | Audit log and agent authority event retention in days |
 | `SERVERBEE_RETENTION__TRAFFIC_HOURLY_DAYS` | `retention.traffic_hourly_days` | u32 | `7` | Traffic hourly records retention in days |
 | `SERVERBEE_RETENTION__TRAFFIC_DAILY_DAYS` | `retention.traffic_daily_days` | u32 | `400` | Traffic daily records retention in days |
-| `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `retention.task_results_days` | u32 | `7` | Task results retention in days |
+| `SERVERBEE_RETENTION__TASK_RESULTS_DAYS` | `retention.task_results_days` | u32 | `7` | Task results and task run records retention in days |
 | `SERVERBEE_RETENTION__DOCKER_EVENTS_DAYS` | `retention.docker_events_days` | u32 | `7` | Docker event records retention in days |
 | `SERVERBEE_RETENTION__SERVICE_MONITOR_DAYS` | `retention.service_monitor_days` | u32 | `30` | Service monitor records retention in days |
 | `SERVERBEE_RETENTION__SECURITY_EVENT_DAYS` | `retention.security_event_days` | u32 | `30` | Security event records (SSH login / brute force / port scan) retention in days |
@@ -131,13 +130,13 @@ Tier-2 guardrail for the firewall blocklist feature. CIDRs / IPs listed here are
 
 ### IP Quality
 
-Default risk-scoring works out of the box via [ipapi.is](https://ipapi.is) (no API key required, ~1000 requests/day per source IP). On primary failure the server falls back to [ip-api.com](https://ip-api.com), which provides geo + proxy/hosting flags but no risk score.
+By default, the Server calls [ipapi.is](https://ipapi.is/developers.html) anonymously (100 requests per client IP per UTC day). ServerBee uses the minimal response's proxy, VPN, datacenter, Tor, and abuse flags and derives an IP type, but no numeric risk score. A free account/API key provides 1,000 requests/day and the full response required for the 0–100 score. On primary failure (including HTTP 429), the server falls back to [ip-api.com](https://ip-api.com), which provides geo + proxy/hosting flags but no risk score.
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER` | `ip_quality.risk_provider` | string | `"ipapi_is"` | Primary risk provider. One of: `none`, `ipapi_is`, `ip-api`. |
 | `SERVERBEE_IP_QUALITY__RISK_PROVIDER_FALLBACK` | `ip_quality.risk_provider_fallback` | string | `"ip-api"` | Fallback provider triggered on primary failure. Set to `none` to disable. |
-| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | `ip_quality.ipapi_is.api_key` | string | - | Optional. Configure for higher per-account rate limits. |
+| `SERVERBEE_IP_QUALITY__IPAPI_IS__API_KEY` | `ip_quality.ipapi_is.api_key` | string | - | Optional. A free account key provides 1,000 requests/day and the full response required for the 0–100 score. |
 | `SERVERBEE_IP_QUALITY__IPAPI_IS__ENDPOINT` | `ip_quality.ipapi_is.endpoint` | string | `""` | Override for self-hosted mirrors or testing. Empty falls back to the built-in default `https://api.ipapi.is`. |
 
 **Migration from older versions:** Earlier releases supported four paid providers (Scamalytics, IPQualityScore, ProxyCheck, AbuseIPDB) configured via `SERVERBEE_IP_QUALITY__{SCAMALYTICS,IPQS,PROXYCHECK,ABUSEIPDB}__*`. These env vars are silently ignored. To restore equivalent functionality, fork or vendor the provider implementation from a tag prior to 2026-05-25.
@@ -184,20 +183,19 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
-| `SERVERBEE_COLLECTOR__INTERVAL` | `collector.interval` | u32 | `3` | Metric report interval in seconds |
+| `SERVERBEE_COLLECTOR__INTERVAL` | `collector.interval` | u32 | `3` | Compatibility-only field. Currently ignored by the Agent, which uses the Server's `Welcome.report_interval` fixed at 3 seconds |
 | `SERVERBEE_COLLECTOR__ENABLE_GPU` | `collector.enable_gpu` | bool | `false` | Enable NVIDIA GPU monitoring (requires nvml) |
 | `SERVERBEE_COLLECTOR__ENABLE_TEMPERATURE` | `collector.enable_temperature` | bool | `true` | Enable CPU temperature monitoring |
 | `SERVERBEE_COLLECTOR__EXCLUDE_TAILSCALE_TRAFFIC` | `collector.exclude_tailscale_traffic` | bool | `true` | Exclude virtual `tailscale*` TUN interfaces (e.g. `tailscale0`) from aggregate host bandwidth and transfer totals so WireGuard traffic is not double-counted with physical NICs |
 | `SERVERBEE_TAILSCALE__SOCKET_PATH` | `tailscale.socket_path` | string | `""` | Custom Unix socket path for querying the host `tailscaled` LocalAPI (`GET /localapi/v0/status`). Empty probes `/var/run/tailscale/tailscaled.sock`, `/run/tailscale/tailscaled.sock`, and `/var/run/tailscaled.socket`, falling back to `tailscale status --json` |
 | `SERVERBEE_FILE__ENABLED` | `file.enabled` | bool | `false` | Enable the file-management subsystem (path sandbox). Also requires the `file` capability in `[capabilities]` |
-| `SERVERBEE_FILE__ROOT_PATHS` | `file.root_paths` | string[] | `[]` | Allowed root paths for file browsing (e.g. `/home,/var/log`). Empty rejects all file operations |
+| `SERVERBEE_FILE__ROOT_PATHS` | `file.root_paths` | string[] | `[]` | Allowed root paths for file browsing (Figment array syntax `["/home","/var/log"]` or comma-separated `/home,/var/log`). Empty rejects all file operations |
 | `SERVERBEE_CAPABILITIES__ALLOW` | `capabilities.allow` | string[] | `[]` | Capability keys to enable on top of the default set (`CAP_DEFAULT = 3900`), e.g. `["terminal","file"]`. Capabilities are agent-owned; the server cannot change them. Valid keys: `terminal`, `exec`, `upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`, `file`, `docker`, `security_events`, `firewall_block`, `ip_quality`, `tailscale` |
 | `SERVERBEE_CAPABILITIES__DENY` | `capabilities.deny` | string[] | `[]` | Capability keys to strip from the default set. `deny` wins over `allow`. Unknown keys are rejected at startup |
 | `SERVERBEE_CAPABILITIES__TEMPORARY_MAX_DURATION` | `capabilities.temporary_max_duration` | string | `24h` | Max duration a single temporary capability grant can last (e.g. `30m`, `2h`, `1d`). Used by the host-local `serverbee-agent grant` CLI |
-| `SERVERBEE_CAPABILITIES__STATE_DIR` | `capabilities.state_dir` | string | `/var/lib/serverbee` | Directory where the agent persists `capability_grants.json` (the temporary-grants store). Must be writable by the agent |
+| `SERVERBEE_CAPABILITIES__STATE_DIR` | `capabilities.state_dir` | string | `/var/lib/serverbee` | Directory where the agent persists `capability_grants.json` and the durable transition journal `capability_grants.events.json`. Must be writable by the agent |
 | `SERVERBEE_IP_CHANGE__ENABLED` | `ip_change.enabled` | bool | `true` | Enable periodic IP change detection |
-| `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` |
-| `SERVERBEE_LOG__FILE` | `log.file` | string | `""` | Log file path. Empty means stdout only |
+| `SERVERBEE_LOG__LEVEL` | `log.level` | string | `info` | Log level: `trace`, `debug`, `info`, `warn`, `error` (logs to stdout; `RUST_LOG` takes precedence) |
 
 ### Internal
 
@@ -207,9 +205,10 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_TOKEN` | `token` | string | `""` | Agent run token. When empty during enrollment, the Agent generates and persists one before claim; an explicit environment override is used as provided and is not written to disk |
 | `SERVERBEE_FILE__MAX_FILE_SIZE` | `file.max_file_size` | u64 | `1073741824` | Maximum file size in bytes for read/download (default 1GB) |
-| `SERVERBEE_FILE__DENY_PATTERNS` | `file.deny_patterns` | string[] | `*.key,*.pem,id_rsa*,.env*,shadow,passwd` | Glob patterns for files the agent will refuse to access |
+| `SERVERBEE_FILE__DENY_PATTERNS` | `file.deny_patterns` | string[] | `*.key,*.pem,id_rsa*,.env*,shadow,passwd` | Glob patterns for files the agent will refuse to access (Figment array syntax `["*.key","*.pem"]` or comma-separated) |
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `ip_change.external_ip_urls` | string[] | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | Ordered list of external IP services tried at startup and on every IP-change check. First success wins. Required for agents behind NAT, in containers, or anywhere interface enumeration can't see the routable public IP. Air-gapped deployments can set this to an empty list to skip external lookups entirely |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `ip_change.interval_secs` | u64 | `300` | IP check interval in seconds (default 5 minutes) |
+| `SERVERBEE_SUPERVISED` | - | string | `""` | Non-empty value marks the Agent as managed by an external service supervisor (set to `1` by the systemd/OpenRC unit; `INVOCATION_ID` and `RC_SVCNAME` are also detected). Tells self-upgrade/rollback to exit so the supervisor restarts the binary instead of self-spawning |
 
 ### Upgrade (Agent)
 

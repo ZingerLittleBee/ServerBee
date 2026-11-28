@@ -14,6 +14,10 @@ ServerBee treats reliability as a feature. The codebase ships with a large, fast
 | `agent` crate | Collectors, reporter WebSocket loop, pinger, file manager, security detectors, firewall, IP quality |
 | `server` crate | REST handlers, WebSocket handlers, services, background tasks, migrations |
 | Frontend (`apps/web`) | Hooks, components, stores, and utilities (Vitest) |
+| Widget SDK (`packages/widget-sdk`) | Type checking and SDK unit tests |
+| Push Relay (`apps/push-relay`) | Cloudflare Workers runtime tests and APNs fetch boundary checks |
+| iOS (`apps/ios`) | Native XCTest suite, push ciphertext trace verification, renewal fixtures |
+| Tooling (`scripts/`) | Repository contract and script tests (`bun run test:tooling`) |
 
 Together, these layers contain **more than 3,800 automated tests**. The exact total changes as coverage grows, so this page documents the testing layers and enforced commands instead of a point-in-time count for each area.
 
@@ -53,15 +57,18 @@ Coverage is measured with [`cargo-llvm-cov`](https://github.com/taiki-e/cargo-ll
 | `agent` | 90% | 90% |
 | `server` | 92% | 93% |
 
-Overall Rust region coverage is above 91%. The largest remaining gaps are concentrated in process startup and I/O paths that need a live Docker daemon, Linux kernel facilities (nftables / conntrack / journald), raw ICMP sockets, a PTY, or external services (OAuth, SMTP, APNs). Those environment-dependent paths are exercised through the integration harness and the manual end-to-end checklists in `tests/` where practical.
+Overall Rust region coverage is above 91%. The largest remaining gaps are concentrated in process startup and I/O paths that need a live Docker daemon, Linux kernel facilities (nftables / conntrack / journald), raw ICMP sockets, a PTY, or external services (OAuth, Resend, APNs). Those environment-dependent paths are exercised through the integration harness and the manual end-to-end checklists in `tests/` where practical.
 
 ## Running tests locally
 
 ```bash
-make cargo-test     # Rust: unit + integration across the workspace
-make web-test       # Frontend: Vitest
-make cargo-clippy   # Rust lint (0 warnings enforced)
+make cargo-test      # Rust: unit + integration across the workspace
+make web-test        # Frontend: Vitest
+make cargo-clippy    # Rust lint (--all-targets, 0 warnings enforced)
+bun run test:tooling # Repository script tests (scripts/)
 ```
+
+Note: CI runs Clippy with `--benches --tests --examples --all-features --locked -- -D warnings`.
 
 Measure coverage for a single crate:
 
@@ -71,16 +78,16 @@ cargo llvm-cov -p serverbee-server --summary-only
 
 ## CI gates
 
-The main CI workflow runs for pushes and pull requests to `main`. Markdown, MDX, `docs/`, and iOS-only changes do not start it. For everything else, a first job compares the changed files with the base commit and runs only the gates for the areas they touch:
+The main CI workflow (`.github/workflows/ci.yml`) runs for pushes and pull requests to `main`, ignoring only `LICENSE`. Its `changes` job always runs the lightweight repository checks (`bun scripts/check-agent-navigation.ts`, `bun scripts/check-integration-targets.ts`, and `bun test scripts`) — including for Markdown, MDX, `docs/`, and iOS-only changes — and then compares the changed files with the base commit and runs only the gates for the areas they touch (skipping `rust`, `web`, `lint`, and `install` for Markdown, MDX, `docs/`, and iOS-only changes):
 
 | Area | Changed paths | Gates |
 |---|---|---|
-| Rust | `crates/`, Cargo manifests, `.cargo/`, the toolchain file, built-in widget sources and the web build config | `cargo check`, zero-warning Clippy, the Rust test jobs |
-| Web | `apps/web/`, `packages/`, root `package.json`, `bun.lock`, `tsconfig`, `turbo.json` | frontend build, type checking, Vitest |
+| Rust | `crates/`, Cargo manifests, `.cargo/`, the toolchain file, `packages/widget-sdk/`, built-in widget sources and the web build config | `cargo check`, zero-warning Clippy, OpenAPI contract generation & committed-diff check (`apps/web/openapi.json`, `apps/web/src/lib/api-types.ts`), the Rust test jobs |
+| Web | `apps/web/`, `packages/`, root `package.json`, `bun.lock`, `tsconfig`, `turbo.json` | frontend build, type checking, Vitest, `packages/widget-sdk` typecheck & tests |
 | Lint | any file Biome handles (JS/TS, JSON, CSS) or `biome.json` | Ultracite lint |
 | Installer | `deploy/install.sh`, `scripts/extract-changelog.sh`, and their tests | installer transaction tests plus POSIX, BusyBox, and ShellCheck validation |
 
-The server integration tests exercise the embedded SPA and built-in widgets, so widget and web build config changes also run the Rust gates. A change to any workflow file, a new branch, or a push without a usable base commit runs every gate. The iOS workflow runs for `apps/ios/` changes other than Markdown, and the documentation workflow for `apps/docs/` and the files its contracts check.
+The server integration tests exercise the embedded SPA and built-in widgets, so widget and web build config changes also run the Rust gates. A change to any workflow file, a new branch, or a push without a usable base commit runs every gate. Dedicated workflows cover the remaining subprojects: the iOS workflow (`.github/workflows/ci-ios.yml`) runs for `apps/ios/` (other than Markdown), `crates/server/**`, `apps/push-relay/**`, `bun.lock`, push/renewal fixtures & scripts, and `.github/workflows/ci-ios.yml`; the Push Relay workflow (`.github/workflows/ci-push-relay.yml`) covers `apps/push-relay/**` and its envelope fixture; the documentation workflow covers `apps/docs/` and the files its contracts check; and the landing workflow (`.github/workflows/landing.yml`) covers `apps/landing/**` and its contract targets.
 
 Every pull request also runs **Check commit attribution**, which rejects `Co-authored-by` trailers, "Generated by/with" agent text, and email addresses in its commits, title, and description. The same rules run locally as a Lefthook `commit-msg` hook.
 

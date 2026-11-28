@@ -12,7 +12,7 @@ ServerBee 通过 Agent 能力（Capabilities）落实最小权限原则。**能�
 
 ## 功能列表
 
-ServerBee 定义了 12 个功能位，分为两个风险等级，有效掩码为 `4095`（bits 0..=11）。
+ServerBee 定义了 12 个功能位，分为三个风险等级（`high`、`medium`、`low`），有效掩码为 `4095`（bits 0..=11）。
 
 ### 高风险（默认关闭）
 
@@ -31,6 +31,13 @@ ServerBee 定义了 12 个功能位，分为两个风险等级，有效掩码为
 文件管理还需要 Agent 侧的额外配置（`root_paths`、`deny_patterns`）以实现路径沙箱安全。详见 [Agent 部署](/zh/docs/agent) 和 [配置](/zh/docs/configuration) 页面。
 </Callout>
 
+### 中风险（默认开启）
+
+| 功能 | 键名 | 位值 | 说明 |
+|------|------|------|------|
+| **防火墙封禁** | `firewall_block` | `CAP_FIREWALL_BLOCK` (512) | 允许 Agent 应用 Server 下发的 nftables 封禁列表。需要 root 或 `CAP_NET_ADMIN` 及主机上的 `nft` 命令。见 [防火墙封禁](/zh/docs/firewall) |
+| **IP 质量** | `ip_quality` | `CAP_IP_QUALITY` (1024) | 允许 Agent 运行服务解锁探测并上报结果；可选的元数据与风险评分由 Server 完成 |
+
 ### 低风险（默认开启）
 
 | 功能 | 键名 | 位值 | 说明 |
@@ -40,8 +47,6 @@ ServerBee 定义了 12 个功能位，分为两个风险等级，有效掩码为
 | **TCP 探测** | `ping_tcp` | `CAP_PING_TCP` (16) | 允许 TCP 端口探测任务 |
 | **HTTP 探测** | `ping_http` | `CAP_PING_HTTP` (32) | 允许 HTTP 探测任务 |
 | **安全事件** | `security_events` | `CAP_SECURITY_EVENTS` (256) | 允许 Agent 上报 SSH 登录 / 暴力破解 / 端口扫描事件（见 [安全事件](/zh/docs/security-events)） |
-| **防火墙封禁** | `firewall_block` | `CAP_FIREWALL_BLOCK` (512) | 允许 Agent 应用 Server 下发的 nftables 封禁列表。需要 root 或 `CAP_NET_ADMIN` 及主机上的 `nft` 命令。见 [防火墙封禁](/zh/docs/firewall) |
-| **IP 质量** | `ip_quality` | `CAP_IP_QUALITY` (1024) | 允许 Agent 运行服务解锁探测并上报结果；可选的元数据与风险评分由 Server 完成 |
 | **Tailscale** | `tailscale` | `CAP_TAILSCALE` (2048) | 允许 Agent 查询本地 `tailscaled` 状态（Tailscale IP、MagicDNS、对端 Direct/DERP 连接模式、密钥过期时间、子网路由）并上报给 Server。见 [Tailscale 集成](/zh/docs/tailscale) |
 
 没有任何 `[capabilities]` 覆盖的 Agent 默认值为 `3900`（自动升级 + 三种 ping 探测 + 安全事件 + 防火墙封禁 + IP 质量 + Tailscale），即高风险的终端、执行、文件和 Docker 能力保持关闭。
@@ -141,7 +146,8 @@ serverbee-agent grants
 
 - **跨重启存活** —— 若 Agent 在时间窗中重启，授予会被重新加载，并在原始时间窗内保持生效。
 - **在原始截止时刻过期** —— 重启不会延长授予。`30m` 的授予在发起后 30 分钟过期，无论期间 Agent 重启多少次。
-- **失败时安全归零（OFF）** —— 若 grants 文件缺失、为空、损坏，或由未知 schema 版本写入，Agent 会将其视作「无授予」，对应能力保持关闭。临时授予永远不会*增强*永久能力集，它只能在自己的时间窗内把一个原本关闭的位翻为开启。
+- **授予文件失败时安全归零（OFF）** —— 若 `capability_grants.json` 缺失、为空、损坏，或由未知 schema 版本写入，Agent 会将其视作「无授予」，对应能力保持关闭。临时授予永远不会*增强*永久能力集，它只能在自己的时间窗内把一个原本关闭的位翻为开启。
+- **持久化事件日志采用故障关闭（fail-closed）** —— Agent 会把待确认的授予、过期、撤销转换写入伴生日志文件 `<state_dir>/capability_grants.events.json`（`0600` 权限）。与 `capability_grants.json` 不同，若已存在的 `capability_grants.events.json` 损坏或不可读，Agent 启动会直接失败，确保未确认的审计与告警事件不会被静默丢弃。
 - **过期约束的是运行中的工作，而不只是新请求** —— `terminal` 授予过期或被撤销时，在该授予下打开的终端会话会被立即关闭（浏览器端会看到会话结束）；`security_events` 授予生效的那一刻就会启动 Agent 的安全事件管道，时间窗结束时将其停止 —— 包括在 Agent 已运行期间发起的授予。
 
 ### Server 看到什么
@@ -150,11 +156,11 @@ serverbee-agent grants
 
 - 变更会镜像到 `servers.capabilities` 并广播给浏览器，UI 实时更新。
 - 该转换会写入 [审计日志](/zh/docs/admin)，动作为 `capability_temporarily_granted`、`capability_grant_expired` 或 `capability_grant_revoked`。
-- 对**高危**能力（`terminal`、`exec`、`file`、`docker`）的临时授予还会评估事件驱动的 `capability_grant_detected` [告警规则](/zh/docs/alerts)。过期、撤销以及低风险授予会被审计，但不触发告警。
+- 对**高危**能力（`terminal`、`exec`、`file`、`docker`）的临时授予还会评估事件驱动的 `capability_grant_detected` [告警规则](/zh/docs/alerts)。过期、撤销以及中/低风险授予会被审计，但不触发告警。
 - Agent 为该服务器执行的全部工作会按新的能力集重新同步：ping 任务重新过滤、网络探测目标与 IP 质量服务重新下发、防火墙黑名单先重置（仅当 `firewall_block` 仍生效时才会重新推送）。撤销 ping 能力会立即停止对应探测；撤销 `firewall_block` 会立刻移除 ServerBee 在主机上的 nftables 规则，无需等待重连。
 
-<Callout type="warn">
-在 Agent 与 Server **断连**期间发起的授予，会在本地生效并在重连后展示出来，但**不会**产生 `granted` 审计记录或告警。Server 只能看到重连后的能力状态，看不到转换发生的瞬间，因此无法区分「刚刚授予」与「本就生效」的能力。若你把该告警当作触发器（tripwire）使用，请考虑这一点。
+<Callout type="info">
+**离线与重启重放：** 断连期间发生的授予、过期和撤销转换（携带原始发生时间戳）会持久化写入 `<state_dir>/capability_grants.events.json`——只要已有历史日志文件，即使 Agent 停机后再重启也会保留。重连后 Agent 会持续重放待确认的 `CapabilitiesChanged` 事件，直到收到 Server 的 `Ack`，从而正常生成审计日志并在高危能力授予时触发 `capability_grant_detected` 告警。仅当使用全新的 `state_dir` 且尚无历史日志文件时，首次启动才会直接以当前已生效的授予初始化基线，而不会补发追溯性的 `granted` 事件。
 </Callout>
 
 ### Web UI 中的展示
@@ -172,7 +178,7 @@ Server 记录每个 Agent 上报的能力，并拒绝 Agent 未启用能力对�
 - **终端**：WebSocket 升级被 403 拒绝
 - **执行**：`POST /api/tasks` 与定时任务运行会过滤掉 Agent 缺少 `exec` 的服务器，并写入合成结果（`exit_code = -2`）
 - **自动升级**：未上报 `upgrade` 时，`POST /api/servers/{id}/upgrade` 返回 403
-- **Ping 与 Traceroute**：探测任务按能力过滤；traceroute 需要 `ping_icmp`
+- **Ping 与网络探测**：探测任务由服务端按能力过滤（`ping_icmp`、`ping_tcp`、`ping_http`）；Traceroute（`ping_icmp`）仅在 Agent 侧强制执行，服务端派发前不做拦截
 - **文件管理**：未上报 `file` 时，文件接口在下发前即拒绝请求
 - **Docker**：Docker 读取/操作接口及 Docker 日志 WebSocket 路由需要 `docker` 以及 Agent 运行时支持 Docker
 - **Tailscale**：未上报 `tailscale` 时，`GET /api/servers/{id}/tailscale/status` 返回 403
@@ -181,11 +187,11 @@ Server 记录每个 Agent 上报的能力，并拒绝 Agent 未启用能力对�
 
 ### Agent 侧强制执行
 
-即使某个服务端请求被绕过，Agent 仍会在本地复核能力：
+即使某个服务端请求被绕过（或对于 Traceroute 这类仅由 Agent 拦截的操作），Agent 仍会在本地复核能力：
 
 - 对未授权命令返回 `CapabilityDenied` 消息
-- Server 收到 `CapabilityDenied` 后写入合成结果（`exit_code = -1`）
-- 拒绝事件记录到审计日志
+- Server 收到 `CapabilityDenied` 后为任务命令写入合成结果（`exit_code = -2`），并输出告警级别日志（`tracing::warn!`）
+- 服务端能力门控和入站数据门控会写入审计日志；`CapabilityDenied` 本身只记录服务端告警日志，不写入 `audit_logs`
 
 ### 上报与展示
 
