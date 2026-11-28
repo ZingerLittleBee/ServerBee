@@ -1,4 +1,6 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
@@ -55,26 +57,27 @@ impl From<FileEvent> for AgentMessage {
     }
 }
 
-/// Tracks state for an active upload transfer.
-struct UploadState {
-    path: PathBuf,
-    tmp_path: PathBuf,
+struct UploadInner {
+    file: Option<tokio::fs::File>,
     size: u64,
     next_offset: u64,
 }
 
-/// Tracks that a download is active (used for cancellation).
+struct UploadHandle {
+    path: PathBuf,
+    tmp_path: PathBuf,
+    inner: Arc<Mutex<UploadInner>>,
+}
+
 struct DownloadState {
     handle: tokio::task::JoinHandle<()>,
 }
 
-/// Manages file operations on the agent, enforcing path validation and deny patterns.
 pub struct FileManager {
     config: FileConfig,
-    /// Pre-canonicalized root paths, computed once at construction time.
     canonical_roots: Vec<PathBuf>,
-    active_downloads: DashMap<String, DownloadState>,
-    active_uploads: DashMap<String, UploadState>,
+    active_downloads: Arc<DashMap<String, DownloadState>>,
+    active_uploads: DashMap<String, UploadHandle>,
     active_upload_targets: DashMap<PathBuf, String>,
     upload_start_lock: Mutex<()>,
 }
@@ -89,7 +92,7 @@ impl FileManager {
         Self {
             config,
             canonical_roots,
-            active_downloads: DashMap::new(),
+            active_downloads: Arc::new(DashMap::new()),
             active_uploads: DashMap::new(),
             active_upload_targets: DashMap::new(),
             upload_start_lock: Mutex::new(()),
@@ -192,57 +195,14 @@ impl FileManager {
         }
     }
 
-    /// Internal: list actual directory entries from the filesystem.
     async fn list_dir_entries(
         &self,
         canonical: &std::path::Path,
     ) -> anyhow::Result<Vec<FileEntry>> {
-        let mut entries = Vec::new();
-        let mut read_dir = tokio::fs::read_dir(&canonical).await?;
-
-        while let Some(entry) = read_dir.next_entry().await? {
-            let metadata = entry.metadata().await?;
-            let file_type = if metadata.is_dir() {
-                FileType::Directory
-            } else if metadata.is_symlink() {
-                FileType::Symlink
-            } else {
-                FileType::File
-            };
-
-            let name = entry.file_name().to_string_lossy().to_string();
-            let entry_path = entry.path().to_string_lossy().to_string();
-            let modified = metadata
-                .modified()
-                .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
-
-            let (permissions, owner, group) = get_platform_metadata(&metadata, &entry.path());
-
-            entries.push(FileEntry {
-                name,
-                path: entry_path,
-                file_type,
-                size: metadata.len(),
-                modified,
-                permissions,
-                owner,
-                group,
-            });
-        }
-
-        // Sort: directories first, then alphabetical by name
-        entries.sort_by(|a, b| {
-            let a_is_dir = matches!(a.file_type, FileType::Directory);
-            let b_is_dir = matches!(b.file_type, FileType::Directory);
-            b_is_dir
-                .cmp(&a_is_dir)
-                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
-
-        Ok(entries)
+        let dir_path = canonical.to_path_buf();
+        tokio::task::spawn_blocking(move || list_dir_entries_blocking(&dir_path))
+            .await
+            .map_err(|e| anyhow::anyhow!("Directory listing task failed: {e}"))?
     }
 
     /// Get metadata for a single file or directory.
@@ -401,19 +361,24 @@ impl FileManager {
         };
 
         let tid = transfer_id.clone();
+        let downloads = Arc::clone(&self.active_downloads);
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel::<()>();
         let handle = tokio::spawn(async move {
+            let _ = ready_rx.await;
             if let Err(e) = download_file(tid.clone(), validated, tx.clone()).await {
                 let _ = tx
                     .send(FileEvent::DownloadError {
-                        transfer_id: tid,
+                        transfer_id: tid.clone(),
                         error: e.to_string(),
                     })
                     .await;
             }
+            downloads.remove(&tid);
         });
 
         self.active_downloads
             .insert(transfer_id, DownloadState { handle });
+        let _ = ready_tx.send(());
     }
 
     /// Cancel a single download transfer.
@@ -491,30 +456,35 @@ impl FileManager {
             .and_then(|name| name.to_str())
             .ok_or_else(|| anyhow::anyhow!("Invalid target filename"))?;
         let tmp_path = parent.join(format!(".{file_name}.{}.sb-part", &transfer_hash[..16]));
-        if let Err(error) = tokio::fs::OpenOptions::new()
+        let file = match tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&tmp_path)
             .await
         {
-            self.active_upload_targets.remove(&target);
-            return Err(error.into());
-        }
+            Ok(file) => file,
+            Err(error) => {
+                self.active_upload_targets.remove(&target);
+                return Err(error.into());
+            }
+        };
 
         self.active_uploads.insert(
             transfer_id,
-            UploadState {
+            UploadHandle {
                 path: target,
                 tmp_path,
-                size,
-                next_offset: 0,
+                inner: Arc::new(Mutex::new(UploadInner {
+                    file: Some(file),
+                    size,
+                    next_offset: 0,
+                })),
             },
         );
 
         Ok(())
     }
 
-    /// Receive a chunk for an active upload. Returns the new written offset.
     pub async fn receive_chunk(
         &self,
         transfer_id: &str,
@@ -532,10 +502,13 @@ impl FileManager {
             );
         }
 
-        let mut state = self
+        let inner = self
             .active_uploads
-            .get_mut(transfer_id)
+            .get(transfer_id)
+            .map(|entry| Arc::clone(&entry.inner))
             .ok_or_else(|| anyhow::anyhow!("Unknown upload transfer '{}'", transfer_id))?;
+
+        let mut state = inner.lock().await;
         if offset != state.next_offset {
             anyhow::bail!(
                 "Unexpected upload offset {} (expected {})",
@@ -554,12 +527,11 @@ impl FileManager {
             );
         }
 
-        use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-        let mut file = tokio::fs::OpenOptions::new()
-            .write(true)
-            .open(&state.tmp_path)
-            .await?;
-        file.seek(std::io::SeekFrom::Start(offset)).await?;
+        use tokio::io::AsyncWriteExt;
+        let file = state
+            .file
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Upload file handle already closed"))?;
         file.write_all(&decoded).await?;
         file.flush().await?;
         state.next_offset = new_offset;
@@ -567,37 +539,45 @@ impl FileManager {
         Ok(new_offset)
     }
 
-    /// Abort an upload and release its temporary file and target reservation.
     pub async fn abort_upload(&self, transfer_id: &str) {
-        if let Some((_, state)) = self.active_uploads.remove(transfer_id) {
-            self.active_upload_targets.remove(&state.path);
-            let _ = tokio::fs::remove_file(&state.tmp_path).await;
+        if let Some((_, handle)) = self.active_uploads.remove(transfer_id) {
+            {
+                let mut state = handle.inner.lock().await;
+                state.file.take();
+            }
+            self.active_upload_targets.remove(&handle.path);
+            let _ = tokio::fs::remove_file(&handle.tmp_path).await;
         }
     }
 
-    /// Finalize an upload: rename .sb-part to the target path.
     pub async fn finish_upload(&self, transfer_id: &str) -> anyhow::Result<()> {
-        let (_, state) = self
+        let (_, handle) = self
             .active_uploads
             .remove(transfer_id)
             .ok_or_else(|| anyhow::anyhow!("Unknown upload transfer '{}'", transfer_id))?;
 
-        if state.next_offset != state.size {
-            let _ = tokio::fs::remove_file(&state.tmp_path).await;
-            self.active_upload_targets.remove(&state.path);
+        let (next_offset, size) = {
+            let mut state = handle.inner.lock().await;
+            state.file.take();
+            (state.next_offset, state.size)
+        };
+
+        if next_offset != size {
+            let _ = tokio::fs::remove_file(&handle.tmp_path).await;
+            self.active_upload_targets.remove(&handle.path);
             anyhow::bail!(
                 "Upload incomplete: received {} of {} bytes",
-                state.next_offset,
-                state.size
+                next_offset,
+                size
             );
         }
 
-        if let Err(error) = tokio::fs::rename(&state.tmp_path, &state.path).await {
-            let _ = tokio::fs::remove_file(&state.tmp_path).await;
-            self.active_upload_targets.remove(&state.path);
+        if let Err(error) = tokio::fs::rename(&handle.tmp_path, &handle.path).await {
+            let _ = tokio::fs::remove_file(&handle.tmp_path).await;
+            self.active_upload_targets.remove(&handle.path);
             return Err(error.into());
         }
-        self.active_upload_targets.remove(&state.path);
+        self.active_upload_targets.remove(&handle.path);
         Ok(())
     }
 }
@@ -634,27 +614,115 @@ fn matches_deny_pattern(filename: &str, pattern: &str) -> bool {
     }
 }
 
-/// Get platform-specific file metadata (permissions, owner, group).
+#[derive(Default)]
+struct UidGidCache {
+    #[cfg(unix)]
+    users: HashMap<u32, Option<String>>,
+    #[cfg(unix)]
+    groups: HashMap<u32, Option<String>>,
+}
+
+impl UidGidCache {
+    #[cfg(unix)]
+    fn user(&mut self, uid: u32) -> Option<String> {
+        self.users
+            .entry(uid)
+            .or_insert_with(|| get_username_by_uid(uid))
+            .clone()
+    }
+
+    #[cfg(unix)]
+    fn group(&mut self, gid: u32) -> Option<String> {
+        self.groups
+            .entry(gid)
+            .or_insert_with(|| get_groupname_by_gid(gid))
+            .clone()
+    }
+}
+
+fn list_dir_entries_blocking(canonical: &std::path::Path) -> anyhow::Result<Vec<FileEntry>> {
+    let mut entries = Vec::new();
+    let mut cache = UidGidCache::default();
+
+    for entry in std::fs::read_dir(canonical)? {
+        let entry = entry?;
+        let metadata = entry.metadata()?;
+        let file_type = if metadata.is_dir() {
+            FileType::Directory
+        } else if metadata.is_symlink() {
+            FileType::Symlink
+        } else {
+            FileType::File
+        };
+
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let entry_path = path.to_string_lossy().to_string();
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        let (permissions, owner, group) =
+            get_platform_metadata_cached(&metadata, &path, &mut cache);
+
+        entries.push(FileEntry {
+            name,
+            path: entry_path,
+            file_type,
+            size: metadata.len(),
+            modified,
+            permissions,
+            owner,
+            group,
+        });
+    }
+
+    entries.sort_by(|a, b| {
+        let a_is_dir = matches!(a.file_type, FileType::Directory);
+        let b_is_dir = matches!(b.file_type, FileType::Directory);
+        b_is_dir
+            .cmp(&a_is_dir)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(entries)
+}
+
+#[cfg(unix)]
+fn get_platform_metadata_cached(
+    metadata: &std::fs::Metadata,
+    path: &std::path::Path,
+    cache: &mut UidGidCache,
+) -> (Option<String>, Option<String>, Option<String>) {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    let mode = metadata.permissions().mode();
+    let permissions = Some(format_unix_permissions(mode));
+    let owner = cache.user(metadata.uid());
+    let group = cache.group(metadata.gid());
+    let _ = path;
+    (permissions, owner, group)
+}
+
+#[cfg(not(unix))]
+fn get_platform_metadata_cached(
+    _metadata: &std::fs::Metadata,
+    _path: &std::path::Path,
+    _cache: &mut UidGidCache,
+) -> (Option<String>, Option<String>, Option<String>) {
+    (None, None, None)
+}
+
 #[cfg(unix)]
 fn get_platform_metadata(
     metadata: &std::fs::Metadata,
     path: &std::path::Path,
 ) -> (Option<String>, Option<String>, Option<String>) {
-    use std::os::unix::fs::PermissionsExt;
-
-    let mode = metadata.permissions().mode();
-    let permissions = Some(format_unix_permissions(mode));
-
-    // Get owner/group names via nix-style uid/gid lookup
-    use std::os::unix::fs::MetadataExt;
-    let uid = metadata.uid();
-    let gid = metadata.gid();
-
-    let owner = get_username_by_uid(uid);
-    let group = get_groupname_by_gid(gid);
-
-    let _ = path; // used to avoid warning
-    (permissions, owner, group)
+    let mut cache = UidGidCache::default();
+    get_platform_metadata_cached(metadata, path, &mut cache)
 }
 
 #[cfg(not(unix))]
