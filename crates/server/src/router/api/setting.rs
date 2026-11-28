@@ -1,14 +1,19 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 
-use axum::body::Body;
+use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, State};
 use axum::http::{HeaderMap, header};
 use axum::routing::{get, post, put};
 use axum::{Extension, Json, Router};
+use futures_util::Stream;
 use sea_orm::SqlxSqliteConnector;
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+use tokio_util::io::ReaderStream;
 
 use crate::error::{ApiResponse, AppError, ok};
 use crate::middleware::auth::CurrentUser;
@@ -16,6 +21,25 @@ use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
 use crate::service::config::ConfigService;
 use crate::state::AppState;
+
+struct CleanupBackupStream {
+    inner: ReaderStream<tokio::fs::File>,
+    path: PathBuf,
+}
+
+impl Drop for CleanupBackupStream {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+impl Stream for CleanupBackupStream {
+    type Item = Result<Bytes, std::io::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.inner).poll_next(cx)
+    }
+}
 
 const CONFIG_KEY_SETTINGS: &str = "system_settings";
 
@@ -89,8 +113,7 @@ pub async fn create_backup(
 ) -> Result<axum::response::Response, AppError> {
     let db_path = resolve_db_path(&state.config);
 
-    // Use SQLite VACUUM INTO for a consistent backup
-    let backup_path = format!("{db_path}.backup");
+    let backup_path = format!("{db_path}.backup.{}", uuid::Uuid::new_v4());
     use sea_orm::ConnectionTrait;
     let stmt = sea_orm::Statement::from_string(
         sea_orm::DatabaseBackend::Sqlite,
@@ -102,15 +125,26 @@ pub async fn create_backup(
         .await
         .map_err(|e| AppError::Internal(format!("Backup failed: {e}")))?;
 
-    let bytes = tokio::fs::read(&backup_path)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to read backup file: {e}")))?;
+    let file = match tokio::fs::File::open(&backup_path).await {
+        Ok(file) => file,
+        Err(e) => {
+            let _ = tokio::fs::remove_file(&backup_path).await;
+            return Err(AppError::Internal(format!(
+                "Failed to open backup file: {e}"
+            )));
+        }
+    };
+    let file_len = match file.metadata().await {
+        Ok(meta) => meta.len(),
+        Err(e) => {
+            drop(file);
+            let _ = tokio::fs::remove_file(&backup_path).await;
+            return Err(AppError::Internal(format!(
+                "Failed to stat backup file: {e}"
+            )));
+        }
+    };
 
-    // Clean up backup file
-    let _ = tokio::fs::remove_file(&backup_path).await;
-
-    // Audit: exporting the full DB (password hashes, 2FA secrets, tokens) is a
-    // high-risk admin action and must leave a forensic trail.
     let caller_ip = extract_client_ip(
         &ConnectInfo(addr),
         &headers,
@@ -121,7 +155,7 @@ pub async fn create_backup(
         &state.db,
         &actor.user_id,
         "settings.backup",
-        Some(&format!("bytes={}", bytes.len())),
+        Some(&format!("bytes={file_len}")),
         &caller_ip,
     )
     .await;
@@ -129,13 +163,19 @@ pub async fn create_backup(
     let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
     let filename = format!("serverbee_backup_{timestamp}.db");
 
+    let stream = CleanupBackupStream {
+        inner: ReaderStream::new(file),
+        path: PathBuf::from(&backup_path),
+    };
+
     axum::response::Response::builder()
         .header(header::CONTENT_TYPE, "application/octet-stream")
+        .header(header::CONTENT_LENGTH, file_len.to_string())
         .header(
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{filename}\""),
         )
-        .body(Body::from(bytes))
+        .body(Body::from_stream(stream))
         .map_err(|e| AppError::Internal(format!("Response build error: {e}")))
 }
 
