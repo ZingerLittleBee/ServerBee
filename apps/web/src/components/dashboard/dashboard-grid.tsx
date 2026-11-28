@@ -507,7 +507,7 @@ export function DashboardGrid({
                 style={isAuto && widget.widget_type === 'uptime-timeline' ? undefined : mobileStyle}
               >
                 <VisibilityGate disabled={isEditing || isAuto}>
-                  <WidgetRenderer servers={widgetServers} widget={widget} />
+                  <WidgetRenderer isEditing={isEditing} servers={widgetServers} widget={widget} />
                 </VisibilityGate>
               </div>
             </div>
@@ -553,13 +553,13 @@ export function DashboardGrid({
                 {isAuto ? (
                   <div className={cn('flex h-full flex-col justify-center', isEditing && 'pointer-events-none')}>
                     <AutoHeightItem onMeasure={handleMeasure} widgetId={widget.id}>
-                      <WidgetRenderer servers={widgetServers} widget={widget} />
+                      <WidgetRenderer isEditing={isEditing} servers={widgetServers} widget={widget} />
                     </AutoHeightItem>
                   </div>
                 ) : (
                   <div className={isEditing ? 'pointer-events-none h-full' : 'h-full'}>
                     <VisibilityGate disabled={isEditing}>
-                      <WidgetRenderer servers={widgetServers} widget={widget} />
+                      <WidgetRenderer isEditing={isEditing} servers={widgetServers} widget={widget} />
                     </VisibilityGate>
                   </div>
                 )}

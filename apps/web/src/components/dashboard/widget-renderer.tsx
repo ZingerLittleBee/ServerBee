@@ -43,6 +43,7 @@ import { TrafficBarWidget } from './widgets/traffic-bar'
 import { UptimeTimelineWidget } from './widgets/uptime-timeline-widget'
 
 interface WidgetRendererProps {
+  isEditing?: boolean
   servers: ServerMetrics[]
   widget: DashboardWidget
 }
@@ -83,11 +84,11 @@ function ErrorFallback() {
   )
 }
 
-function WidgetContent({ widget, servers }: WidgetRendererProps) {
+function WidgetContent({ isEditing = false, widget, servers }: WidgetRendererProps) {
   const config = useMemo(() => parseConfig<Record<string, unknown>>(widget.config_json), [widget.config_json])
 
   if (widget.widget_type === 'module') {
-    return <ModuleWidgetHost servers={servers} widget={widget} />
+    return <ModuleWidgetHost isEditing={isEditing} servers={servers} widget={widget} />
   }
 
   switch (widget.widget_type) {
@@ -157,6 +158,7 @@ function areWidgetContentPropsEqual(prev: WidgetRendererProps, next: WidgetRende
     prev.widget.id !== next.widget.id ||
     prev.widget.widget_type !== next.widget.widget_type ||
     prev.widget.title !== next.widget.title ||
+    (next.widget.widget_type === 'module' && Boolean(prev.isEditing) !== Boolean(next.isEditing)) ||
     contentConfigFingerprint(prev.widget.config_json) !== contentConfigFingerprint(next.widget.config_json)
   ) {
     return false
@@ -167,13 +169,13 @@ function areWidgetContentPropsEqual(prev: WidgetRendererProps, next: WidgetRende
 
 const MemoizedWidgetContent = memo(WidgetContent, areWidgetContentPropsEqual)
 
-export function WidgetRenderer({ widget, servers }: WidgetRendererProps) {
+export function WidgetRenderer({ isEditing = false, widget, servers }: WidgetRendererProps) {
   return (
     <WidgetErrorBoundary
       fallback={<ErrorFallback />}
       key={`${widget.id}-${widget.widget_type}-${widget.title ?? ''}-${contentConfigFingerprint(widget.config_json)}`}
     >
-      <MemoizedWidgetContent servers={servers} widget={widget} />
+      <MemoizedWidgetContent isEditing={isEditing} servers={servers} widget={widget} />
     </WidgetErrorBoundary>
   )
 }

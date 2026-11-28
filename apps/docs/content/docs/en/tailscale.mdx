@@ -20,7 +20,7 @@ When Tailscale runs alongside ServerBee, several automatic safeguards keep metri
 
 ### Add Server Tailnet URL Toggle
 
-When `preferred_server_url` (`SERVERBEE_TAILSCALE__PREFERRED_SERVER_URL`) is configured on the Server—or when the Server detects its own MagicDNS name / `100.x` address from a local `tailscaled` socket—`GET /api/tailscale/overview` exposes `server_tailnet_url`.
+When `preferred_server_url` (`SERVERBEE_TAILSCALE__PREFERRED_SERVER_URL`) is configured on the Server -- or when the Server detects its own MagicDNS name / `100.x` address from a local `tailscaled` socket -- `GET /api/tailscale/overview` exposes `server_tailnet_url`.
 
 In **Servers → Add Server**, a **Use Tailnet URL** switch appears automatically whenever `server_tailnet_url` differs from the current browser origin. Toggling it rewrites `--server-url` in the generated one-line enrollment command so new Agents connect directly over your Tailnet even if you opened the dashboard through a public domain or localhost port-forward.
 
@@ -55,8 +55,9 @@ If your Linux distribution places the socket at a non-standard location, mount t
 
 Each Agent inspects its local `tailscaled` daemon when the **`tailscale`** capability (`CAP_TAILSCALE`, bit 11 / `2048`) is active.
 
-- **Agent-owned capability**: `tailscale` is classified as **low risk** and **enabled by default** (`CAP_DEFAULT = 3900`). Like all [Capabilities](/en/docs/capabilities), it is controlled exclusively on the Agent host—to disable Tailscale reporting on a specific machine, add `"tailscale"` to `[capabilities].deny` in `agent.toml` or pass `--deny-cap tailscale`.
+- **Agent-owned capability**: `tailscale` is classified as **low risk** and **enabled by default** (`CAP_DEFAULT = 3900`). Like all [Capabilities](/en/docs/capabilities), it is controlled exclusively on the Agent host -- to disable Tailscale reporting on a specific machine, add `"tailscale"` to `[capabilities].deny` in `agent.toml` or pass `--deny-cap tailscale`.
 - **Collection mechanism**: On Unix hosts, the Agent queries `GET /localapi/v0/status` over `tailscaled`'s Unix domain socket (checking `tailscale.socket_path`, `/var/run/tailscale/tailscaled.sock`, `/run/tailscale/tailscaled.sock`, and `/var/run/tailscaled.socket` with a 3-second timeout). When the socket is unavailable or permission-denied (or on non-Unix platforms), it falls back cleanly to `tailscale status --json`.
+- **Backoff and deduplication**: When `tailscaled` is unavailable on a host, the Agent backs off retries at `30`, `60`, `120`, `300`, and `900` seconds. Unchanged status snapshots are deduplicated via a SHA-256 fingerprint before sending.
 
 ### Metrics and Peer Diagnostics
 
@@ -65,16 +66,16 @@ When `tailscaled` is detected, the Agent advertises `"tailscale"` in `SystemInfo
 - **Node summary**: Backend state (`Running`, `NeedsLogin`, `Stopped`), primary Tailscale IPv4 & IPv6, MagicDNS name, Tailnet name, client version, DERP home region, Exit Node status (`exit_node` / `exit_node_option`), advertised subnet routes, ACL tags, and health warnings.
 - **Key Expiry tracking**: Node key expiration timestamp and remaining lifetime so you can renew or disable key expiry before an unattended server drops off the Tailnet.
 - **Peer connection modes**: Per-peer OS, Tailscale IPs, Rx/Tx byte counters, last WireGuard handshake, and real-time path classification:
-  - **Direct** — Direct UDP WireGuard tunnel (`cur_addr` active), delivering full line-rate throughput and lowest latency.
-  - **DERP** — Relayed over HTTPS through a Tailscale DERP region (for example `DERP (tok)` or `DERP (sfo)`). Persistent `DERP` status on high-traffic peers signals strict NAT or UDP firewall rules blocking direct traversal.
-  - **Peer Relay** — Relayed via a peer relay endpoint.
-  - **Idle** — Known peer with no active tunnel traffic.
+  - **Direct** -- Direct UDP WireGuard tunnel (`cur_addr` active), delivering full line-rate throughput and lowest latency.
+  - **DERP** -- Relayed over HTTPS through a Tailscale DERP region (for example `DERP (tok)` or `DERP (sfo)`). Persistent `DERP` status on high-traffic peers signals strict NAT or UDP firewall rules blocking direct traversal.
+  - **Peer Relay** -- Relayed via a peer relay endpoint.
+  - **Idle** -- Known peer with no active tunnel traffic.
 
 The Server also persists each host's primary `tailscale_ipv4`, `tailscale_ipv6`, `tailscale_dns_name`, and `tailscale_tailnet` on the server record, keeping Tailnet addresses visible and searchable even when an Agent is offline (`cached: true`).
 
 ## Control Plane API & Dashboard Widget
 
-While per-host `CAP_TAILSCALE` shows each Agent's local WireGuard view, the Server's optional Control Plane integration queries the global device inventory of your Tailnet from either **Tailscale SaaS** (API v2, `/api/v2/tailnet/{tailnet}/devices`) or a self-hosted **Headscale** instance (API v1, `/api/v1/node`, including Headscale v0.26+ tag schemas).
+While per-host `CAP_TAILSCALE` shows each Agent's local WireGuard view, the Server's optional Control Plane integration queries the global device inventory of your Tailnet from either **Tailscale SaaS** (API v2, `/api/v2/tailnet/{tailnet}/devices`) or a self-hosted **Headscale** instance (API v1, `/api/v1/node`, automatically falling back to the legacy `/api/v1/machine` endpoint on `404`, and supporting Headscale v0.26+ tag schemas).
 
 ### Configuring Tailscale or Headscale
 
@@ -93,9 +94,9 @@ Security notes for control-plane configuration:
 
 ### Server Matching & `com.serverbee.tailscale-overview` Widget
 
-`GET /api/tailscale/overview` (cached briefly for 30 seconds to avoid upstream rate limits) correlates every Tailnet device against your ServerBee fleet by Tailscale IPv4/IPv6, reported IPv4, MagicDNS name, or hostname:
+`GET /api/tailscale/overview` (cached briefly for 30 seconds to avoid upstream rate limits) correlates every Tailnet device against your ServerBee fleet by Tailscale IPv4/IPv6, reported IPv4/IPv6, MagicDNS name, or hostname:
 
-- **Settings → Tailscale** displays fleet-wide totals (**Total Devices**, **Online**, **Linked ServerBee Servers**, **Expiring Keys**) and links matched Tailnet devices directly to `/servers/{id}`.
+- **Settings → Tailscale** displays fleet-wide totals (**Total Devices**, **Online**, **Linked ServerBee Servers**, **Expiring Keys** -- keys expiring within `14` days) and links matched Tailnet devices directly to `/servers/{id}`.
 - **Built-in Dashboard Widget (`com.serverbee.tailscale-overview`)**: Add the **Tailscale Overview** widget from the [custom dashboard](/en/docs/dashboards) picker for an at-a-glance summary of online Tailnet nodes, linked ServerBee hosts, and upcoming key expirations.
 
 ## Native iOS Support
@@ -106,30 +107,7 @@ The [iOS Mobile Companion](/en/docs/mobile) includes native SwiftUI views for bo
 - **Settings → Administration → Tailscale (`TailscaleAdminView`)**: Administrators can configure Tailscale or Headscale control-plane credentials, saved API keys, preferred Server URL, and Tailscale Serve loopback auth, run **Test Connection**, and inspect the live Tailnet device inventory (`TailnetOverviewSection`) with direct navigation to linked ServerBee servers. Read-only members can also view the Tailnet overview and device list.
 - **Privacy Mode IP masking**: Turning on **Settings → Privacy Mode** masks Tailscale IPv4/IPv6 addresses, peer endpoints, subnet routes, MagicDNS hostnames containing IPs, and Tailnet URLs across all cards and rows while preserving raw unmasked values in copy actions and edit fields.
 
-## Authentication Options
-
-ServerBee supports two distinct ways to authenticate users with Tailscale identities. Choose the model that matches your deployment topology.
-
-### Option 1: Tailscale OIDC (`tsidp`) via `[oauth.oidc]`
-
-If you run Tailscale's OIDC Identity Provider (`tsidp`) on your Tailnet (or Headscale paired with an external IdP such as Pocket ID, Authelia, or Authentik), wire it to ServerBee's standard OpenID Connect client in `server.toml`:
-
-```toml
-[oauth]
-base_url = "https://serverbee.tailnet-name.ts.net"
-# Safe to enable only when your OIDC issuer enforces Tailnet ACLs / org membership:
-allow_registration = false
-
-[oauth.oidc]
-issuer_url = "https://idp.tailnet-name.ts.net"
-client_id = "your-tsidp-client-id"
-client_secret = "your-tsidp-client-secret"
-scopes = ["openid", "email", "profile"]
-```
-
-This works whether ServerBee sits behind a reverse proxy, on another Tailnet host, or on cloud infrastructure, because authentication uses standard OAuth2 authorization-code redirects rather than trusted HTTP headers. See [Security → OAuth Social Login](/en/docs/security#oauth-social-login).
-
-### Option 2: Tailscale Serve Loopback Identity Auth
+## Tailscale Serve Loopback Identity Auth [#option-2-tailscale-serve-loopback-identity-auth]
 
 When `tailscale serve` runs on the **exact same host or container network namespace** as `serverbee-server`, Tailscale terminates Tailnet TLS and injects `Tailscale-User-Login` on proxied loopback requests. Setting `SERVERBEE_TAILSCALE__AUTH_ENABLED=true` (`tailscale.auth_enabled = true`) enables passwordless browser sign-in for both HTTP API requests and browser WebSocket upgrades.
 
@@ -137,9 +115,10 @@ When `tailscale serve` runs on the **exact same host or container network namesp
 **Loopback Security Boundary:** HTTP identity headers are trivial to spoof if accepted from untrusted network peers or ordinary reverse proxies. ServerBee enforces two non-negotiable invariants before trusting `Tailscale-User-Login`:
 
 1. `tailscale.auth_enabled` is **`false` by default**.
-2. Even when enabled, ServerBee **only** accepts `Tailscale-User-Login` when the underlying TCP peer (`ConnectInfo`) is strictly loopback (`127.0.0.1` or `::1`) **and** neither `X-Forwarded-For` nor `Forwarded` headers are present. When a local `tailscaled` Unix socket is reachable, ServerBee can additionally cross-check the peer via `/localapi/v0/whois`.
+2. Even when enabled, ServerBee **only** accepts `Tailscale-User-Login` when the underlying TCP peer (`ConnectInfo`) is strictly loopback (`127.0.0.1` or `::1`) **and** neither `X-Forwarded-For` nor `Forwarded` headers are present.
+3. Optional `/localapi/v0/whois` cross-checking runs **only** when `tailscale.socket_path` is explicitly configured and exists on disk (unlike `server_tailnet_url` probing, it does not auto-discover default socket paths). If connecting to the configured socket fails (for example due to permissions), the check **fails open** and allows the loopback request.
 
-Any request carrying `Tailscale-User-Login` from a non-loopback IP—or arriving through a proxy that adds `X-Forwarded-For` / `Forwarded`—is rejected with `401 Unauthorized`. When enabling this mode, bind `server.listen` to `127.0.0.1:9527` so all external and Tailnet traffic must pass through `tailscale serve`.
+Any request carrying `Tailscale-User-Login` from a non-loopback IP -- or arriving through a proxy that adds `X-Forwarded-For` / `Forwarded` -- is rejected with `401 Unauthorized`. When enabling this mode, bind `server.listen` to `127.0.0.1:9527` so all external and Tailnet traffic must pass through `tailscale serve`.
 </Callout>
 
 User resolution and role safety under Tailscale Serve auth:
@@ -155,7 +134,7 @@ Repository file `deploy/docker-compose.tailscale.yml` provides a production-read
 ### Why `*.ts.net` TLS Matters for Web and iOS
 
 - **Web Dashboard**: ServerBee sets `HttpOnly` + `Secure` on session cookies by default (`auth.secure_cookie = true`). Accessing the dashboard over `https://<hostname>.<tailnet>.ts.net` satisfies browser secure-context rules for cookies, Clipboard APIs, and `wss://` WebSockets without disabling cookie security.
-- **iOS Mobile Companion**: iOS App Transport Security (ATS), QR code pairing, mobile session token rotation, and [verified Push Relay](/en/docs/mobile) registration require HTTPS with a certificate trusted by iOS system roots. Because Tailscale HTTPS provisions publicly trusted **Let's Encrypt** certificates for your `*.ts.net` MagicDNS hostname, the iOS app connects seamlessly whenever the iPhone's Tailscale VPN tunnel is active—without installing custom root CAs. (Note: the native iOS client authenticates with mobile bearer/refresh tokens over `https://<hostname>.<tailnet>.ts.net`, not browser `Tailscale-User-Login` headers.)
+- **iOS Mobile Companion**: iOS App Transport Security (ATS), QR code pairing, mobile session token rotation, and [verified Push Relay](/en/docs/mobile) registration require HTTPS with a certificate trusted by iOS system roots. Because Tailscale HTTPS provisions publicly trusted **Let's Encrypt** certificates for your `*.ts.net` MagicDNS hostname, the iOS app connects seamlessly whenever the iPhone's Tailscale VPN tunnel is active -- without installing custom root CAs. (Note: the native iOS client authenticates with mobile bearer/refresh tokens over `https://<hostname>.<tailnet>.ts.net`, not browser `Tailscale-User-Login` headers.)
 
 ### Quick Start with `deploy/docker-compose.tailscale.yml`
 
@@ -184,14 +163,14 @@ cat > config/ts-serve.json <<'EOF'
 EOF
 ```
 
-3. Deploy the stack using `deploy/docker-compose.tailscale.yml` (shown below with the current release image tag):
+3. Deploy the stack using `deploy/docker-compose.tailscale.yml` (the repository template parameterizes the image tag via `SERVERBEE_IMAGE_TAG`, shown below with the current release default):
 
 ```yaml
 services:
   tailscale:
     image: tailscale/tailscale:latest
     container_name: serverbee-tailscale
-    hostname: serverbee
+    hostname: ${TS_HOSTNAME:-serverbee}
     restart: unless-stopped
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
@@ -209,6 +188,7 @@ services:
       - NET_RAW
 
   serverbee-server:
+    # Overridable via SERVERBEE_IMAGE_TAG in deploy/docker-compose.tailscale.yml
     image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.7
     container_name: serverbee-server
     restart: unless-stopped
@@ -223,7 +203,8 @@ services:
       - SERVERBEE_SERVER__DATA_DIR=/data
       - SERVERBEE_AUTH__SECURE_COOKIE=true
       - SERVERBEE_TAILSCALE__SOCKET_PATH=/var/run/tailscale/tailscaled.sock
-      - SERVERBEE_TAILSCALE__AUTH_ENABLED=false
+      - SERVERBEE_TAILSCALE__AUTH_ENABLED=${SERVERBEE_TAILSCALE__AUTH_ENABLED:-false}
+      - SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE=${SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE:-}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9527/healthz"]
       interval: 30s

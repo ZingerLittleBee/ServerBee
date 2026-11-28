@@ -10,23 +10,25 @@ ServerBee 可以集中管理入站流量的黑名单。Server 持有权威列表
 
 - **仅支持 Linux** —— Agent 使用 `nft` CLI。
 - Agent 必须启用 **`CAP_FIREWALL_BLOCK`**（位值 `512`）。**默认开启**；能力由 Agent 拥有，如需关闭，在 Agent 的 `[capabilities]` deny 列表中加入 `firewall_block`。见 [功能开关](/zh/docs/capabilities)。
-- Agent 进程需要 root 或 `CAP_NET_ADMIN`。
+- Agent 进程需要 root 或 `CAP_NET_ADMIN`。Agent 启动时会自动探测 `nft` 可用性与权限；若缺少 `nft` 或权限不足，Agent 会自动从上报能力中剔除 `CAP_FIREWALL_BLOCK`。
 
 ## 手动封禁
 
-Settings → Firewall → **Add block**。填入 IP（`1.2.3.4`）或 CIDR（`10.0.0.0/8`），选择覆盖范围（`All servers` / `Selected` / `All except`），可选填备注。
+进入 **Settings → Firewall** 并点击 **Block IP**。填入 IP（`203.0.113.5`）或 CIDR（`203.0.113.0/24`），选择覆盖范围（`All servers` / `Selected` / `All except`），可选填备注。
 
 Server 会拒绝命中保留段的目标：
 
-- 回环地址（`127.0.0.0/8`、`::1`）
-- RFC 1918（`10/8`、`172.16/12`、`192.168/16`、`fc00::/7`、`fe80::/10`）
+- 回环地址（`127.0.0.0/8`、`::1/128`）
+- RFC 1918 私网 IPv4（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`）
+- IPv4 链路本地（`169.254.0.0/16`）与当前网络（`0.0.0.0/8`）
+- IPv6 唯一本地（`fc00::/7`，RFC 4193）与链路本地（`fe80::/10`，RFC 4291）
 - RFC 6598 / Tailscale CGNAT（`100.64.0.0/10`）
-- 组播 / 未指定地址
+- 组播（`224.0.0.0/4`、`ff00::/8`）与未指定地址（`::/128`）
 - `server.toml` 中 `firewall.allow_list` 列出的任意 CIDR
 - `server.trusted_proxies`
 - 任意 Agent 上报的外网 IP
 
-命中以上任意条件时返回 `409`，body 中包含具体原因。
+命中以上任意条件时返回 `409 Conflict`，响应体中包含具体原因。作为纵深防御，每台 Agent 在向 `nftables` 写入规则前也会执行本地第 3 层护栏，独立校验同一组硬编码保留段。
 
 <Callout type="warn">
 **记得保护好你自己的公网 IP。** "Agent 外网 IP" 这条护栏依赖每个 Agent 上报自己的 IPv4 / IPv6
@@ -80,9 +82,21 @@ Server 通过 WebSocket 增量下发增删操作。Agent 重连或 capability �
 sudo nft delete table inet serverbee
 ```
 
+## 权限与 REST API
+
+所有已认证用户（Admin 与 Member）均可查看黑名单列表与统计数据；创建或删除封禁条目需要 **Admin** 角色。
+
+| 方法 | 端点 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/firewall/blocks` | 已认证 | 列出黑名单条目 |
+| POST | `/api/firewall/blocks` | Admin | 创建黑名单条目 |
+| GET | `/api/firewall/blocks/{id}` | 已认证 | 获取单条黑名单记录及各服务器下发确认状态 |
+| DELETE | `/api/firewall/blocks/{id}` | Admin | 删除黑名单条目 |
+| GET | `/api/firewall/stats` | 已认证 | 获取黑名单聚合计数与生效状态 |
+
 ## 审计日志
 
-所有动作都会写入审计日志，并在 Firewall 页面 Activity Tab 中展示：`firewall_block_created`、`firewall_block_deleted`、`firewall_block_applied_agent`、`firewall_block_removed_agent`、`firewall_block_rejected_server`、`firewall_block_rejected_agent`、`firewall_auto_block_skipped_conflict`、`firewall_reset_acked`。
+所有动作都会写入审计日志，并在 Firewall 页面 Activity Tab 中展示：`firewall_block_created`、`firewall_block_deleted`、`firewall_block_applied_agent`、`firewall_block_removed_agent`、`firewall_block_rejected_server`、`firewall_block_rejected_agent`、`firewall_auto_block_skipped_conflict`、`firewall_reset_acked`、`firewall_reset_failed_agent`。
 
 ## 限制
 

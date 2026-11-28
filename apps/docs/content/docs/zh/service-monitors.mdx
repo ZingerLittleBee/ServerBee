@@ -23,15 +23,15 @@ icon: Radar
 1. 打开 **Settings → Service Monitors**。
 2. 点击 **New Monitor**。
 3. 选择监控类型并填写目标。
-4. 设置检查间隔（秒）。
+4. 设置检查间隔（秒，默认 `300` 秒）及可选重试次数（默认 `1`）。
 5. 配置该类型的专属参数。
 6. 可选：选择通知组。
 7. 保存监控。
 
-后台检查器每 10 秒唤醒一次，根据每个监控的 `interval` 判断是否到期，并最多并发执行 20 个检查。
+后台检查器每 10 秒唤醒一次，根据每个监控的 `interval` 判断是否到期，并最多并发执行 20 个检查。每个监控项同时具有并发防重入保护，同一监控不会同时执行两次检查。
 
 <Callout type="warn">
-作为 SSRF 防护，解析到回环地址（`127.0.0.0/8`、`::1`、`localhost`）、链路本地地址、云元数据端点（`169.254.169.254`）或其他不可路由地址的目标会被拦截。SSL、TCP 和 HTTP Keyword 监控在保存时即拒绝此类目标，并在每一次 HTTP 重定向跳转时重新校验。私有局域网网段（`10/8`、`172.16/12`、`192.168/16` 及 IPv6 ULA）仍然允许，以便监控内网主机。
+作为 SSRF 防护，指向或解析到回环地址（`127.0.0.0/8`、`::1`、`localhost`）、链路本地地址、云元数据端点（`169.254.169.254`）或其他不可路由地址的目标会被拦截。对于 SSL、TCP 和 HTTP Keyword 监控，保存时仅对字面主机名与 IP 做静态校验（不执行 DNS 解析）；解析到被拦截地址的域名会在检查器运行时被拒绝，且每一次 HTTP 重定向跳转都会重新校验。DNS 监控中的自定义 `nameserver` 也会在运行时接受 SSRF 校验。私有局域网网段（`10/8`、`172.16/12`、`192.168/16` 及 IPv6 ULA）仍然允许，以便监控内网主机。
 </Callout>
 
 ## 类型配置
@@ -64,7 +64,7 @@ icon: Radar
 - `record_type` 默认 `A`，支持 `A`、`AAAA`、`CNAME`、`MX`、`TXT`。
 - 不设置 `expected_values` 时，只要解析返回至少一个值即视为成功。
 - 设置 `expected_values` 时，返回值排序后必须与期望值排序后完全一致。
-- `nameserver` 可选；不设置时使用系统解析器。
+- `nameserver` 可选（运行时执行 SSRF 校验）；不设置时使用系统解析器。
 
 ### HTTP 关键字
 
@@ -84,9 +84,10 @@ icon: Radar
 
 - `method` 支持 `GET` 和 `POST`。
 - `expected_status` 默认 `[200]`。
-- 设置 `keyword` 后，`keyword_exists: true` 表示必须出现，`false` 表示必须不存在。
+- 设置 `keyword` 后，`keyword_exists: true` 表示必须出现，`false` 表示必须不存在。关键字检查采用**区分大小写**的子串匹配。
 - `headers` 的值必须是字符串。
 - `body` 用于 `POST` 请求。
+- 强制严格校验 TLS 证书，最多跟随 **10 次重定向**，并在重定向跳转时将方法降级为 `GET`、清除自定义 `headers` 与请求体 `body`。
 
 ### TCP 端口
 
@@ -117,7 +118,7 @@ icon: Radar
 
 1. 写入一条记录，包含 `success`、`latency`、`detail_json`、`error`、`time`。
 2. 更新监控的 `last_status`、`last_checked_at`、`consecutive_failures`。
-3. 只有当 `consecutive_failures > retry_count` 时才发送失败通知。
+3. 只有当 `consecutive_failures > retry_count`（`retry_count` 默认为 `1`）时才发送失败通知。
 4. 如果之前处于失败状态，本次恢复成功，则发送恢复通知。
 
 如果监控关联了服务器，并且其中任意服务器正处于活动维护窗口，本次检查会跳过通知发送，但检查记录仍会保存。
@@ -143,7 +144,7 @@ icon: Radar
 | PUT | `/api/service-monitors/{id}` | 更新监控 |
 | DELETE | `/api/service-monitors/{id}` | 删除监控及其记录 |
 | GET | `/api/service-monitors/{id}/records` | 查询记录，可带 `from`、`to`、`limit` |
-| POST | `/api/service-monitors/{id}/check` | 立即触发一次检查 |
+| POST | `/api/service-monitors/{id}/check` | 立即触发一次检查（若该监控已有检查正在执行，返回 `409 Conflict`） |
 
 创建请求示例：
 

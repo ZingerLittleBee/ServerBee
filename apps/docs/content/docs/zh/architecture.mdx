@@ -22,6 +22,7 @@ icon: Boxes
 |  | Axum Router                                  | |
 |  |  +-- REST API handlers                      | |
 |  |  +-- WebSocket: Agent + Browser + Terminal   | |
+|  |  |              + Docker Logs                | |
 |  |  +-- 静态文件 (rust-embed)                   | |
 |  | Service Layer                                | |
 |  |  +-- AgentManager (连接/状态)                | |
@@ -66,12 +67,12 @@ icon: Boxes
 | ServerService | 服务器 CRUD、分组、标签、排序管理 |
 | RecordService | 指标写入、历史查询、小时聚合、过期清理 |
 | AlertService | 告警规则 CRUD、周期性规则评估、触发通知 |
-| NotificationService | 通知渠道管理、消息分发（Webhook/Telegram/Email/Bark） |
+| NotificationService | 通知渠道管理、消息分发（Webhook/Telegram/Email/Bark，以及通过 `ApnsService::send_push` 直接发送的手动 APNs 渠道；基于 Push Relay 的移动推送由独立的 `MobilePushOutbox` 管线处理） |
 | PingService | Ping 探测任务 CRUD、任务下发、结果存储 |
 | TaskService | 远程命令下发、执行结果查询 |
 | ConfigService | 系统配置读写（K-V 存储） |
 | TailscaleControlService | Tailscale v2 / Headscale v1 控制面客户端、设备关联与 `tailscaled` LocalAPI `whois` 校验 |
-| GeoIpService | IP 地理位置查询（MaxMind MMDB） |
+| GeoIpService | IP 地理位置与 ASN 查询（DB-IP Lite 一键下载或 MaxMind MMDB） |
 | UserService | 用户 CRUD、角色管理 |
 
 ### Agent（采集端，`crates/agent`）
@@ -128,54 +129,77 @@ Agent 连接到 `ws://<server>/api/agent/ws`，并使用 `Authorization: Bearer 
 
 | 消息类型 | 说明 | 需要 ACK |
 |----------|------|----------|
-| `SystemInfo` | 静态系统信息，连接/重连后上报一次 | 是 |
+| `SystemInfo` | 静态系统信息、主机能力与临时授权，连接/重连后上报 | 是 |
+| `CapabilitiesChanged` | 主机能力策略、临时授权与变更事件更新 | 是 |
 | `Report` | 周期性指标上报（每 N 秒） | 否 |
 | `PingResult` | Ping 探测结果 | 否 |
+| `SecurityEvent` | 主机安全事件（SSH 登录、暴力破解、端口扫描） | 否 |
 | `TaskResult` | 远程命令执行结果 | 是 |
-| `TerminalOutput` | PTY 输出数据（base64 编码） | 否 |
-| `TerminalStarted` | PTY 会话创建成功确认 | 否 |
-| `TerminalError` | 终端会话错误 | 否 |
-| `Pong` | 协议层心跳响应 | 否 |
-| `DockerInfo` | Docker 系统信息和功能上报 | 否 |
-| `DockerContainers` | 当前容器列表及状态 | 否 |
-| `DockerStats` | 容器资源使用统计 | 否 |
-| `DockerLog` | 容器日志条目（批量） | 否 |
-| `DockerEvent` | 容器生命周期事件 | 否 |
-| `TailscaleStatus` | 宿主机 `tailscaled` 节点概览、路由及对端快照 | 否 |
-| `TailscaleUnavailable` | 上报本机 `tailscaled` 未运行或不可达 | 否 |
+| `TerminalOutput` / `TerminalStarted` / `TerminalError` | PTY 会话生命周期与 base64 编码的输出数据 | 否 |
+| `CapabilityDenied` | 因 Agent 本地能力策略拒绝服务端请求的回执 | 否 |
+| `NetworkProbeResults` | 定时网络质量探测的批量结果 | 否 |
+| `UnlockResults` | 出口 IP 与流媒体/AI 解锁检测结果 | 否 |
+| `IpChanged` | 检测到的 IPv4/IPv6 或网卡地址变更 | 否 |
+| `TracerouteResult` / `TracerouteRoundUpdate` | 旧版一次性结果或按轮流式上报的 Traceroute 跃点 | 否 |
+| `FileListResult` / `FileStatResult` / `FileReadResult` / `FileOpResult` | 沙箱目录列表、文件元信息、Base64 读取与写/删/新建/移动结果 | 否 |
+| `FileDownloadReady` / `FileDownloadChunk` / `FileDownloadEnd` / `FileDownloadError` | 流式文件下载帧 | 否 |
+| `FileUploadAck` / `FileUploadComplete` / `FileUploadError` | 流式文件上传确认与状态 | 否 |
+| `DockerInfo` / `DockerContainers` / `DockerStats` / `DockerLog` / `DockerEvent` | Docker 系统信息、容器列表、统计、批量日志与生命周期事件 | 否 |
+| `DockerUnavailable` / `DockerNetworks` / `DockerVolumes` / `DockerActionResult` / `FeaturesUpdate` | Docker daemon 可用性、网络、卷、操作结果与特性上报 | 否 |
+| `TailscaleStatus` / `TailscaleUnavailable` | 宿主机 `tailscaled` 节点概览、路由及对端快照（或不可用状态） | 否 |
+| `UpgradeProgress` / `UpgradeResult` | 事务式自升级阶段进度与失败终态上报 | 是 |
+| `BlocklistAck` / `BlocklistResetAck` | nftables 防火墙黑名单应用/重置回执 | 否 |
+| `Pong` | 兼容 JSON `ServerMessage::Ping` 的响应（实际心跳使用 WebSocket 层 Ping/Pong 帧） | 否 |
 
 ### Server -> Agent（`ServerMessage`）
 
 | 消息类型 | 说明 |
 |----------|------|
-| `Welcome` | 连接确认，包含 server_id、protocol_version、report_interval |
-| `Ack` | 确认收到的消息（按 msg_id） |
-| `PingTasksSync` | 下发全部分配的探测任务 |
+| `Welcome` | 连接确认，包含 `server_id`、`protocol_version`、`report_interval` 及能力 ACK 标记 |
+| `Ack` | 确认收到的消息（按 `msg_id`） |
+| `PingTasksSync` | 下发全部分配的 Ping 探测任务 |
+| `NetworkProbeSync` | 下发定时网络质量探测目标、间隔与发包数 |
+| `IpQualitySync` / `IpQualityRunNow` | 下发解锁检测服务/周期，或立即触发一次检测 |
 | `Exec` | 在 Agent 上执行 Shell 命令 |
-| `TerminalOpen` | 请求打开新的 PTY 会话 |
-| `TerminalInput` | 向 PTY 会话转发键盘输入 |
-| `TerminalResize` | 调整 PTY 会话尺寸 |
-| `TerminalClose` | 关闭 PTY 会话 |
-| `Ping` | 协议层心跳（每 30 秒） |
-| `Upgrade` | 指示 Agent 自升级 |
-| `DockerLogsStart` | 开始为容器流式传输日志 |
-| `DockerLogsStop` | 停止流式传输日志 |
-| `DockerAction` | 执行容器操作（start/stop/restart/remove） |
+| `TerminalOpen` / `TerminalInput` / `TerminalResize` / `TerminalClose` | PTY 会话生命周期与 base64 键盘输入 |
+| `FileList` / `FileStat` / `FileRead` / `FileWrite` / `FileDelete` / `FileMkdir` / `FileMove` | 沙箱化远程文件操作指令 |
+| `FileDownloadStart` / `FileDownloadCancel` / `FileUploadStart` / `FileUploadChunk` / `FileUploadEnd` | 流式文件传输指令 |
+| `DockerListContainers` / `DockerStartStats` / `DockerStopStats` / `DockerEventsStart` / `DockerEventsStop` | 容器列表查询、统计轮询与事件流开关 |
+| `DockerGetInfo` / `DockerListNetworks` / `DockerListVolumes` | Docker 系统信息、网络与卷查询 |
+| `DockerLogsStart` / `DockerLogsStop` | 开始或停止流式传输容器日志 |
+| `DockerContainerAction` | 执行容器操作（`start` / `stop` / `restart` / `remove`） |
 | `TailscaleGetStatus` | 按需请求实时 `tailscaled` 状态快照 |
+| `Traceroute` | 向目标发起 ICMP/TCP/UDP Traceroute |
+| `BlocklistSync` / `BlocklistAdd` / `BlocklistRemove` / `BlocklistReset` | 全量同步、增删或清空 Agent nftables 防火墙规则 |
+| `Upgrade` | 指示 Agent 自升级至目标版本 |
+| `Ping` | 协议层兼容心跳变体（服务端实际每 30 秒发送 WebSocket 层 `Message::Ping` 帧） |
 
-### Server -> Browser（`BrowserMessage`）
+### Server 与浏览器 WebSocket（`BrowserMessage` / `BrowserClientMessage`）
 
-浏览器通过两种方式获取数据：REST API 用于初始加载和历史查询，WebSocket（地址 `ws://<server>/api/ws/servers`）用于实时推送。该 WebSocket 为单向推送（Server -> 浏览器）。REST 结果和 WebSocket 消息会写入同一份实时服务器目录，使各页面保持同步。
+浏览器通过 REST API 进行初始加载、历史查询和写操作，并连接三条 WebSocket 路由：
 
-| 消息类型 | 说明 |
+- `ws://<server>/api/ws/servers` —— **双向**实时通道：以服务端向浏览器推送（`BrowserMessage`）为主，同时支持浏览器上行 `BrowserClientMessage`（`DockerSubscribe`、`DockerUnsubscribe`）按需订阅或取消指定服务器的 Docker 实时数据。
+- `ws://<server>/api/ws/terminal/{server_id}` —— 交互式 PTY 终端中继。
+- `ws://<server>/api/ws/docker/logs/{server_id}` —— 容器实时日志流。
+
+REST 结果和 WebSocket 消息会写入同一份实时服务器目录，使各页面保持同步。
+
+| 消息类型（`BrowserMessage`） | 说明 |
 |----------|------|
-| `FullSync` | 所有服务器的完整状态（浏览器连接时下发） |
-| `Update` | 变更服务器最新指标的增量更新 |
-| `ServerOnline` | 服务器上线通知 |
-| `ServerOffline` | 服务器离线通知 |
-| `DockerUpdate` | Docker 容器和统计更新 |
-| `DockerEvent` | Docker 容器生命周期事件 |
-| `DockerAvailabilityChanged` | Docker daemon 可用性变化 |
+| `FullSync` | 所有服务器的完整状态与进行中的升级任务（浏览器连接时下发） |
+| `Update` | 变更服务器最新实时指标的增量更新 |
+| `ServerCatalogChanged` | 通知刷新受认证 REST 服务器目录（避免将私密计费字段混入指标帧） |
+| `ServerOnline` / `ServerOffline` | 服务器上线/离线状态变更 |
+| `AgentAuthorityChanged` | Enrollment offer、claim 或吊销状态变更 |
+| `CapabilitiesChanged` | 主机能力与临时授权变更 |
+| `AgentInfoUpdated` | 协议版本或 Agent 版本元数据更新 |
+| `SecurityEvent` | 实时主机安全事件通知 |
+| `UpgradeProgress` / `UpgradeResult` | Agent 自升级实时进度与完成状态 |
+| `NetworkProbeUpdate` / `TracerouteUpdate` | 网络质量探测更新与按轮回传的 Traceroute 跃点 |
+| `DockerUpdate` / `DockerEvent` / `DockerAvailabilityChanged` | Docker 容器统计、生命周期事件与 daemon 可用性变化 |
+| `ServerIpChanged` | Agent IPv4/IPv6 或对端地址变更 |
+| `BlocklistChanged` / `FirewallApplyStateChanged` | 防火墙黑名单变更及单机 nftables 应用状态更新 |
+| `IpQualityUpdate` | IP 质量快照与流媒体/AI 解锁结果更新 |
 
 ### 握手流程
 
@@ -232,7 +256,7 @@ ServerBee 使用 SQLite 数据库（WAL 模式），通过 sea-orm 管理。下�
 | 表名 | 说明 |
 |------|------|
 | `users` | 用户账户（id、用户名、argon2 密码哈希、角色、TOTP 密钥） |
-| `sessions` | 登录会话（Token、IP、User-Agent、过期时间） |
+| `sessions` | 登录会话（SHA-256 Token 哈希、IP、User-Agent、过期时间） |
 | `api_keys` | API 密钥（argon2 哈希、前缀、最后使用时间） |
 | `oauth_accounts` | 已关联的 OAuth 提供商账户 |
 
@@ -265,7 +289,7 @@ ServerBee 使用 SQLite 数据库（WAL 模式），通过 sea-orm 管理。下�
 |------|------|
 | `alert_rules` | 告警规则定义（条件、覆盖类型、触发模式） |
 | `alert_states` | 各规则/服务器对的当前告警状态（复合唯一索引 rule_id + server_id） |
-| `notifications` | 通知渠道配置（webhook、telegram、bark、email） |
+| `notifications` | 通知渠道配置（webhook、telegram、bark、email、apns） |
 | `notification_groups` | 通知组 |
 | `tasks` | 远程命令任务（命令、目标服务器、创建者） |
 | `task_results` | 命令执行结果（输出、退出码） |
@@ -275,29 +299,38 @@ ServerBee 使用 SQLite 数据库（WAL 模式），通过 sea-orm 管理。下�
 
 ### SQLite 配置
 
-- **WAL 模式** —— 启动时执行 `PRAGMA journal_mode=WAL`，提高并发读性能。
-- **Busy Timeout** —— 5000ms，写冲突时自动等待。
+- **WAL 模式** —— 在连接池的每个连接上启用 `PRAGMA journal_mode=WAL`，提高并发读性能。
 - **同步模式** —— `PRAGMA synchronous=NORMAL`。
-- **连接池** —— 最大 10 个连接，主要用于并发读。
+- **外键约束** —— `PRAGMA foreign_keys=ON`，强制引用完整性。
+- **Busy Timeout** —— 5000ms，写冲突时自动等待。
+- **临时存储与缓存** —— `PRAGMA temp_store=MEMORY` 与 `PRAGMA cache_size=-16000`（每连接约 16 MB 页缓存）。
+- **连接池** —— 默认最大 10 个连接，主要用于并发读。
 
 ## 后台任务
 
-Server 启动时通过 `tokio::spawn` 创建多个长期运行的后台任务：
+Server 启动时通过 `tokio::spawn` 创建多个长期运行的后台工作任务（并在 `AppState` 内部启动 `BrowserFrameCoalescer`）：
 
 | 任务 | 频率 | 职责 |
 |------|------|------|
 | **指标写入 (RecordWriter)** | 每 60 秒 | 从内存缓存把最新的 Agent 上报刷入 `records` 表 |
-| **告警评估 (AlertEvaluator)** | 每 60 秒（指标写入后） | 评估所有启用的告警规则并分发通知 |
+| **告警评估 (AlertEvaluator)** | 每 60 秒 | 推进可选自动续费周期（`renewal::advance_all`），评估所有启用的告警规则并分发通知 |
 | **离线检测 (OfflineChecker)** | 每 10 秒 | 扫描 Agent 连接状态，对 30 秒无心跳的 Agent 触发离线事件/告警 |
 | **小时聚合 (Aggregator)** | 每 1 小时 | 将 `records` 原始数据聚合为 `records_hourly`，用于长期存储 |
-| **数据清理 (Cleanup)** | 每 1 小时（聚合后） | 删除超过保留周期的 records、GPU 数据、ping 记录和审计日志 |
-| **Ping 任务同步 (PingTasksSync)** | 配置变更时 | 向相关 Agent 推送 `PingTasksSync` |
-| **Session 清理 (SessionCleaner)** | 每 1 小时 | 删除过期的用户登录 Session |
+| **数据清理 (Cleanup)** | 每 1 小时（启动延迟 60 秒） | 删除超过保留周期的指标、GPU、Ping/网络探测、安全/IP 质量事件和审计日志 |
+| **Session 清理 (SessionCleaner)** | 每 1 小时 | 删除过期用户登录 Session、TOTP 挑战及过期限流窗口 |
+| **任务调度 (TaskScheduler)** | 按 Cron 触发 | `task_scheduler::restore_and_start` 恢复并派发定时远程命令任务 |
+| **服务监控检查 (ServiceMonitorChecker)** | 每 10 秒（启动延迟 5 秒） | 派发到期的 SSL、DNS、HTTP 关键字、TCP 与 WHOIS 检查 |
+| **升级超时回收 (UpgradeTimeout)** | 每 10 秒 | 标记超时的 Agent 升级任务并清理过期的已完成升级记录 |
+| **移动推送队列 (MobilePushOutbox)** | 持续运行 | 异步通过 Push Relay 投递排队的移动端推送通知 |
+| **安全状态恢复 (SecurityRecovery)** | 持续运行 | `security_service.start_recovery()` 恢复中断的安全与防火墙操作 |
+| **浏览器帧合并 (BrowserFrameCoalescer)** | 持续运行（`AppState`） | 合并并向在线浏览器广播实时指标更新 |
 
-**执行顺序保证：**
+`PingTasksSync` 等由配置变更即时触发的同步属于事件驱动推送，并非独立轮询任务。
 
-- 每小时任务：小时聚合 -> 数据清理（先聚合再清理，避免丢失长期数据）。
-- 每分钟任务：指标写入 -> 告警评估（确保评估读到刚写入的数据）。
+**调度说明：**
+
+- 每小时任务：`Cleanup` 启动后先延迟 60 秒再进入每小时周期，使每个小时周期内 `Aggregator` 先于 `Cleanup` 运行。
+- 每分钟任务：`RecordWriter` 与 `AlertEvaluator` 各自按独立的 60 秒间隔运行，两者之间没有显式屏障或时间偏移。
 
 ## 安全模型
 
@@ -321,7 +354,7 @@ Agent WebSocket 连接
 
 - 登录时通过 argon2 验证用户名/密码。
 - 生成 32 字节随机 token（base64url 编码）。
-- 存入 `sessions` 表，设置 HttpOnly + SameSite=Strict Cookie。
+- 仅将 token 的 SHA-256 哈希存入 `sessions` 表（不保存明文），原始 token 通过 HttpOnly + SameSite=Strict Cookie 下发给浏览器。
 - 滑动过期：每次有效请求自动延长 `expires_at`（默认 TTL 24 小时）。
 
 #### API Key 认证（自动化）
@@ -363,18 +396,19 @@ Agent WebSocket 连接
 
 ### OAuth
 
-支持 GitHub、Google 和通用 OIDC 提供商的 OAuth 登录。`allow_registration` 开关控制首次 OAuth 登录时是否自动创建新用户。
+支持 GitHub 和 Google 的 OAuth 登录。`allow_registration` 开关控制首次 OAuth 登录时是否自动创建新用户。
 
 ### 速率限制
 
-基于 `tower` middleware 实现，内存中维护 IP 到计数器的映射。登录和 Agent 注册接口按 IP 限流，以防止暴力破解。
+基于 `AppState` 的内存 `DashMap` 按 IP 计数实现。`login` 与 `register` 限流桶在路由处理器中内联校验，`/api/status/*` 的 `public` 限流桶通过 Axum 路由中间件（`from_fn_with_state`）执行：
 
 | 接口 | 限制 |
 |------|------|
-| `POST /api/auth/login` | 每 IP 15 分钟内 5 次 |
+| `POST /api/auth/login`、`POST /api/mobile/auth/login`、`POST /api/mobile/auth/recover` | 每 IP 15 分钟内 5 次请求（共享 `login` 限流桶，在凭据校验之前计数） |
 | `POST /api/agent/register` | 每 IP 15 分钟内 10 次 |
+| `GET /api/status/*` | 每 IP 60 秒内 60 次 |
 
-超限返回 `429 Too Many Requests`。管理员可在「设置 → 速率限制」中清除活跃窗口。
+超限返回 `429 Too Many Requests`。管理员可在「设置 → 速率限制」中查看并清除活跃窗口。
 
 ### TOTP
 
@@ -382,26 +416,27 @@ Agent WebSocket 连接
 
 ## Workspace 结构
 
-Rust crate 采用 Cargo workspace 管理；前端是 `apps/web/` 下独立的 Bun/Node 项目。
+Rust crate 采用 Cargo workspace 管理；TypeScript 应用与共享包采用 Bun workspace 管理。
 
 ```
 ServerBee/
-  Cargo.toml                    # workspace 根
+  Cargo.toml                    # Rust workspace 根
   crates/
     common/                     # 共享：协议、数据类型、常量
       src/
         lib.rs
-        protocol.rs             # Agent <-> Server 消息类型
+        protocol.rs             # Agent <-> Server / Browser 消息类型
         types.rs                # SystemReport、GpuInfo 等
         tailscale_types.rs      # Tailscale 节点与对端状态 DTO
-        constants.rs            # 协议版本、默认值
+        constants.rs            # 协议版本、默认值、能力位定义
     server/                     # 服务端二进制（Axum、sea-orm、后台任务）
       src/
         main.rs
         config.rs
-        state.rs                # AppState
+        state.rs                # AppState（含限流 DashMap 与浏览器帧合并器）
         router/                 # REST API + WebSocket handlers
         service/                # 业务逻辑层
+        task/                   # 定时后台任务
         entity/                 # sea-orm Entity（每表一个模块）
         migration/              # 数据库迁移
         middleware/             # 认证、日志中间件
@@ -409,26 +444,35 @@ ServerBee/
       src/
         main.rs
         config.rs
+        register.rs             # 一次性注册码认领
+        run_token_store.rs      # 每节点 run token 持久化存储
+        capability_policy.rs    # 主机自主能力策略评估
+        capability_grants/      # 主机本地临时能力授权
         collector/              # 各指标采集器
         reporter/               # WebSocket 上报、重连、指令和文件操作
-        pinger.rs                # ICMP/TCP/HTTP Ping 任务
-        probe_utils.rs           # 共用探测校验和网络辅助逻辑
-        network_prober.rs        # 定时网络探测
-        traceroute.rs            # Traceroute 执行
+        pinger.rs               # ICMP/TCP/HTTP Ping 任务
+        probe_utils.rs          # 共用探测校验和网络辅助逻辑
+        network_prober.rs       # 定时网络探测
+        traceroute.rs           # Traceroute 执行
         terminal.rs             # PTY 终端
-        file_manager.rs          # 受限远程文件操作
-        docker/                  # Docker 检查、操作和日志流
-        security/                # 主机安全事件检测
-        firewall/                # 防火墙拦截管理
-        ip_quality/              # IP 质量检测
-        tailscale/               # 本机 tailscaled Socket 与 CLI 状态采集
-        upgrade.rs               # 自升级协调逻辑
-        upgrade/                 # 事务式自升级支持
+        file_manager.rs         # 受限远程文件操作
+        docker/                 # Docker 检查、操作和日志流
+        security/               # 主机安全事件检测
+        firewall/               # 防火墙拦截管理
+        ip_quality/             # IP 质量检测
+        tailscale/              # 本机 tailscaled Socket 与 CLI 状态采集
+        upgrade.rs              # 自升级协调逻辑
+        upgrade/                # 事务式自升级支持
   apps/
     web/                        # React SPA 前端（Vite、TanStack、shadcn/ui）
     ios/                        # 原生 iOS SwiftUI 客户端
     docs/                       # 文档站点（TanStack Start + Fumadocs）
-  docs/                         # 设计文档与计划
+    landing/                    # 独立官网落地页
+    push-relay/                 # Cloudflare Worker APNs 推送中继
+  packages/
+    config/                     # 共享 TypeScript / 工具链配置
+    widget-sdk/                 # 自定义与内置组件模块 SDK
+  docs/                         # 设计文档、ADR 与计划
 ```
 
 <Cards>

@@ -10,23 +10,25 @@ ServerBee can centrally manage an inbound-traffic blocklist. The server holds th
 
 - **Linux only** — agent uses the `nft` CLI.
 - **`CAP_FIREWALL_BLOCK`** (bit `512`) must be enabled on the agent. It is **on by default**; capabilities are agent-owned, so to turn it off add `firewall_block` to the agent's `[capabilities]` deny list. See [Capabilities](/en/docs/capabilities).
-- Agent process needs root or `CAP_NET_ADMIN`.
+- Agent process needs root or `CAP_NET_ADMIN`. At startup, the agent probes `nft` availability and privileges; if `nft` is missing or lacks sufficient permissions, the agent automatically strips `CAP_FIREWALL_BLOCK` from its reported capabilities.
 
 ## Manual blocking
 
-Settings → Firewall → **Add block**. Enter an IP (`1.2.3.4`) or a CIDR (`10.0.0.0/8`). Choose the scope (`All servers`, `Selected`, `All except`). Optionally add a comment.
+Go to **Settings → Firewall** and click **Block IP**. Enter an IP (`203.0.113.5`) or a CIDR (`203.0.113.0/24`). Choose the scope (`All servers`, `Selected`, `All except`). Optionally add a comment.
 
 The server rejects targets that overlap a protected range:
 
-- Loopback (`127.0.0.0/8`, `::1`)
-- RFC 1918 (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `fe80::/10`)
+- Loopback (`127.0.0.0/8`, `::1/128`)
+- RFC 1918 private IPv4 (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`)
+- IPv4 link-local (`169.254.0.0/16`) and current network (`0.0.0.0/8`)
+- IPv6 unique local (`fc00::/7`, RFC 4193) and link-local (`fe80::/10`, RFC 4291)
 - RFC 6598 / Tailscale CGNAT (`100.64.0.0/10`)
-- Multicast / unspecified
+- Multicast (`224.0.0.0/4`, `ff00::/8`) and unspecified (`::/128`)
 - Any CIDR in `firewall.allow_list` (`server.toml`)
 - `server.trusted_proxies`
 - Any agent's reported external IP
 
-A `409` response with the matched reason is returned in those cases.
+A `409 Conflict` response with the matched reason is returned in those cases. As defense-in-depth, each agent also enforces a local tier-3 guardrail against the same hard-coded protected CIDR ranges before applying any rule to `nftables`.
 
 <Callout type="warn">
 **Protect your own public IP.** The "agent external IP" guardrail relies on the IPv4 /
@@ -71,7 +73,7 @@ table inet serverbee {
 
 The server pushes incremental adds/removes over WebSocket. On agent reconnect or capability transition, it sends a `Reset` followed by a full `Sync`. The agent acks the result of each entry; failed entries stay eligible for retry on the next sync.
 
-## Removing the cleanup
+## Disabling and cleanup
 
 Capabilities are Agent-owned, so there is no Server-side switch. To stop using the feature:
 
@@ -83,9 +85,21 @@ Capabilities are Agent-owned, so there is no Server-side switch. To stop using t
 sudo nft delete table inet serverbee
 ```
 
+## Permissions and REST API
+
+Any authenticated user (Admin or Member) can view the blocklist and stats. Creating or deleting block entries requires the **Admin** role.
+
+| Method | Endpoint | Access | Description |
+|--------|----------|--------|-------------|
+| GET | `/api/firewall/blocks` | Authenticated | List blocklist entries |
+| POST | `/api/firewall/blocks` | Admin | Create a blocklist entry |
+| GET | `/api/firewall/blocks/{id}` | Authenticated | Fetch a single blocklist entry and per-server ack status |
+| DELETE | `/api/firewall/blocks/{id}` | Admin | Delete a blocklist entry |
+| GET | `/api/firewall/stats` | Authenticated | Aggregated blocklist counts and enforcement status |
+
 ## Audit log
 
-Every action is recorded in the audit log and shown on the Firewall page's Activity tab: `firewall_block_created`, `firewall_block_deleted`, `firewall_block_applied_agent`, `firewall_block_removed_agent`, `firewall_block_rejected_server`, `firewall_block_rejected_agent`, `firewall_auto_block_skipped_conflict`, `firewall_reset_acked`.
+Every action is recorded in the audit log and shown on the Firewall page's Activity tab: `firewall_block_created`, `firewall_block_deleted`, `firewall_block_applied_agent`, `firewall_block_removed_agent`, `firewall_block_rejected_server`, `firewall_block_rejected_agent`, `firewall_auto_block_skipped_conflict`, `firewall_reset_acked`, `firewall_reset_failed_agent`.
 
 ## Limitations
 

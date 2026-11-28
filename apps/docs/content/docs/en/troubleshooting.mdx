@@ -19,7 +19,8 @@ Then inspect the logs for your deployment:
 |------------|---------|
 | systemd Server | `sudo journalctl -u serverbee-server -n 100 --no-pager` |
 | systemd Agent | `sudo journalctl -u serverbee-agent -n 100 --no-pager` |
-| OpenRC | `sudo tail -n 100 /var/log/serverbee-{server,agent}.log` |
+| OpenRC Server | `sudo tail -n 100 /var/log/serverbee-server.log` |
+| OpenRC Agent | `sudo tail -n 100 /var/log/serverbee-agent.log` |
 | Docker Server | `docker logs --tail 100 serverbee-server` |
 | Docker Agent | `docker logs --tail 100 serverbee-agent` |
 
@@ -44,7 +45,10 @@ Keep the public URL and cookie mode aligned:
 - Plain `http://IP:9527` requires `auth.secure_cookie = false`.
 - HTTPS requires `auth.secure_cookie = true`, and the proxy must forward `Host`, `X-Forwarded-Proto`, and WebSocket upgrades.
 
-After changing `/opt/serverbee/etc/server.toml`, run `sudo serverbee restart server`. Clear only the ServerBee site's cookies and retry. Do not disable Secure cookies on an HTTPS production deployment.
+- **Binary install:** update `auth.secure_cookie` in `/opt/serverbee/etc/server.toml` (or run `sudo serverbee config set auth.secure_cookie true`), then run `sudo serverbee restart server`.
+- **Docker installer (`--method docker`):** the generated Compose file pins `SERVERBEE_AUTH__SECURE_COOKIE=false` (which overrides `server.toml`, and `serverbee restart` does not reload Compose environment changes). Run `sudo serverbee env set SERVERBEE_AUTH__SECURE_COOKIE true` to update and recreate the container, or run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y` for automatic Caddy HTTPS.
+
+Clear only the ServerBee site's cookies and retry. Do not disable Secure cookies on an HTTPS production deployment.
 
 ## Port, DNS, or certificate setup fails
 

@@ -1,6 +1,8 @@
 export {
   type AlertEvent,
+  type HistoryInterval,
   type HistoryPoint,
+  type ServerRecord,
   type ServiceMonitor,
   type TrafficPoint,
   type UptimeEntry,

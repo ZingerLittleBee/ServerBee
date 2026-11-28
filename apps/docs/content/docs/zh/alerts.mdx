@@ -8,26 +8,25 @@ ServerBee 提供灵活的告警系统，支持阈值监控、安全事件驱动�
 
 ## 告警概述
 
-后台任务每 60 秒评估一次所有启用的告警规则：
+后台任务每 60 秒评估一次所有启用的轮询告警规则：
 
 1. 解析每条规则覆盖的服务器范围。
 2. 逐台检查规则条件是否满足。
-3. 触发时通过通知组发送通知（受去抖限制）。
-4. 之前触发的规则恢复后，清除告警状态。
+3. 触发时通过通知组发送告警通知（`event: "triggered"`，受去抖限制）。
+4. 之前触发的规则恢复后，清除告警状态并发送恢复通知（`event: "resolved"`）。
 
-告警状态会持久化到数据库，Server 重启后依然有效。事件驱动规则（IP 变化、SSH 登录、爆破、端口扫描、临时能力授予）在 Agent 上报事件时评估，不参与 60 秒轮询。
+告警状态会持久化到数据库，Server 重启后依然有效。事件驱动规则（`ip_changed`、`ssh_new_ip_login`、`ssh_brute_force_detected`、`port_scan_detected`、`capability_grant_detected`）在 Agent 上报事件时评估，不参与 60 秒轮询。
 
 ## 创建告警规则
 
 每条告警规则包含以下要素：
 
 - **规则名称**：用于标识和展示。
-- **告警条件**：一条或多条指标条件，所有条件必须同时满足（AND 逻辑）。
-- **触发模式**：`always`（持续通知，带去抖）或 `once`（仅首次触发通知）。
+- **告警条件**：一条或多条条件项。轮询类指标规则的所有条件必须同时满足（AND 逻辑）。安全事件条件项（`ssh_new_ip_login`、`ssh_brute_force_detected`、`port_scan_detected`）不可与非安全条件混用，且每条规则最多包含 1 个安全事件条件项。
+- **触发模式**：`always`（持续通知，带 5 分钟去抖）或 `once`（仅首次触发通知）。安全事件类规则忽略该选项，改用按源 IP 去重窗口。
 - **覆盖范围**：规则适用的服务器范围。
-- **通知组**：通知发送目标。
-- **触发 / 恢复任务**：可选。规则触发或恢复时自动执行的远程命令。
-- **阻断源 IP**：可选。对安全事件类规则，触发时自动指示 Agent 防火墙阻断攻击源 IP。
+- **通知组**：可选。通知发送目标。
+- **阻断源 IP**：可选（`actions` 中的 `type: "block_source_ip"`）。对 `ssh_brute_force_detected` 和 `port_scan_detected` 规则，匹配时自动指示目标 Agent 的防火墙阻断攻击源 IP。
 
 ## 支持的指标类型
 
@@ -60,14 +59,16 @@ ServerBee 提供灵活的告警系统，支持阈值监控、安全事件驱动�
 | `transfer_out_cycle` | 周期内出站累计流量 |
 | `transfer_all_cycle` | 周期内双向累计流量 |
 
-周期选项：`hour` / `day` / `week` / `month` / `year`
+周期选项：`hour` / `day` / `week` / `month` / `year` / `billing`（其中 `billing` 使用每台服务器配置的 `billing_cycle` 与 `billing_start_day`；当前 Web UI 规则表单暂未提供 `billing` 选项，需通过 REST API 配置）。
 
 ### 网络质量
 
+评估[网络质量监控](/zh/docs/monitoring#网络质量监控)的探测记录（`network_probe_record`），而非 Ping 任务：
+
 | 指标类型 | 说明 |
 |----------|------|
-| `network_latency` | 平均探测延迟（ms）超过阈值时触发 |
-| `network_packet_loss` | 丢包率超过阈值时触发 |
+| `network_latency` | 最近 10 分钟内所有探测目标的最大探测延迟（`MAX`，单位 ms）满足阈值时触发 |
+| `network_packet_loss` | 最近 10 分钟内所有探测目标的最大丢包率百分比（`MAX`，范围 `0`–`100`）满足阈值时触发 |
 
 ### 离线、到期和事件
 
@@ -76,12 +77,16 @@ ServerBee 提供灵活的告警系统，支持阈值监控、安全事件驱动�
 | `offline` | 服务器持续离线超过 `duration` 秒后触发 |
 | `expiration` | 服务器 `expired_at` 距今小于等于 `duration` 天时触发 |
 | `ip_changed` | 事件驱动；Agent 上报 IP 变化事件时触发（不参与 60 秒轮询） |
-| `ssh_login_detected` | 事件驱动；成功 SSH 登录事件触发，支持 `first_seen_only` 过滤。详见 [安全事件检测](/zh/docs/security-events) |
-| `ssh_brute_force_detected` | 事件驱动；SSH 爆破事件触发，支持 `severity_min`（medium/high/critical）和 `exclude_cidrs` 过滤 |
-| `port_scan_detected` | 事件驱动；单一源 IP 的端口扫描事件触发，支持 `severity_min` 和 `exclude_cidrs` 过滤 |
+| `ssh_new_ip_login` | 事件驱动；首次出现的源 IP 成功 SSH 登录时触发（始终强制 `first_seen == true`）。支持 `security.exclude_users`、`security.exclude_cidrs` 与 `security.dedupe_window_seconds`。详见 [安全事件检测](/zh/docs/security-events) |
+| `ssh_brute_force_detected` | 事件驱动；SSH 爆破事件触发。支持 `security.min_failed_count` 与 `security.dedupe_window_seconds` |
+| `port_scan_detected` | 事件驱动；单一源 IP 的端口扫描事件触发。支持 `security.min_distinct_ports` 与 `security.dedupe_window_seconds` |
 | `capability_grant_detected` | 事件驱动；当某台服务器上通过主机本地 `serverbee-agent grant` CLI **临时授予**高危能力（`terminal` / `exec` / `file` / `docker`）时触发。过期、撤销以及低风险授予会被审计但不告警。见 [功能开关 → 临时授予](/zh/docs/capabilities#临时授予) |
 
-Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供一键 **预设卡片**，已填入合理默认值；该规则类型也可在规则编辑器中直接选择。它不带 `severity_min` / `exclude_cidrs` 过滤，也没有自动封禁动作 —— 任何高危临时授予都会触发 —— 但其覆盖范围与维护期抑制行为与其他事件驱动规则一致。
+<Callout type="info">
+**设置 → 告警** 提供一键预设卡片（`SecurityAlertPresets`），可用合理默认值快速创建三种安全事件告警规则（`ssh_new_ip_login`、`ssh_brute_force_detected`、`port_scan_detected`，见[安全事件检测](/zh/docs/security-events)）。手动规则表单的规则类型下拉框未列出这三种类型，因此在预设之外的自定义创建或编辑需通过告警规则 REST API（`POST /api/alert-rules` / `PUT /api/alert-rules/{id}`）完成。
+</Callout>
+
+Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供一键 **预设卡片**，已填入合理默认值；该规则类型也可在规则编辑器中直接选择。它不带 `security` 过滤参数，也没有自动封禁动作 —— 任何高危临时授予都会触发 —— 但其覆盖范围与维护期抑制行为与其他事件驱动规则一致。
 
 ## 阈值配置
 
@@ -94,15 +99,25 @@ Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供
   "max": null,
   "duration": null,
   "cycle_interval": null,
-  "cycle_limit": null
+  "cycle_limit": null,
+  "security": null
 }
 ```
 
-- **`min`**：下界。对大多数资源指标，指标值大于等于该值时触发。
-- **`max`**：上界。当同时设置 `min` 和 `max` 时，指标值落在该范围内才触发。
+- **`min`**：下限阈值。仅设置 `min` 时，指标值满足 `value >= min` 即触发。
+- **`max`**：仅设置 `max`（未设置 `min`）时，指标值满足 `value >= max` 即触发；仅当同时设置 `min` 和 `max` 时，`max` 才作为区间上界，指标值落在 `[min, max]`（`min <= value <= max`）内触发。
 - **`duration`**：用于 `offline`（离线秒数）和 `expiration`（到期天数）。
-- **`cycle_interval`**：流量周期类型：`hour`、`day`、`week`、`month`、`year`。
+- **`cycle_interval`**：流量周期类型：`hour`、`day`、`week`、`month`、`year` 或 `billing`。
 - **`cycle_limit`**：流量周期规则的字节阈值。
+- **`security`**：可选的 `SecurityRuleParams` 对象，仅对三种安全事件规则生效（指标类规则忽略该字段）：
+
+| 参数 | 适用规则类型 | 默认值 | 说明 |
+|------|--------------|--------|------|
+| `min_failed_count` | `ssh_brute_force_detected` | `null` | 触发所需的最小 SSH 失败次数 |
+| `min_distinct_ports` | `port_scan_detected` | `null` | 触发所需的最小不同扫描端口数 |
+| `exclude_users` | `ssh_new_ip_login` | `[]` | 排除不告警的用户名列表 |
+| `exclude_cidrs` | `ssh_new_ip_login` | `[]` | 排除不告警的源 IP CIDR 列表 |
+| `dedupe_window_seconds` | 全部 3 种安全事件规则 | `600` | 按 `(rule_id, server_id, source_ip)` 维度的通知去重窗口（秒） |
 
 ### 示例
 
@@ -135,7 +150,19 @@ Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供
 { "rule_type": "expiration", "duration": 7 }
 ```
 
-**多条件（AND 逻辑）：** 一条规则可以包含多个条件，所有条件同时满足才触发。下面的规则在 CPU 使用率 ≥ 90% **且**内存已用 ≥ 8 GB 时才触发：
+**新 IP 的 SSH 登录（排除办公网 CIDR 与 `deploy` 用户）：**
+```json
+{
+  "rule_type": "ssh_new_ip_login",
+  "security": {
+    "exclude_users": ["deploy"],
+    "exclude_cidrs": ["203.0.113.0/24"],
+    "dedupe_window_seconds": 600
+  }
+}
+```
+
+**多条件（AND 逻辑）：** 一条轮询规则可以包含多个条件，所有条件同时满足才触发。下面的规则在 CPU 使用率 ≥ 90% **且**内存已用 ≥ 8 GB 时才触发：
 
 ```json
 [
@@ -153,6 +180,8 @@ Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供
 3. 仅当 **70% 及以上**的采样点超过阈值（10 个中至少 7 个）时才触发。
 
 这样可以避免短暂、瞬时的尖峰造成误报。
+
+对于 `network_latency` 与 `network_packet_loss` 规则，ServerBee **不使用** 70% 采样点模型，而是取该服务器在**最近 10 分钟**内所有网络质量探测目标记录中的单次最差值（`MAX` 延迟或 `MAX` 丢包率百分比）与阈值进行比较。
 
 ## 覆盖类型
 
@@ -176,6 +205,10 @@ Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供
 - 仅在**首次触发**时发送通知。
 - 在条件恢复并再次触发之前，不会发送后续通知。
 
+### 安全事件规则去重
+
+安全事件类规则（`ssh_new_ip_login`、`ssh_brute_force_detected`、`port_scan_detected`）不使用 `trigger_mode` 与 5 分钟轮询去抖，而是按 `(rule_id, server_id, source_ip)` 维度通过 `security.dedupe_window_seconds`（默认 **600 秒**）对通知进行去重。
+
 ### 续期到期提醒
 
 对于已保存续期周期标识的服务器，`once` 到期规则按规则、服务器和当前续期周期最多发送一次提醒。因此，即使 60 天提醒窗口持续满足条件，新的每月到期日仍可发送自己的提醒。重试、Server 重启或关闭自动追踪不会重复提醒同一周期。
@@ -193,10 +226,10 @@ Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供
 
 ### 恢复机制
 
-当一条之前触发的告警不再满足触发条件时：
+当一条之前触发的轮询告警不再满足触发条件时：
 
 1. 标记为已恢复，并清除内存缓存和数据库中的告警状态。
-2. 如果配置了恢复任务（`recover_trigger_tasks`），自动执行对应的远程命令。
+2. 向关联的通知组发送一条 `event: "resolved"` 的恢复通知。
 3. 之后若再次满足条件，则按触发模式重新发送通知。
 
 ## 维护窗口抑制
@@ -205,7 +238,20 @@ Alerts 页面为 `capability_grant_detected`（「临时授予能力」）提供
 
 ## 阻断源 IP
 
-安全事件类规则（`ssh_brute_force_detected`、`port_scan_detected`）可以开启**阻断源 IP**。触发时，ServerBee 会指示受影响 Agent 的防火墙阻断攻击源 IP，把检测变为自动处置。这要求 Agent 上报 `firewall_block` 能力（`CAP_FIREWALL_BLOCK`）。该能力默认启用，可在 Agent 主机的 `[capabilities]` 配置中禁用，Server 端不能切换。详见 [安全事件检测](/zh/docs/security-events) 和 [防火墙管理](/zh/docs/firewall)。
+载荷中携带 `source_ip` 的安全事件规则（`ssh_brute_force_detected`、`port_scan_detected`）可在 `actions` 中附加最多 1 个 `block_source_ip` 动作：
+
+```json
+{
+  "type": "block_source_ip",
+  "cover_type": "all",
+  "server_ids_json": null,
+  "comment": "Auto-blocked by alert rule"
+}
+```
+
+- **下发范围**：通过动作自身的 `cover_type`（`all`、`include` 或 `exclude`，默认 `all`）和可选的 `server_ids_json` 指定下发封禁规则的服务器范围，可将单台主机检测到的攻击源 IP 同步封禁到全量或指定服务器。
+- **独立于通知执行**：每次事件匹配都会执行源 IP 封禁，即使通知因 `dedupe_window_seconds` 去重被抑制，或规则未关联通知组，封禁仍会照常下发。
+- **Agent 能力要求**：这要求目标 Agent 上报 `firewall_block` 能力（`CAP_FIREWALL_BLOCK`）。该能力默认启用，可在 Agent 主机的 `[capabilities]` 配置中禁用，Server 端不能切换。详见 [安全事件检测](/zh/docs/security-events) 和 [防火墙管理](/zh/docs/firewall)。
 
 ## 通知渠道
 
@@ -270,7 +316,7 @@ ServerBee 支持五种通知渠道类型。每个渠道是独立实体，可在�
 
 ### APNs
 
-通过 Apple Push Notification service 向已注册的移动端设备发送原生推送。
+使用自有 Apple Developer 凭据，直接通过 Apple Push Notification service 向已注册的移动端设备发送推送。
 
 ```json
 {
@@ -284,6 +330,10 @@ ServerBee 支持五种通知渠道类型。每个渠道是独立实体，可在�
 
 APNs 需要 Apple Developer key、Team ID、Bundle ID 和私钥。只有开发构建才应设置 `sandbox: true`。
 
+### 已认证移动端告警推送（Push Relay）
+
+独立于手动配置的 `apns` 通知渠道，ServerBee 在告警规则发生状态变化时，会自动通过 [Push Relay](/zh/docs/push-relay) 为已配对且开启移动推送的 iOS 客户端入队加密告警推送。无需手动创建 `apns` 渠道或绑定通知组，已配对的 iOS 设备即可接收推送。详见 [iOS 移动客户端](/zh/docs/mobile)。
+
 ### 模板变量
 
 通知内容支持以下模板变量：
@@ -293,31 +343,33 @@ APNs 需要 Apple Developer key、Team ID、Bundle ID 和私钥。只有开发�
 | `{{server_name}}` | 受影响服务器名称 |
 | `{{server_id}}` | 受影响服务器的唯一 ID |
 | `{{rule_name}}` | 触发的告警规则名称 |
-| `{{event}}` | 事件类型（如「triggered」） |
+| `{{event}}` | 事件类型（如 `"triggered"`、`"resolved"`） |
 | `{{message}}` | 可读的告警详细信息 |
 | `{{time}}` | 事件发生时间（UTC） |
-| `{{cpu}}` | 当前 CPU 使用率字符串 |
-| `{{memory}}` | 当前内存使用字符串 |
+| `{{cpu}}` | 仅在测试通知（`POST /api/notifications/{id}/test`）中填充；真实告警通知中为空字符串 |
+| `{{memory}}` | 仅在测试通知（`POST /api/notifications/{id}/test`）中填充；真实告警通知中为空字符串 |
 
 默认通知模板：
 
-```
+```text
 [ServerBee] {{server_name}} {{event}}
 {{message}}
-Time: {{time}}
+时间: {{time}}
 ```
+
+Webhook、Telegram 和 Bark 使用上述默认模板（`时间: {{time}}`），而邮件与 APNs 的时间行使用 `Time: {{time}}`。
 
 ### 发送测试
 
 创建通知渠道后，可以通过测试接口验证配置是否正确：
 
-```
-POST /api/notifications/:id/test
+```text
+POST /api/notifications/{id}/test
 ```
 
 ## 通知组
 
-通知渠道按**通知组**组织。一条告警规则关联一个通知组，触发时会同时分发到组内所有启用的渠道。借此可以：
+通知渠道按**通知组**组织。一条告警规则关联一个通知组，触发或恢复时会同时分发到组内所有启用的渠道。借此可以：
 
 - 把同一条告警同时发到多个渠道（例如 Telegram + Email）。
 - 在多条告警规则间复用渠道配置。
@@ -330,6 +382,30 @@ POST /api/notifications/:id/test
 - 每 10 秒扫描一次 Agent 连接状态。
 - Agent 最后一次上报超过 30 秒即判定为离线。
 - `offline` 规则的 `duration` 指定离线持续多少秒后触发告警。例如 `{ "rule_type": "offline", "duration": 60 }` 表示离线超过 60 秒触发。
+
+## REST API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/alert-rules` | 列出所有告警规则（管理员） |
+| POST | `/api/alert-rules` | 创建告警规则（管理员） |
+| GET | `/api/alert-rules/{id}` | 获取告警规则详情（管理员） |
+| PUT | `/api/alert-rules/{id}` | 更新告警规则（管理员） |
+| DELETE | `/api/alert-rules/{id}` | 删除告警规则（管理员） |
+| GET | `/api/alert-rules/{id}/states` | 获取指定规则的活跃 / 近期告警状态（管理员） |
+| GET | `/api/alert-events` | 列出近期告警事件（`?limit=20`） |
+| GET | `/api/alert-events/{alert_key}` | 获取单条告警事件详情 |
+| GET | `/api/notifications` | 列出通知渠道（管理员） |
+| POST | `/api/notifications` | 创建通知渠道（管理员） |
+| GET | `/api/notifications/{id}` | 获取通知渠道详情（管理员） |
+| PUT | `/api/notifications/{id}` | 更新通知渠道（管理员） |
+| DELETE | `/api/notifications/{id}` | 删除通知渠道（管理员） |
+| POST | `/api/notifications/{id}/test` | 发送测试通知（管理员） |
+| GET | `/api/notification-groups` | 列出通知组（管理员） |
+| POST | `/api/notification-groups` | 创建通知组（管理员） |
+| GET | `/api/notification-groups/{id}` | 获取通知组详情（管理员） |
+| PUT | `/api/notification-groups/{id}` | 更新通知组（管理员） |
+| DELETE | `/api/notification-groups/{id}` | 删除通知组（管理员） |
 
 ## 完整示例
 
@@ -344,7 +420,7 @@ POST /api/notifications/:id/test
    - 覆盖类型：`all`
    - 通知组：上一步创建的组
 
-此后，任意服务器在 10 分钟采样窗口内有 ≥ 70% 的采样点 CPU 超过 90% 时，你都会收到 Telegram 消息。条件持续期间，后续通知按 5 分钟去抖。
+此后，任意服务器在 10 分钟采样窗口内有 ≥ 70% 的采样点 CPU 超过 90% 时，你都会收到 Telegram 消息。条件持续期间，后续通知按 5 分钟去抖；CPU 回落到阈值以下后会收到 `resolved` 恢复通知。
 
 <Cards>
   <Card title="安全事件检测" href="/zh/docs/security-events" />

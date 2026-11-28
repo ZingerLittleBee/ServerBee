@@ -7,7 +7,7 @@ icon: Zap
 The recommended way to deploy ServerBee is the `deploy/install.sh` one-line script. It handles the tedious parts for you — architecture detection, binary downloads, and service registration — so it works out of the box:
 
 - **Interactive wizard** — run it with no arguments to pick the language, component, and install method through prompts
-- **Architecture aware** — detects amd64/arm64 and pulls the matching Release binary
+- **Architecture aware** — detects Linux/macOS (`amd64`/`arm64`) and pulls the matching Release binary (pre-built macOS and Windows binaries are also published on [GitHub Releases](https://github.com/ZingerLittleBee/ServerBee/releases))
 - **Service integration** — creates and starts a systemd or OpenRC service, and enables it on boot
 - **Binary or Docker** — switch with `--method`; Docker is recommended for the server, binary for agents
 - **Automatic HTTPS** — pass `--domain` when installing the server and the script sets up Caddy and issues a certificate
@@ -74,8 +74,6 @@ The script first checks that the domain resolves to this server; if it doesn't r
 You can also run it with no arguments for an interactive wizard that prompts for language, binary vs Docker, and whether to configure a domain: `curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/deploy/install.sh | sudo sh`.
 </Callout>
 
-Either way, the script automatically:
-
 For the binary method shown above, the script detects the architecture, downloads and verifies the matching release, creates `/opt/serverbee/{bin,etc,data}`, registers a systemd or OpenRC service, and installs the management CLI at `/usr/local/bin/serverbee`. Docker mode instead generates Compose and configuration files under `/opt/serverbee` and persists data in a named volume.
 
 <Callout type="info">
@@ -107,7 +105,7 @@ The password is shown only once — copy it before logs rotate. First login forc
 3. Complete the forced password change; you can pick a new username while you're at it
 
 <Callout type="warn">
-If you installed with an IP over plain HTTP and later want to switch to a domain with HTTPS: run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com`, set `auth.secure_cookie` back to `true` in `/opt/serverbee/etc/server.toml` and restart the server, then update the `server_url` of any connected agents to the new `https://` address.
+If you installed with an IP over plain HTTP and later want to switch to a domain with HTTPS: run `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com`. The command automatically configures Caddy, binds ServerBee to `127.0.0.1:9527`, enables `auth.secure_cookie = true` (including updating the Compose environment for Docker installs), and restarts or recreates the server. After that, update the `server_url` of any connected agents to the new `https://` address.
 </Callout>
 
 ### Manage the server
@@ -115,13 +113,20 @@ If you installed with an IP over plain HTTP and later want to switch to a domain
 After installation, use the `serverbee` command to manage the instance:
 
 ```bash
-sudo serverbee status                     # Status of all components
-sudo serverbee upgrade -y                  # Upgrade to the latest version
-sudo serverbee restart                     # Restart services
-sudo serverbee config                      # View current config
-sudo serverbee config set <key> <value>    # Change config
-sudo serverbee uninstall server --purge    # Uninstall and wipe data
+sudo serverbee status                                         # Status of all components
+sudo serverbee start | stop | restart [server|agent]          # Control services
+sudo serverbee upgrade -y                                     # Upgrade to the latest version
+sudo serverbee config                                         # View current config
+sudo serverbee config set <key> <value>                       # Change TOML config
+sudo serverbee env                                            # View Docker Compose env vars
+sudo serverbee env set SERVERBEE_AUTH__SECURE_COOKIE true     # Update Docker Compose env & recreate
+sudo serverbee domain setup --domain monitor.example.com      # Configure Caddy HTTPS
+sudo serverbee version                                        # Show CLI & installed versions
+sudo serverbee help                                           # Show all commands and options
+sudo serverbee uninstall server --purge                       # Uninstall and wipe data
 ```
+
+Useful installer flags include `--caps <list>` (Agent capabilities), `--skip-dns-check` (skip domain DNS check), `--no-wait` (skip post-install health/enrollment wait), and `--lang <en|zh>`. Post-install verification uses exit codes `0` (verified/skipped), `1` (Server unhealthy), `75` (Agent temporarily unverified), and `78` (Agent authentication rejected).
 
 <Callout type="warn">
 `uninstall --purge` permanently deletes the Server database, configuration, and managed Docker volume. Create and verify a backup first; omit `--purge` when you want to preserve data for recovery or reinstallation.
@@ -149,7 +154,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
-The script detects the architecture, downloads the binary, writes the config, registers a systemd service, and brings the agent up.
+The script detects the architecture, downloads the binary, writes the config, registers a systemd or OpenRC service, and brings the agent up.
 
 <Callout type="info">
 Install agents via the binary method — that's the only way to collect full host metrics. Running the agent in Docker is not recommended.

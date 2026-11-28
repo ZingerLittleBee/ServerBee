@@ -1,10 +1,10 @@
 ---
 title: 安全设置
-description: 配置双因素认证、OAuth 登录、Tailscale Serve 回环认证、密码管理和登录安全策略。
+description: 配置双因素认证、OAuth 登录、Tailscale Serve 回环认证、密码管理和限流策略。
 icon: Shield
 ---
 
-ServerBee 提供多层安全防护：双因素认证 (2FA)、OAuth 社交登录（含 Tailscale `tsidp` OIDC）、可选的 Tailscale Serve 回环身份认证、密码策略和登录限流。
+ServerBee 提供多层安全防护：双因素认证 (2FA)、OAuth 社交登录（GitHub 和 Google）、可选的 Tailscale Serve 回环身份认证、密码策略和 IP 级别限流。
 
 ## 双因素认证 (2FA)
 
@@ -19,7 +19,7 @@ ServerBee 支持基于 TOTP (Time-based One-Time Password) 的双因素认证，
 5. 点击 **Enable** 完成启用
 
 <Callout type="info">
-启用后每次登录都需要输入 6 位 TOTP 验证码。验证码每 30 秒更新一次。
+待确认的 2FA 初始化密钥在服务端 **10 分钟** 后过期，超时需重新生成。启用后每次密码登录都需要输入 6 位 TOTP 验证码，验证码每 30 秒更新一次。
 </Callout>
 
 ### 禁用 2FA
@@ -33,20 +33,19 @@ ServerBee 支持基于 TOTP (Time-based One-Time Password) 的双因素认证，
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/auth/2fa/setup` | POST | 生成 TOTP 密钥和 QR 码 |
+| `/api/auth/2fa/setup` | POST | 生成 TOTP 密钥和 QR 码（10 分钟有效） |
 | `/api/auth/2fa/enable` | POST | 验证码确认后启用 2FA |
 | `/api/auth/2fa/disable` | POST | 输入密码后禁用 2FA |
 | `/api/auth/2fa/status` | GET | 查询当前 2FA 状态 |
 
 ## OAuth 社交登录
 
-ServerBee 支持三种 OAuth 提供商：
+ServerBee 支持两种 OAuth 提供商：
 
 | 提供商 | 配置节 | 回调 URL |
 |--------|--------|----------|
 | GitHub | `[oauth.github]` | `{base_url}/api/auth/oauth/github/callback` |
 | Google | `[oauth.google]` | `{base_url}/api/auth/oauth/google/callback` |
-| OIDC | `[oauth.oidc]` | `{base_url}/api/auth/oauth/oidc/callback` |
 
 ### 配置 OAuth
 
@@ -64,12 +63,12 @@ client_secret = "your-github-client-secret"
 
 ### OAuth 账号管理
 
-- 在 Settings → Security 页面可以查看已关联的 OAuth 账号
-- 点击 **Unlink** 可以解除 OAuth 账号关联
-- 如果 `allow_registration = false`（默认），OAuth 首次登录不会自动创建新用户，需要管理员先创建用户再关联
+- 在 Settings → Security 页面可以查看已关联的 OAuth 账号（`GET /api/auth/oauth/accounts`）
+- 点击 **Unlink** 可以解除 OAuth 账号关联（`DELETE /api/auth/oauth/accounts/{id}`）
+- 当前没有用于将 OAuth 身份手动关联到已有密码账号的 UI 或 API 流程。在 `allow_registration = false`（默认）时，仅已关联的 OAuth 账号可以登录，未关联的 OAuth 登录会被拒绝。如需接纳新的 OAuth 用户，可临时开启 `allow_registration = true`，让其首次通过 OAuth 登录自动创建 Member 账号并完成关联，随后再关闭该开关。
 
 <Callout type="warn">
-仅当 OAuth 提供商本身受控（自建 OIDC 或组织内部 IdP）时才应开启 `allow_registration = true`。自动创建的账号为 Member 角色，可读取**全部**监控数据（含安全事件与公网 IP）。若配合 GitHub 等公共提供商开启，等于向该提供商的所有用户开放这些数据。
+配合 GitHub、Google 等公共提供商开启 `allow_registration = true` 时请务必谨慎。自动创建的账号为 Member 角色，可读取机群内**全部**监控数据（含安全事件与公网 IP）。在公网实例上长期开启 `allow_registration = true`，等于向该提供商的所有用户开放这些数据。
 </Callout>
 
 ### 登录流程
@@ -78,7 +77,7 @@ client_secret = "your-github-client-secret"
 2. 跳转到提供商授权页面
 3. 授权后回调到 ServerBee
 4. 如果 OAuth 账号已关联现有用户，直接登录
-5. 如果未关联且 `allow_registration = true`，自动创建 Member 角色用户并登录
+5. 如果未关联且 `allow_registration = true`，自动创建 Member 角色用户、关联该 OAuth 身份并登录
 6. 如果未关联且 `allow_registration = false`，返回错误
 
 ## Tailscale Serve 回环身份认证
@@ -91,43 +90,54 @@ client_secret = "your-github-client-secret"
 - **严格回环且禁止代理转发头**：仅当底层 TCP 对端（`ConnectInfo`）严格为 `127.0.0.1` 或 `::1`，**且**请求不携带 `X-Forwarded-For` 或 `Forwarded` 头时才放行；当 `tailscale.socket_path` 指向可达的本地 `tailscaled` Unix Socket 时，服务端还会通过 `/localapi/v0/whois` 交叉核验对端身份。
 - **账号匹配与角色安全**：按精确用户名、唯一不区分大小写用户名、已关联 OAuth 账号或唯一邮箱前缀解析现有用户，并继续执行初始管理员的 `must_change_password` 强制改密。未匹配的 Tailnet 用户默认拒绝访问；仅在设置 `tailscale.auto_provision_role = "member"` 时自动创建只读 Member 账号（**绝不自动创建 `admin` 账号**）。长连接 WebSocket 会在连接期间持续重验 `auth_enabled` 与用户角色。
 
-启用此模式时请将 `server.listen` 绑定到 `127.0.0.1:9527`，确保所有外部流量均经由 `tailscale serve` 转发。Tailscale OIDC（`tsidp`）与 HTTPS Sidecar 部署步骤详见 [Tailscale 集成](/zh/docs/tailscale)。
+启用此模式时请将 `server.listen` 绑定到 `127.0.0.1:9527`，确保所有外部流量均经由 `tailscale serve` 转发。Tailscale Serve 与 HTTPS Sidecar 部署步骤详见 [Tailscale 集成](/zh/docs/tailscale)。
 
 ## 密码管理
 
 ### 修改密码
 
 1. 进入 Settings → Security
-2. 在 "Change Password" 区域输入当前密码和新密码
+2. 在 "Change Password" 区域输入当前密码和新密码（最少 **8 位字符**）
 3. 点击 **Change Password**
 
-密码使用 argon2 算法哈希存储，符合 OWASP 推荐标准。
+密码使用 argon2 算法哈希存储，符合 OWASP 推荐标准。修改密码后，系统会自动吊销该账号的所有其他活跃 Web 与移动端会话。
 
 ### 首次启动管理员凭据
 
 首次启动（数据库中没有任何用户）时，ServerBee 会自动创建管理员账号，随机生成密码，并以醒目的凭据横幅在 Server/容器日志中打印一次。用户名和密码无法通过环境变量预设。首次登录时你必须修改此密码，并可选择一个新的用户名。
 
-## 登录安全
+## 登录安全与限流
 
 ### 登录限流
 
-ServerBee 对登录端点实施 IP 级别的速率限制：
+ServerBee 在校验凭据**之前**对 `POST /api/auth/login`、`POST /api/mobile/auth/login` 与 `POST /api/mobile/auth/recover` 实施 IP 级别速率限制：
 
-- 默认每 15 分钟窗口内最多 **5 次** 失败尝试（可通过 `rate_limit.login_max` 配置）
-- 超过限制后返回 429 Too Many Requests
-- 过期的限流记录由后台 session_cleaner 任务自动清理
+- 默认每 15 分钟窗口内最多 **5 次请求**（可通过 `rate_limit.login_max` 配置）。发往上述三个端点的**所有请求**共享同一个 `login` 限流桶（包括成功登录以及 2FA 登录的两个步骤），而不仅限于失败尝试。
+- 超过限制后返回 `429 Too Many Requests`（并写入 `login_rate_limited` 审计日志）
+- 过期的限流记录由后台 `session_cleaner` 任务自动清理
 
 ### Agent 注册限流
 
-Agent 注册端点同样受限：
+Agent 注册端点同样按 IP 限流：
 
-- 默认每 15 分钟窗口内最多 **10 次** 注册尝试（可通过 `rate_limit.register_max` 配置）。Railway 模板会有意覆盖为更严格的 **3 次**
+- 默认每 15 分钟窗口内最多 **10 次注册请求**（可通过 `rate_limit.register_max` 配置）。Railway 模板会有意覆盖为更严格的 **3 次**。
+
+### 公开状态页限流
+
+未认证的 `/api/status/*` 端点实施按 IP 计数的 **`public`** 限流桶：
+
+- 固定限制为每 **60 秒** 窗口内最多 **60 次请求**
+
+### 管理限流记录
+
+管理员可在 **Settings → Rate Limits**（`/settings/rate-limits`）查看 `login`、`register`、`public` 三个作用域下的活跃和被拦截 IP，按单 IP 解封或清空整个作用域，也可通过 `GET /api/admin/rate-limit` 与 `POST /api/admin/rate-limit/reset` 操作（记录 `rate_limit.reset` 审计日志）。详见 [管理员指南 → 限流管理](/zh/docs/admin#限流管理)。
 
 ### Session 安全
 
-- Session Cookie 默认设置 `HttpOnly` + `Secure` 标志
-- Session 有效期 24 小时（可配置 `auth.session_ttl`）
-- 开发环境可通过 `auth.secure_cookie = false` 关闭 Secure 标志
+- Session Cookie 默认设置 `HttpOnly` + `Secure` 标志；密码登录使用 `SameSite=Strict`，OAuth 登录使用 `SameSite=Lax`
+- Session 令牌在数据库中以 **SHA-256** 哈希落盘存储（永不保存明文令牌）
+- Session 默认有效期 24 小时（可配置 `auth.session_ttl`），活跃的 Web 请求会自动滑动续期
+- 仅在纯 HTTP 开发环境时，可通过 `auth.secure_cookie = false` 关闭 Secure 标志
 
 <Cards>
   <Card title="Server 配置" href="/zh/docs/server" />

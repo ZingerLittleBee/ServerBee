@@ -16,15 +16,20 @@ ServerBee 通过统一的 Web 面板实时监控所有已接入的服务器。�
 - **磁盘 I/O 吞吐** -- 按设备聚合后的读/写速率，与网络速率并列实时显示
 - **网络吞吐** -- 上行 / 下行速率
 - **负载趋势** -- `load5 · load15` 紧邻 `load1`，以及 uptime / swap / 进程数 / TCP / UDP 汇总行
-- **地区和国旗** -- 启用 GeoIP 时显示
+- **地区和国旗** -- 由 GeoIP 自动识别，或按服务器手动固定
 
 所有数据通过 WebSocket 驱动，无需手动刷新即可实时更新。服务器按分组组织并依据权重排序。你可以在此视图中筛选、搜索和批量操作服务器。
 
 如需创建面向不同场景的运维视图，可以使用 [仪表盘与组件](/zh/docs/dashboards) 创建额外仪表盘布局，包含图表、地图、服务状态、Markdown 说明和可用性时间线等组件。
 
-### GeoIP 显示
+### GeoIP 显示与手动覆盖国家/地区
 
-地区/国家标签和 Server Map 组件需要 GeoIP 数据。你可以通过 `geoip.mmdb_path` 配置自定义 MaxMind 兼容 MMDB 文件，也可以在 **Settings → GeoIP Database** 下载 DB-IP Lite 数据库。状态查询端点为 `GET /api/geoip/status`，管理员可通过 `POST /api/geoip/download` 触发下载。
+地区/国家标签和 Server Map 组件默认使用 GeoIP 数据。你可以通过 `geoip.mmdb_path` 配置自定义 MaxMind 兼容 MMDB 文件，也可以在 **Settings → Data sources**（`/settings`）下载 DB-IP Lite 数据库。状态查询端点为 `GET /api/geoip/status`，管理员可通过 `POST /api/geoip/download` 触发下载。
+
+当 GeoIP 识别不准确或未加载数据库时，还可以为单台服务器手动覆盖国旗/国家代码：
+
+- 在服务器编辑弹窗中选择 ISO 3166-1 alpha-2 国家代码（或通过 `PUT /api/servers/{id}` 设置 `country_code`）后，服务端会将其转为大写保存并固定 `geo_manual = true`，后续 Agent 上报时自动 GeoIP 不会覆盖 `country_code` 和 `region`。
+- 清空该覆盖值（`country_code: null`）会将 `geo_manual` 重置为 `false`，清除已保存的 `country_code` 和 `region`，并在下一次 Agent 上报时恢复自动 GeoIP 检测。
 
 ## 实时指标推送
 
@@ -95,9 +100,9 @@ Agent 在所有主要平台上采集磁盘读写吞吐量：
 | 读取速率 | bytes/s | 每块磁盘的读取吞吐量 |
 | 写入速率 | bytes/s | 每块磁盘的写入吞吐量 |
 
-**Linux**：直接读取 `/proc/diskstats`。仅跟踪物理块设备（如 `sda`、`nvme0n1`），排除虚拟设备（`loop*`、`dm-*`、`ram*`、`sr*`）和分区。DiskIo.name 为块设备名。
+**Linux**：直接读取 `/proc/diskstats`。仅跟踪物理块设备（如 `sda`、`nvme0n1`），排除虚拟设备（`loop*`、`dm-*`、`ram*`、`sr*`）和分区。`DiskIo.name` 为块设备名。
 
-**macOS / Windows**：使用 sysinfo `Disk::usage()` API，以挂载点路径（如 `/`、`/home`、`C:\`）作为 key。提供 per-mount-path 语义而非 per-physical-disk。已知限制：macOS APFS 下共享同一物理磁盘的多个卷可能报告重叠的 I/O 计数。
+**macOS / Windows**：使用 sysinfo `Disk::usage()` API，以 `mount_point()` 作为 key。提供 per-mount-path 语义（如 `/`、`/home`、`C:\`）而非 per-physical-disk。已知限制：macOS APFS 下共享同一物理磁盘的多个卷可能报告重叠的 I/O 计数。
 
 Agent 启动后的首次采样建立基线并上报空列表，后续采样基于增量计算速率。
 
@@ -105,7 +110,7 @@ Agent 启动后的首次采样建立基线并上报空列表，后续采样基�
 
 ### GPU 指标（可选）
 
-启用 GPU 监控（`enable_gpu = true`）后，每块 GPU 独立采集以下指标：
+启用 GPU 监控需要**同时满足**两个条件：在 `agent.toml` 中设置 `[collector] enable_gpu = true`，**并且**使用启用了可选 `gpu` Cargo feature 编译的 Agent 二进制（基于 `nvml-wrapper`，**仅支持 NVIDIA GPU**）。若未启用 `gpu` feature 编译，GPU 采集始终返回空。满足条件后，每块 GPU 独立采集以下指标：
 
 | 指标 | 说明 |
 |------|------|
@@ -141,7 +146,7 @@ ServerBee 以两种粒度存储指标记录：
 ### 小时级聚合记录
 
 - 由 Aggregator 后台任务计算
-- 取每小时内所有原始记录的平均值
+- 对每小时内的常规状态类指标与磁盘 I/O 速率取平均值（`AVG`），对累计流量计数器（`net_in_transfer`、`net_out_transfer`）取最大值（`MAX`）
 - 默认保留 **90 天**（可通过 `retention.records_hourly_days` 配置）
 - 用于长期趋势可视化
 
@@ -155,8 +160,8 @@ GPU 指标按设备粒度单独存储在专用表中。每条记录包含设备�
 
 历史指标通过 REST API 查询：
 
-```
-GET /api/servers/:id/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&interval=auto
+```text
+GET /api/servers/{id}/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&interval=auto
 ```
 
 `interval` 参数控制数据粒度：
@@ -169,11 +174,11 @@ GET /api/servers/:id/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&i
 
 ### 数据存储层级
 
-```
+```text
 Agent 上报 (每 3 秒)
   --> 内存缓存: 仅保留每台服务器最新一份（实时推送用）
   --> 每 1 分钟: 写入 records 表（分钟级记录）
-  --> 每 1 小时: 聚合写入 records_hourly 表（平均值）
+  --> 每 1 小时: 聚合写入 records_hourly 表（状态/速率取 AVG，net_*_transfer 取 MAX）
 ```
 
 ## 服务器详情
@@ -230,14 +235,20 @@ ServerBee 自动清理过期数据，由后台任务每小时执行一次：
 
 | 数据类型 | 默认保留时间 | 配置项 |
 |----------|-------------|--------|
-| 分钟级指标 (records) | 7 天 | `retention.records_days` |
-| 小时级指标 (records_hourly) | 90 天 | `retention.records_hourly_days` |
-| GPU 指标 (gpu_records) | 7 天 | `retention.gpu_records_days` |
-| Ping 探测记录 | 7 天 | `retention.ping_records_days` |
-| 流量小时记录 (traffic_hourly) | 7 天 | `retention.traffic_hourly_days` |
-| 流量日记录 (traffic_daily) | 400 天 | `retention.traffic_daily_days` |
-| 任务执行结果 (task_results) | 7 天 | `retention.task_results_days` |
-| 审计日志 | 180 天 | `retention.audit_logs_days` |
+| 分钟级指标（`records`） | 7 天 | `retention.records_days` |
+| 小时级指标（`records_hourly`） | 90 天 | `retention.records_hourly_days` |
+| GPU 指标（`gpu_records`） | 7 天 | `retention.gpu_records_days` |
+| Ping 探测记录（`ping_records`） | 7 天 | `retention.ping_records_days` |
+| 网络探测原始记录与 Traceroute 记录（`network_probe_record`、`traceroute_record`） | 7 天 | `retention.network_probe_days` |
+| 网络探测小时聚合（`network_probe_record_hourly`） | 90 天 | `retention.network_probe_hourly_days` |
+| 流量小时记录（`traffic_hourly`） | 7 天 | `retention.traffic_hourly_days` |
+| 流量日记录（`traffic_daily`） | 400 天 | `retention.traffic_daily_days` |
+| 任务执行结果（`task_results`） | 7 天 | `retention.task_results_days` |
+| Docker 事件（`docker_event`） | 7 天 | `retention.docker_events_days` |
+| 服务监控记录（`service_monitor_record`） | 30 天 | `retention.service_monitor_days` |
+| 安全事件（`security_event`） | 30 天 | `retention.security_event_days` |
+| IP 质量状态变更事件（`unlock_event`） | 90 天 | `retention.ip_quality_event_days` |
+| 审计日志（`audit_logs`） | 180 天 | `retention.audit_logs_days` |
 
 <Callout type="info">
 聚合和清理是两个独立的每小时后台任务，没有固定先后顺序。清理任务以 60 秒偏移启动，这只会错开两者的工作。每次聚合只汇总上一个完整小时，漏掉的小时不会补算；若长期小时历史数据很重要，请监控后台任务错误。
@@ -278,6 +289,7 @@ records_hourly_days = 365  # 小时级数据保留 1 年
 | 操作 | 说明 |
 |------|------|
 | 编辑名称和备注 | 修改服务器的显示名称和备注信息 |
+| 手动覆盖国家 / 地区 | 固定 ISO 3166-1 alpha-2 国家代码（`geo_manual = true`），或清空以恢复自动 GeoIP |
 | 设置分组 | 将服务器分配到指定分组 |
 | 管理标签 | 添加或移除服务器标签 |
 | 调整排序 | 通过权重值控制显示顺序 |
@@ -287,7 +299,7 @@ records_hourly_days = 365  # 小时级数据保留 1 年
 
 ## 数据流
 
-```
+```text
 Agent                  Server                    浏览器
   |                      |                         |
   |-- Report (3s) ------>|                         |
@@ -300,17 +312,17 @@ Agent                  Server                    浏览器
   |                      |                     实时 UI
   |                      |                         |
   |                      |-- Aggregator (每小时) ->|
-  |                      |   小时级平均值          |
+  |                      |   小时级聚合            |
   |                      |                         |
   |                      |-- Cleanup (每小时) ---->|
   |                      |   删除过期记录          |
 ```
 
-Agent 每 3 秒上报一次。Server 将最新一份上报缓存在内存中，并立即广播给已连接的浏览器。每 60 秒，所有缓存的上报会批量写入 SQLite。两个独立的每小时任务分别将原始记录聚合为小时级汇总，并根据保留策略清理过期数据。
+Agent 每 3 秒上报一次。Server 将最新一份上报缓存在内存中，并立即广播给已连接的浏览器。每 60 秒，所有缓存的上报会批量写入 SQLite。两个独立的每小时任务分别将原始记录聚合为小时级汇总（状态/速率类取 `AVG`，`net_*_transfer` 取 `MAX`），并根据保留策略清理过期数据。
 
 ## 网络质量视图
 
-`/network` 总览页和 `/network/{server_id}` 详情页会汇总每台服务器已配置的探测目标。
+`/network` 总览页和 `/servers/{id}?tab=network` 详情 Tab 会汇总每台服务器已配置的探测目标（旧路径 `/network/{server_id}` 会自动重定向到 `/servers/{id}?tab=network`）。
 
 - 新分配的目标会立即显示，即使首条探测结果尚未写入
 - 尚无探测数据的目标会显示为空状态，而不是从汇总中消失
@@ -346,13 +358,15 @@ ServerBee 以小时和天为粒度跟踪网络流量，支持按计费周期查�
 
 ### 流量 API
 
-通过 `GET /api/servers/{id}/traffic` 查询任意服务器的流量统计，返回内容包括：
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/servers/{id}/traffic` | 当前计费周期总量、使用百分比、周期末预测、日明细与今日小时明细 |
+| GET | `/api/traffic/overview` | 全集群所有服务器的流量概览 |
+| GET | `/api/traffic/overview/daily` | 全集群每日流量汇总（`?days=30`） |
+| GET | `/api/traffic/{server_id}/daily` | 单台服务器每日流量明细（`?from=YYYY-MM-DD&to=YYYY-MM-DD`，默认含当天在内 30 天窗口） |
+| GET | `/api/traffic/{server_id}/cycle` | 当前与历史计费周期流量汇总（`?history=6`） |
 
-- **周期总量** -- 当前计费周期的入站/出站总字节数
-- **使用百分比** -- 已用流量占服务器流量限额的百分比（如已配置）
-- **预测** -- 基于当前消耗速率估算的周期末总用量
-- **日明细** -- 计费周期内每日流量总量
-- **小时明细** -- 今日每小时流量明细
+为服务器配置 `traffic_limit` 后，`traffic_limit_type` 决定计算用量占比与周期末预测时统计的方向：`up`（仅出站）、`down`（仅入站）或 `sum`（入站 + 出站，默认值）。
 
 ### 计费周期
 
@@ -385,7 +399,7 @@ ServerBee 以小时和天为粒度跟踪网络流量，支持按计费周期查�
 
 ## Docker 容器监控
 
-ServerBee 支持实时 Docker 容器监控。当 Agent 能够访问 Docker daemon 时，此功能可用。需要 `docker` 能力（`CAP_DOCKER`），该能力默认关闭。能力由 Agent 拥有 —— 在 Agent 主机的 `[capabilities]` allow 列表中加入 `docker`（或 `--allow-cap docker`）并重启 Agent。见 [功能开关](/zh/docs/capabilities)。
+ServerBee 支持实时 Docker 容器监控与生命周期操作。当 Agent 能够访问 Docker daemon 时，此功能可用。需要 `docker` 能力（`CAP_DOCKER`），该能力默认关闭。能力由 Agent 拥有 —— 在 Agent 主机的 `[capabilities]` allow 列表中加入 `docker`（或 `--allow-cap docker`）并重启 Agent。见 [功能开关](/zh/docs/capabilities)。
 
 ### 概览
 
@@ -417,7 +431,19 @@ Docker 监控页面展示：
 4. 更新实时广播到订阅的浏览器
 5. 当所有浏览器离开 Docker 页面时，监控自动停止（基于 viewer 引用计数）
 
-容器日志使用专用 WebSocket 端点（`/api/ws/docker/logs/{server_id}`），通过 subscribe/unsubscribe 协议实现按容器的日志流。
+容器日志使用专用的**仅限管理员**的 WebSocket 端点（`/api/ws/docker/logs/{server_id}`），通过 subscribe/unsubscribe 协议实现按容器的日志流。
+
+### Docker REST API
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/servers/{id}/docker/containers` | 已认证用户 | 列出服务器上的容器 |
+| GET | `/api/servers/{id}/docker/stats` | 已认证用户 | 获取最新容器资源统计 |
+| GET | `/api/servers/{id}/docker/info` | 已认证用户 | 获取 Docker daemon 系统信息 |
+| GET | `/api/servers/{id}/docker/events` | 已认证用户 | 查询持久化 Docker 事件（`?limit=100`） |
+| GET | `/api/servers/{id}/docker/networks` | 已认证用户 | 列出 Docker 网络 |
+| GET | `/api/servers/{id}/docker/volumes` | 已认证用户 | 列出 Docker 卷 |
+| POST | `/api/servers/{id}/docker/containers/{cid}/action` | 仅管理员 | 执行容器生命周期操作（`Start`、`Stop`、`Restart`、`Remove`） |
 
 ### 数据保留
 
@@ -442,7 +468,7 @@ ServerBee 内置了网络质量监控系统，通过各 Agent 对网络目标发
 
 中国节点使用域名（`{省代码}-{运营商代码}-v4.ip.zstaticcdn.com:80`），DNS 自动解析到最新的 CDN 节点 IP，无需手动维护 IP 列表。
 
-预设目标为只读，不可编辑或删除。你也可以通过设置页创建自定义目标。
+预设目标为只读，不可编辑或删除。你也可以通过设置页创建自定义目标；自定义探测目标会经过 ServerBee 的 SSRF 防护校验（拦截回环地址、链路本地地址与云元数据端点）。
 
 ### 配置
 
@@ -450,7 +476,8 @@ ServerBee 内置了网络质量监控系统，通过各 Agent 对网络目标发
 
 - **目标管理** -- 查看所有 96 个预设目标（带锁图标和运营商标签），管理自定义目标（创建/编辑/删除）
 - **全局设置** -- 探测间隔（30-600 秒，默认 60）、每轮发包数（5-20，默认 10）、新服务器默认分配的探测目标
-- **单服务器目标** -- 通过网络详情页的「管理目标」弹窗，为每台服务器分配最多 20 个探测目标
+- **单服务器目标** -- 通过网络详情视图的「管理目标」弹窗，为每台服务器分配最多 20 个探测目标
+- **异常阈值** -- 可在 `server.toml` 的 `[network_probe]` 段配置高延迟异常阈值：`high_latency_ms`（默认 `500`）与 `very_high_latency_ms`（默认 `800`）
 
 ### 网络总览页
 
@@ -460,11 +487,11 @@ ServerBee 内置了网络质量监控系统，通过各 Agent 对网络目标发
 - 可用性百分比
 - 异常数量及严重性指示
 
-### 网络详情页
+### 网络详情视图
 
-点击服务器卡片进入 `/network/:serverId`，包含：
+点击服务器卡片进入 `/servers/{id}?tab=network`（旧路径 `/network/{server_id}` 会自动重定向到此），包含：
 
-- **时间范围选择** -- 实时、1h、6h、24h、7d、30d
+- **时间范围选择** -- 实时、1h、6h、24h、7d、30d（历史查询在时间范围 `>= 1 天` 时自动从原始记录切换为小时聚合）
 - **目标卡片** -- 每个目标的延迟和丢包率，可切换显示/隐藏
 - **多线延迟图表** -- 每个目标一条彩色线，带时间戳 Tooltip
 - **异常摘要表** -- 高延迟、高丢包、不可达事件
@@ -473,13 +500,14 @@ ServerBee 内置了网络质量监控系统，通过各 Agent 对网络目标发
 
 ### Traceroute
 
-网络详情页可以从选中的 Agent 对目标主机或 IP 发起 Traceroute，用于排查路由变化和丢包问题。
+网络详情视图可以从选中的 Agent 对目标主机或 IP 发起 Traceroute，用于排查路由变化和丢包问题。
 
 - 需要 Agent 的 effective `CAP_PING_ICMP` 能力。
-- 目标只允许字母、数字、点、连字符和冒号。
-- Dialog 提供 ICMP / UDP / TCP 三种探测协议下拉选择。
-- 默认跑 5 轮，每轮一次增量更新通过 WebSocket 推送到浏览器，表格实时填充：
+- 目标只允许字母、数字、点、连字符和冒号，并受 Agent 端 SSRF 防护约束。
+- Dialog 提供 ICMP / UDP / TCP 三种探测协议下拉选择（UDP 默认目标端口 `33434`，TCP 默认目标端口 `80`）。
+- 最大跳数 `30`（`max_hops = 30`），总超时 `60` 秒，默认跑 5 轮；每轮一次增量更新通过 WebSocket 推送到浏览器，表格实时填充：
   Hop / IP / 主机名 / ASN / 丢包率 / Best / Avg / Worst / Jitter / StdDev。
+- 服务端通过带缓存的反向 DNS（PTR，1 小时 TTL / 4096 条缓存）解析主机名，并通过可选的 DB-IP ASN MMDB 数据库（`asn.mmdb_path`，可在 **Settings → Data sources** 或通过 `GET /api/asn/status`、`POST /api/asn/download` 管理）补充各跳 ASN 信息。
 - ECMP 多路径时同一 TTL 会有多个 IP，第一行显示主 IP，悬停 `+N` chip 查看其他 IP。
 - 已完成的 Traceroute 自动保存到本地 SQLite，可以在 dialog 历史区点击切换查看；
   管理员可以删除单条或一键清空。
@@ -514,15 +542,15 @@ WebSocket 推送 `BrowserMessage::TracerouteUpdate` 携带每轮增量结果。�
 
 网络探测记录采用与系统指标相同的两级存储：
 
-- **原始记录** -- 保留 7 天（可通过 `retention.network_probe_days` 配置）
+- **原始探测记录与 Traceroute 历史** -- 保留 7 天（可通过 `retention.network_probe_days` 配置，同时作用于 `network_probe_record` 与 `traceroute_record`）
 - **小时聚合** -- 保留 90 天（可通过 `retention.network_probe_hourly_days` 配置）
 
 ### 告警集成
 
-两种告警规则类型可用于网络质量：
+两种告警规则类型可用于网络质量，均按最近 10 分钟内所有探测目标的最大值（`MAX`）评估：
 
-- `network_latency` -- 当平均延迟超过阈值时触发
-- `network_packet_loss` -- 当丢包率超过阈值时触发
+- `network_latency` -- 当最大探测延迟（ms）满足阈值时触发
+- `network_packet_loss` -- 当最大丢包率百分比（`0`–`100`）满足阈值时触发
 
 <Cards>
   <Card title="告警与通知" href="/zh/docs/alerts" />

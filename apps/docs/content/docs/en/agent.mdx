@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
-Layout: binary in `/opt/serverbee/bin/`, config in `/opt/serverbee/etc/agent.toml`, and the management CLI symlinked to `/usr/local/bin/serverbee`.
+Layout: binary in `/opt/serverbee/bin/`, config in `/opt/serverbee/etc/agent.toml`, and the management CLI symlinked to `/usr/local/bin/serverbee`. Optional flags include `--caps <list>` to seed initial capabilities (for example `--caps terminal,file`) and `--no-wait` to skip the post-install connection verification wait.
 
 After installation, manage the agent with the `serverbee` CLI (automatically installed):
 
@@ -173,14 +173,15 @@ Once the Agent has claimed the Server, the enrollment code is no longer used. Us
 
 ## Configuration
 
-The agent reads configuration from TOML files in the following order:
+The agent merges configuration from the following sources in order, with later sources overriding earlier ones:
 
-1. `/etc/serverbee/agent.toml` (system-wide, preferred)
-2. `agent.toml` (working directory)
-3. Environment variables with `SERVERBEE_` prefix
+1. Built-in defaults
+2. `/etc/serverbee/agent.toml`
+3. `agent.toml` in the working directory (overrides `/etc/serverbee/agent.toml`; token persistence also prefers this local path)
+4. Environment variables with `SERVERBEE_` prefix
 
 <Callout type="info">
-When deployed via the install script, the config lives at `/opt/serverbee/etc/agent.toml` (`/etc/serverbee` is the legacy layout; the script migrates it automatically).
+When deployed via the install script, the systemd unit sets `WorkingDirectory=/opt/serverbee/etc`, so the managed service loads and persists `/opt/serverbee/etc/agent.toml` (`/etc/serverbee` is the legacy layout; the script migrates it automatically).
 </Callout>
 
 Here is a minimal `agent.toml` for first connection. The [Configuration Reference](/en/docs/configuration) is the canonical list for `file`, `capabilities`, `security`, `ip_change`, `upgrade`, and other groups:
@@ -200,8 +201,7 @@ enable_gpu = false             # Enable NVIDIA GPU monitoring (requires a GPU-en
 enable_temperature = true      # Enable temperature sensor monitoring
 
 [log]
-level = "info"                 # Log level: trace, debug, info, warn, error
-file = ""                      # Log file path (empty = stdout only)
+level = "info"                 # Log level: trace, debug, info, warn, error (logs to stdout)
 ```
 
 | Option | Type | Default | Description |
@@ -211,8 +211,7 @@ file = ""                      # Log file path (empty = stdout only)
 | `token` | string | Agent-generated | Agent run token, atomically written before the claim request; the Server stores only its hash |
 | `collector.enable_gpu` | bool | `false` | Enable GPU metric collection |
 | `collector.enable_temperature` | bool | `true` | Enable temperature collection |
-| `log.level` | string | `"info"` | Log level |
-| `log.file` | string | `""` | Log file path (empty = stdout only) |
+| `log.level` | string | `"info"` | Log level (logs to stdout; `RUST_LOG` takes precedence) |
 
 ### Environment Variables
 
@@ -235,11 +234,18 @@ Capability policy is owned entirely by the Agent host and can be changed with lo
 ```bash
 serverbee-agent --allow-cap terminal --allow-cap exec
 serverbee-agent --deny-cap ping_http
+serverbee-agent --release-repo https://mirror.example.com/serverbee/releases
+
+# One-shot temporary capability grant subcommands (run on the agent host):
+serverbee-agent grant terminal --for 30m --reason "debugging"
+serverbee-agent revoke terminal
+serverbee-agent grants
 ```
 
 - The default set is `upgrade`, `ping_icmp`, `ping_tcp`, `ping_http`, `security_events`, `firewall_block`, `ip_quality`, and `tailscale`
 - High-risk capabilities (`terminal`, `exec`, `file`, `docker`) are disabled by default
 - `--deny-cap` always wins over `--allow-cap`
+- `--release-repo` overrides `[upgrade] release_repo_url` for pinned self-upgrades without editing `agent.toml`
 
 The Server only mirrors the reported set and rejects requests outside it. It has no capability toggle and cannot enable or further configure the Agent's set. See [Capabilities](/en/docs/capabilities).
 
@@ -289,8 +295,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/serverbee-agent
+Environment=SERVERBEE_SUPERVISED=1
 Restart=always
 RestartSec=5
+RestartPreventExitStatus=78
 User=root
 WorkingDirectory=/etc/serverbee
 AmbientCapabilities=CAP_NET_RAW
@@ -303,7 +311,7 @@ CPUQuota=10%
 WantedBy=multi-user.target
 ```
 
-`AmbientCapabilities=CAP_NET_RAW` grants the privilege required for ICMP ping probes; remove the line if you do not need ICMP probing.
+`Environment=SERVERBEE_SUPERVISED=1` tells the self-updater to exit and let systemd restart the service during upgrades and rollbacks. `RestartPreventExitStatus=78` stops restart loops when an enrollment code is permanently rejected (invalid, expired, or already used), preventing unnecessary registration rate-limit consumption. `AmbientCapabilities=CAP_NET_RAW` grants the privilege required for ICMP ping probes; remove the line if you do not need ICMP probing.
 
 Then enable and start the service:
 
@@ -329,21 +337,22 @@ The agent needs to run as root to access all system metrics (temperature sensors
 | Platform | Support level | Notes |
 |----------|---------------|-------|
 | Linux (amd64/arm64) | Full | Primary target; all features available |
-| macOS (amd64/arm64) | Full | Suitable for development and testing |
-| Windows (amd64) | Basic | TCP/UDP connection counts use a different code path |
-| FreeBSD | Basic | `sysinfo` support for FreeBSD is limited |
+| macOS (amd64/arm64) | Partial | Suitable for development and testing; TCP/UDP connection counts report `0` and Linux security event detectors / nftables firewall are unavailable |
+| Windows (amd64) | Basic | TCP/UDP connection counts use `netstat`; Linux security event detectors and nftables firewall are unavailable |
+| FreeBSD | Basic | `sysinfo` support is limited; TCP/UDP connection counts report `0` and Linux security event detectors / nftables firewall are unavailable |
 
 ## Auto-Update
 
 The server can push upgrade commands to connected agents. When an upgrade is triggered:
 
 1. The server sends an `Upgrade` message with the target version and job ID
-2. The agent derives the binary and checksum URLs from its pinned `[upgrade] release_repo_url`
-3. The agent verifies the downloaded binary against `sha256sums.txt`
-4. A preflight probe executes the candidate and requires it to report the requested embedded version
-5. The agent persists an upgrade transaction, copies the current binary to `.bak`, and atomically installs the candidate
-6. systemd/OpenRC restarts the service; for a manually launched Agent, the old process launches and supervises the candidate until it becomes healthy
-7. The candidate has 90 seconds to reconnect and send `SystemInfo`, then must remain alive through a five-second stability window. If it exits or misses either check, it restores `.bak`, restarts the previous version, and reports the failed upgrade after reconnecting
+2. The agent checks strict SemVer ordering and rejects any target version that is not strictly greater than the currently running version (anti-downgrade gate)
+3. The agent derives the binary and checksum URLs from its pinned `[upgrade] release_repo_url`
+4. The agent verifies the downloaded binary against `sha256sums.txt`
+5. A preflight probe executes the candidate and requires it to report the requested embedded version
+6. The agent persists an upgrade transaction, copies the current binary to `.bak`, and atomically installs the candidate
+7. systemd/OpenRC restarts the service; for a manually launched Agent, the old process launches and supervises the candidate until it becomes healthy
+8. The candidate has 90 seconds to reconnect and send `SystemInfo`, then must remain alive through a five-second stability window. If it exits or misses either check, it restores `.bak`, restarts the previous version, and reports the failed upgrade after reconnecting
 
 Trigger an upgrade from the server detail page in the dashboard, or via the API:
 
@@ -366,8 +375,8 @@ Automatic rollback is enforced by the Agent version that initiates the upgrade. 
 
 The agent maintains a persistent WebSocket connection to the server. If the connection drops:
 
-- It reconnects using **exponential backoff** starting at 1 second (1s → 2s → 4s → 8s → 16s → 30s cap)
-- A random jitter of +/-20% is applied to avoid thundering-herd reconnections
+- On unexpected drops, it reconnects using **exponential backoff** starting at 1 second (1s → 2s → 4s → 8s → 16s → 30s cap) with a random jitter of +/-20% to avoid thundering-herd reconnections
+- On clean disconnects (such as a graceful server restart), it reconnects after a uniform `1.0–8.0s` random delay
 - Upon successful reconnection, the backoff resets to 1 second and the agent re-sends its `SystemInfo`
 - **Heartbeat**: the server pings every 30 seconds and the agent replies with a pong; an agent that stops reporting for more than 30 seconds is marked offline
 
@@ -376,7 +385,7 @@ During the initial connection:
 1. The server sends a `Welcome` message with the assigned `server_id` and `report_interval`
 2. The agent sends its `SystemInfo` (CPU name, cores, arch, OS, kernel, memory, disk, IP addresses, virtualization type, agent version)
 3. The server acknowledges with an `Ack`
-4. The server syncs any assigned ping tasks
+4. The server reconciles assigned ping tasks, network probes, IP-quality services, and firewall blocklists
 5. The agent begins its periodic metric reporting loop
 
 ## Collected Metrics
@@ -388,10 +397,11 @@ The agent collects the following metrics (sourced from the `sysinfo` library, `/
 | CPU | `cpu` (usage %), name, cores, arch | `sysinfo::System` |
 | Memory | `mem_used`, `swap_used` (bytes) | `sysinfo::System` |
 | Disk | `disk_used` (bytes) | `sysinfo::Disks` |
+| Disk I/O | `disk_io` (per-device read/write bytes/sec) | `/proc/diskstats` (Linux), `sysinfo::Disks` (non-Linux) + delta calc |
 | Network | `net_in_speed` / `net_out_speed`, `net_in_transfer` / `net_out_transfer` (bytes) | `sysinfo::Networks` + delta calc |
 | Load | `load1` / `load5` / `load15` | `sysinfo::System::load_average()` |
-| Connections | `tcp_conn` / `udp_conn` | `/proc/net/tcp` (Linux) |
-| Process | `process_count` | `sysinfo::System::processes()` |
+| Connections | `tcp_conn` / `udp_conn` | `/proc/net/{tcp,udp}{,6}` (Linux), `netstat` (Windows) |
+| Process | `process_count` | Direct `/proc` numeric directory scan (Linux), `sysinfo::System::processes()` (non-Linux) |
 | Uptime | `uptime` (seconds) | `sysinfo::System` |
 | Temperature | `temperature` (°C, optional) | `sysinfo::Components` |
 | GPU | `gpu` (utilization, VRAM, temperature, optional) | `nvml-wrapper` |

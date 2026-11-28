@@ -74,16 +74,23 @@ After installation, manage your deployment with the `serverbee` CLI (automatical
 
 ```bash
 sudo serverbee status
+sudo serverbee start | stop | restart [server|agent]
 sudo serverbee upgrade -y
 sudo serverbee upgrade --channel beta -y   # Explicitly stay on prereleases
-sudo serverbee restart
 sudo serverbee config
+sudo serverbee config set <key> <value>
 sudo serverbee env
+sudo serverbee env set SERVERBEE_AUTH__SECURE_COOKIE true
+sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
+sudo serverbee version
+sudo serverbee help
 sudo serverbee uninstall agent -y
 ```
 
+Installer flags also include `--caps <list>`, `--skip-dns-check`, `--no-wait`, and `--lang <en|zh>`. Post-install verification exits `0` (verified/skipped), `1` (Server unhealthy), `75` (Agent temporarily unverified), or `78` (Agent authentication rejected). The script also supports macOS (`darwin` amd64/arm64) binary downloads, and [GitHub Releases](https://github.com/ZingerLittleBee/ServerBee/releases) additionally publishes `darwin-amd64`, `darwin-arm64`, and `windows-amd64` binaries for manual installation.
+
 <Callout type="info">
-`install server` / `install agent` are bootstrap commands. If the binary already exists in `/usr/local/bin`, the installer adopts it instead of overwriting it. Use `upgrade` (or replace the binary manually) when you need to roll out a refreshed release binary to an existing host.
+`install server` / `install agent` are bootstrap commands. If the binary already exists in `/opt/serverbee/bin` (legacy `/usr/local/bin` installs are migrated automatically first), the installer adopts it instead of overwriting it. Use `upgrade` (or replace the binary manually) when you need to roll out a refreshed release binary to an existing host.
 </Callout>
 
 The default `auto` channel selects the newest suffix-free stable release when one exists, otherwise it falls back to the newest prerelease. The installer saves that policy per component and reuses it for upgrades. Pass `--channel stable` or `--channel beta` to opt into one track explicitly, or `--version vX.Y.Z-beta.N` to pin an exact release. The CLI refuses to replace an installed version with an older SemVer.
@@ -210,7 +217,7 @@ WorkingDirectory=/var/lib/serverbee
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/serverbee /var/log/serverbee
+ReadWritePaths=/var/lib/serverbee
 PrivateTmp=true
 
 # Resource limits
@@ -227,8 +234,8 @@ Create the service user and directories:
 sudo useradd -r -s /sbin/nologin -d /var/lib/serverbee serverbee
 
 # Create directories
-sudo mkdir -p /var/lib/serverbee /var/log/serverbee /etc/serverbee
-sudo chown serverbee:serverbee /var/lib/serverbee /var/log/serverbee
+sudo mkdir -p /var/lib/serverbee /etc/serverbee
+sudo chown serverbee:serverbee /var/lib/serverbee
 
 # Place configuration
 sudo cp server.toml /etc/serverbee/server.toml
@@ -238,7 +245,7 @@ sudo cp serverbee-server /usr/local/bin/
 sudo chmod +x /usr/local/bin/serverbee-server
 ```
 
-A production `server.toml` for systemd:
+A production `server.toml` for systemd (`serverbee-server` writes logs to stdout/stderr, which systemd captures in `journald`):
 
 ```toml
 [server]
@@ -247,7 +254,6 @@ data_dir = "/var/lib/serverbee"
 
 [log]
 level = "info"
-file = "/var/log/serverbee/server.log"
 ```
 
 Enable and start:
@@ -279,7 +285,9 @@ Pick one public access URL and keep the browser URL, the agent's `server_url`, a
 
 For domain access, create a DNS `A` or `AAAA` record pointing to the server, terminate HTTPS in Nginx, Caddy, or Traefik, and proxy traffic to ServerBee on `127.0.0.1:9527`.
 
-If you installed with the quick-start script, it writes `auth.secure_cookie = false` for direct HTTP access. Before switching that same installation to HTTPS, update `/opt/serverbee/etc/server.toml`:
+If you installed with the quick-start script for direct HTTP access, how you switch `auth.secure_cookie` back to `true` before moving to HTTPS depends on your install method:
+
+- **Binary install (`--method binary`):** update `/opt/serverbee/etc/server.toml` (or run `sudo serverbee config set auth.secure_cookie true`):
 
 ```toml
 [auth]
@@ -289,16 +297,22 @@ secure_cookie = true
 Then restart the server:
 
 ```bash
-sudo systemctl restart serverbee-server
+sudo serverbee restart server
 ```
 
-If ServerBee was installed with the install script, you can also let the CLI configure Caddy HTTPS automatically:
+- **Docker install (`--method docker`):** the generated `docker-compose.server.yml` injects `SERVERBEE_AUTH__SECURE_COOKIE=false`, which overrides `server.toml`, and `serverbee restart` runs `docker compose restart` (which does not apply Compose environment edits). Update the Compose environment and recreate the container with:
+
+```bash
+sudo serverbee env set SERVERBEE_AUTH__SECURE_COOKIE true
+```
+
+If ServerBee was installed with the install script (binary or Docker), you can also let the CLI configure Caddy HTTPS automatically:
 
 ```bash
 sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
 ```
 
-This command verifies that the domain resolves to the current server, installs and configures Caddy, changes ServerBee to listen only on `127.0.0.1:9527`, and sets `auth.secure_cookie = true`. If DNS is not ready yet, it stops and prints the `A`/`AAAA` record you need to add.
+This command verifies that the domain resolves to the current server, installs and configures Caddy, changes ServerBee to listen only on `127.0.0.1:9527`, enables `auth.secure_cookie = true` (updating the Compose environment for Docker installs), and restarts or recreates the server. If DNS is not ready yet, it stops and prints the `A`/`AAAA` record you need to add.
 
 ### Nginx
 
@@ -322,9 +336,7 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
+    # ServerBee already sets X-Frame-Options: DENY and X-Content-Type-Options: nosniff on all responses.
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location / {
@@ -618,7 +630,7 @@ ServerBee is designed for lightweight VPS instances:
 | Server RAM | 128 MB | 256 MB |
 | Server Disk | 100 MB + data | 1 GB+ (depends on retention) |
 | Agent CPU | Negligible | < 1% of 1 core |
-| Agent RAM | ~27 MB measured cgroup steady state | 30–40 MB headroom |
+| Agent RAM | 32 MiB (~2.6–3.0 MiB warm / ~19–21 MiB cold cgroup; ~11 MiB VmRSS) | 64 MiB (128 MiB with Web Terminal or >500 procs) |
 
 Database size depends on server count, enabled writers, sampling intervals, and retention settings. Use [Storage & Sizing](/en/docs/storage-sizing) for the measured 30-day baseline, feature multipliers, and WAL headroom instead of combining rough estimates from different retention windows.
 

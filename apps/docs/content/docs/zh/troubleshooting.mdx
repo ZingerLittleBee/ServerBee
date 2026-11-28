@@ -19,7 +19,8 @@ sudo ss -ltnp | grep -E ':(80|443|9527)[[:space:]]'
 |----------|------|
 | systemd Server | `sudo journalctl -u serverbee-server -n 100 --no-pager` |
 | systemd Agent | `sudo journalctl -u serverbee-agent -n 100 --no-pager` |
-| OpenRC | `sudo tail -n 100 /var/log/serverbee-{server,agent}.log` |
+| OpenRC Server | `sudo tail -n 100 /var/log/serverbee-server.log` |
+| OpenRC Agent | `sudo tail -n 100 /var/log/serverbee-agent.log` |
 | Docker Server | `docker logs --tail 100 serverbee-server` |
 | Docker Agent | `docker logs --tail 100 serverbee-agent` |
 
@@ -44,7 +45,10 @@ docker logs serverbee-server 2>&1 \
 - 普通 `http://IP:9527` 需要 `auth.secure_cookie = false`。
 - HTTPS 需要 `auth.secure_cookie = true`，代理必须转发 `Host`、`X-Forwarded-Proto` 和 WebSocket upgrade。
 
-修改 `/opt/serverbee/etc/server.toml` 后执行 `sudo serverbee restart server`。只清除 ServerBee 站点 Cookie 再重试。不要在 HTTPS 生产部署中关闭 Secure Cookie。
+- **二进制安装**：修改 `/opt/serverbee/etc/server.toml` 中的 `auth.secure_cookie`（或执行 `sudo serverbee config set auth.secure_cookie true`），然后执行 `sudo serverbee restart server`。
+- **Docker 安装脚本（`--method docker`）**：生成的 Compose 文件显式固定了 `SERVERBEE_AUTH__SECURE_COOKIE=false`（优先级高于 `server.toml`，且 `serverbee restart` 不会重新加载 Compose 环境变量）。请执行 `sudo serverbee env set SERVERBEE_AUTH__SECURE_COOKIE true` 更新并重建容器，或执行 `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y` 自动配置 Caddy HTTPS。
+
+只清除 ServerBee 站点 Cookie 再重试。不要在 HTTPS 生产部署中关闭 Secure Cookie。
 
 ## 端口、DNS 或证书配置失败
 

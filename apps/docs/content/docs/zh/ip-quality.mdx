@@ -6,10 +6,10 @@ icon: Globe
 
 IP 质量检测让每台 Agent 评估自身 VPS 出口 IP，并将结果上报到 Server。它做两件事：
 
-1. **服务解锁检测** — Agent 从自身出口 IP 发送 HTTP 请求，判断流媒体、AI、社交等热门服务的解锁状态。
-2. **IP 元数据与风险信号** — Server 通过本地 GeoIP 数据库获取国家和地区，再使用已配置的第三方提供商补充其支持的网络类型标记，并在响应包含评分字段时计算欺诈风险分。
+1. **服务解锁检测** -- Agent 从自身出口 IP 发送 HTTP 请求，判断流媒体、AI、社交等热门服务的解锁状态。
+2. **IP 元数据与风险信号** -- Server 通过本地 GeoIP 数据库获取国家和地区，再使用已配置的第三方提供商补充其支持的网络类型标记，并在响应包含评分字段时计算欺诈风险分。
 
-检测结果展示在专属的 **IP 质量** 侧边栏路由（全局概览）、各服务器详情 Tab，以及——在每个状态页单独开启后——公共状态页。
+检测结果展示在专属的 **IP 质量** 侧边栏路由（全局概览）、各服务器详情 Tab，以及在公开状态页开启后展示于 `/status`。
 
 ## 前置条件
 
@@ -56,22 +56,32 @@ deny = ["ip_quality"]
 
 每个自定义服务包含：
 
-- **URL** — 探测目标地址。必须使用 `https://` 或 `http://`，且端口只允许 80 或 443。私有 / 回环地址在创建时被拒绝，并由 Agent 在每次请求及重定向跳转时重新校验（SSRF 防护）。
-- **Method** — HTTP 方法（`GET`、`HEAD` 等）及可选请求头。
-- **匹配规则** — 按顺序评估的规则列表，首条匹配的规则生效。每条规则基于以下之一进行匹配：
+- **URL** -- 探测目标地址。保存自定义服务时，Server 仅校验协议必须为 `https://` 或 `http://` 且端口为 `80` 或 `443`。SSRF 防护（拦截私有地址、回环地址、链路本地地址与云元数据端点）在 **Agent 发起探测时** 对每次请求和重定向跳转执行。
+- **Method** -- HTTP 方法（`GET`、`HEAD` 等）及可选请求头。
+- **匹配规则** -- 按顺序评估的规则列表，首条匹配的规则生效。每条规则基于以下之一进行匹配：
   - HTTP 状态码（精确匹配或范围）
   - 响应体正则表达式
   - 重定向目标 URL 模式
 
 可能的结果为 `unlocked`（解锁）、`restricted`（受限）、`blocked`（封锁）、`failed`（失败）或 `unsupported`（不支持）。
 
+### Agent 执行限制
+
+Agent 对解锁探测执行以下运行时限制：
+
+- **并发上限**：每台 Agent 最多并发执行 `5` 个服务检测。
+- **重定向次数**：单次请求最多跟随 `5` 次重定向。
+- **响应体上限**：单次探测最多读取 `256 KiB` 响应体。
+- **最小超时下限**：单次请求超时下限为 `1000 ms`。
+
 ## 检测频率
 
 Agent 在以下情况运行检测：
 
-- **定时** — 默认每 12 小时一次，可在 **Settings → IP Quality → Settings → 检测间隔** 中调整。
-- **出口 IP 变化时** — 检测到 IP 变更后 Agent 自动重新运行。
-- **手动触发** — 在任意服务器的 IP 质量 Tab 点击**立即检测**。
+- **首次同步时** -- Agent 收到首次 `IpQualitySync` 后立即自动执行一次检测。
+- **定时** -- 默认每 `12` 小时一次，可在 **Settings → IP Quality → Settings → 检测间隔** 中调整（`check_interval_hours`，有效范围 `1`–`168` 小时）。
+- **出口 IP 变化时** -- 检测到 IP 变更后 Agent 自动重新运行。
+- **手动触发** -- 在任意服务器的 IP 质量 Tab 点击**立即检测**。
 
 检测计划由 Agent 自主维护，Server 只推送服务目录和转发手动触发信号。
 
@@ -80,7 +90,14 @@ Agent 在以下情况运行检测：
 收到 Agent 上报的解锁结果后，Server 会：
 
 1. **从已加载的本地 GeoIP MMDB 获取可用的基础元数据**，无需外部请求。可下载的 DB-IP Lite Country 数据库提供国家和地区。若 MMDB 缺失、无法读取或不包含该地址，本地基础字段将保持为空。
-2. **除非将 `risk_provider` 设为 `none`，否则查询已配置的第三方提供商。** 匿名 ipapi.is 会返回代理、VPN、数据中心、Tor 和滥用标记，ServerBee 也据此派生 IP 类型，但精简响应不含嵌套的评分字段。数值型 0–100 风险分及风险等级（`low` / `medium` / `high`）需要配置 ipapi.is API Key 并使用其完整响应。结果按 IP 缓存 24 小时，相同 IP 的多次检测不会重复调用 API。
+2. **除非将 `risk_provider` 设为 `none`，否则查询已配置的第三方提供商。** 匿名 ipapi.is 会返回代理、VPN、数据中心、Tor、滥用和移动网络标记，ServerBee 也据此派生 IP 类型，但精简响应不含嵌套的评分字段。数值型 `0`–`100` 风险分、风险等级及额外字段（`is_mobile`、`asn_abuser_score`、`abuse_email`）需要配置 ipapi.is API Key 并使用其完整响应。结果按 IP 缓存 24 小时，相同 IP 的多次检测不会重复调用 API。
+
+根据 `risk_score` 派生的风险等级阈值：
+
+- `0`–`33`：`low`
+- `34`–`66`：`medium`
+- `67+`：`high`
+- `null`：`unknown`
 
 若没有提供商返回数值评分，`risk_score` 和 `risk_level` 分别为 `null` / `unknown`。只有加载了可用的 MMDB，才会显示本地元数据。
 
@@ -129,9 +146,9 @@ risk_provider = "none"
 
 | 入口 | 内容 |
 |------|------|
-| **IP 质量** 侧边栏路由（`/ip-quality`） | 全服务器 × 服务解锁矩阵；每台服务器的 IP 质量卡片（ASN、IP 类型、风险分与等级徽章、代理/VPN 标记） |
+| **IP 质量** 侧边栏路由（`/ip-quality`） | 全服务器 × 服务解锁矩阵；每台服务器的 IP 质量卡片（IP 类型、已加载 GeoIP MMDB 时的国家/地区、风险分与等级徽章，以及代理/VPN/数据中心/Tor/滥用/移动网络标记） |
 | 服务器详情 → **IP 质量** Tab | 单台服务器的 IP 质量卡片、解锁矩阵、状态变更历史及**立即检测**按钮 |
-| 公共状态页 | 解锁矩阵区块，仅当该状态页开启了 `show_ip_quality` 时显示 |
+| 公开状态页（`/status`） | 解锁矩阵区块，仅当状态页开启了 `show_ip_quality` 时显示 |
 
 解锁状态更新通过 WebSocket 实时推送，无需刷新页面。
 
@@ -145,14 +162,14 @@ risk_provider = "none"
 | `failed` | 检测过程中网络错误或超时 |
 | `unsupported` | 此 IP 类型不适用该服务检测 |
 
-## 公共状态页展示
+## 公开状态页展示
 
-所有公共状态页**默认不展示** IP 质量信息。若要在某个状态页上启用：
+公开状态页（单例页面）**默认不展示** IP 质量信息。若要开启：
 
-1. 进入 **Settings → Status Pages**，编辑对应页面。
-2. 打开 **Show IP Quality** 开关。
+1. 进入 **Settings → Status Page**。
+2. 打开 **Show IP Quality** 开关（`show_ip_quality: true`）。
 
-未登录的访客看到的出口 IP 会被遮盖为 `*.*.*.*`，已登录用户可看到完整 IP。
+公开端点 `GET /api/status/ip-quality` 无需认证，返回 `PublicIpQualitySnapshot`。无论访问者是否已登录，该结构都会完全省略出口 `ip` 以及详细元数据与标记（`asn`、`as_org`、`region`、`city`、`is_proxy`、`is_vpn`、`is_hosting`、`is_tor`、`is_abuser`、`is_mobile`、`asn_abuser_score`、`abuse_email` 及各服务解锁结果的 `detail`）。
 
 ## 数据保留
 
@@ -160,12 +177,27 @@ risk_provider = "none"
 
 每台服务器最新的解锁结果和 IP 质量快照会持续保留（每次运行后覆盖更新，不会累积）。
 
+## REST API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/ip-quality/services` | 列出所有解锁服务（内置与自定义） |
+| POST | `/api/ip-quality/services` | 创建自定义解锁服务（管理员） |
+| PUT | `/api/ip-quality/services/{id}` | 更新服务（管理员） |
+| DELETE | `/api/ip-quality/services/{id}` | 删除自定义服务（管理员） |
+| GET | `/api/ip-quality/settings` | 获取全局 IP 质量设置 |
+| PUT | `/api/ip-quality/settings` | 更新全局 IP 质量设置（管理员） |
+| GET | `/api/ip-quality/overview` | 获取全集群解锁矩阵与 IP 质量快照 |
+| GET | `/api/ip-quality/servers/{id}` | 获取单台服务器的 IP 质量快照与解锁结果 |
+| POST | `/api/ip-quality/servers/{id}/check` | 手动触发单台服务器检测（管理员） |
+| GET | `/api/ip-quality/events` | 查询解锁状态变更历史（`?server_id=...&limit=100`） |
+
 ## 数据链路
 
 ```text
 Agent
   │  (CAP_IP_QUALITY 有效)
-  ├─ 按 interval_hours / IP 变化 / 手动触发 运行解锁检测
+  ├─ 首次同步 / 按 interval_hours / IP 变化 / 手动触发 运行解锁检测
   │   AgentMessage::UnlockResults  (WebSocket)
   ▼
 Server
@@ -176,12 +208,12 @@ Server
   └─ 广播 BrowserMessage::IpQualityUpdate（ip_quality: 完整数据）
                     │
                     ▼
-          /ip-quality  +  IP Quality Tab  +  公共状态页
+          /ip-quality  +  IP Quality Tab  +  公开状态页
 ```
 
 <Cards>
   <Card title="Capabilities" href="/zh/docs/capabilities" />
   <Card title="配置参考" href="/zh/docs/configuration" />
   <Card title="安全事件检测" href="/zh/docs/security-events" />
-  <Card title="公共状态页" href="/zh/docs/status-page" />
+  <Card title="公开状态页" href="/zh/docs/status-page" />
 </Cards>

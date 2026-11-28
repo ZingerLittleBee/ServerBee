@@ -41,9 +41,9 @@ When the Docker capability is enabled, view the container list, live stats, life
 
 Detect SSH brute-force logins and port scans with optional nftables blocklists, check per-server egress IP risk scores and streaming/AI unlocks, and connect or observe hosts over Tailscale and self-hosted Headscale (`Direct` vs `DERP` peer paths, MagicDNS, key expiry, global Tailnet correlation, and private `*.ts.net` HTTPS sidecar deployment).
 
-### Public status page, themes, and branding
+### Public status page and branding
 
-Publish a single public status page at `/status`—no authentication required—covering a selected server scope, live metrics, 90-day uptime timelines, availability thresholds, incidents, and maintenance windows. Appearance settings support preset and custom OKLCH themes plus white-label title, logo, favicon, and footer text.
+Publish a single public status page at `/status`—no authentication required—covering a selected server scope, live metrics, 90-day uptime timelines, availability thresholds, incidents, and maintenance windows. Appearance settings let you customize white-label branding including site title, logo, favicon, and footer text.
 
 ### VPS cost insights
 
@@ -51,7 +51,7 @@ After you record each server's price and billing cycle, ServerBee surfaces the m
 
 ### OAuth and mobile support
 
-Sign in via GitHub, Google, or any generic OIDC provider. Mobile sessions, device pairing, and push notifications are supported for the iOS client.
+Sign in via GitHub or Google OAuth. Mobile sessions, device pairing, and push notifications are supported for the iOS client.
 
 ### Tested and CI-enforced
 
@@ -70,7 +70,7 @@ The project ships with more than 3,800 automated tests, including integration su
 
 ### Why Rust
 
-- **High performance** -- the agent uses ~4.3 MB at cold start and ~27 MB in steady state (systemd cgroup); a production server typically runs 140–170 MB with `MALLOC_ARENA_MAX=2` set. See [Resource Usage](/en/docs/resource-usage).
+- **High performance** -- the static musl agent uses ~2.6–3.0 MiB cgroup memory in warm steady state (~11 MiB process RSS; 32 MiB minimum / 64 MiB recommended), and official Linux server builds use musl with low idle overhead. See [Resource Usage](/en/docs/resource-usage).
 - **Reliability** -- Rust's memory safety eliminates a whole class of common runtime errors.
 - **Single-binary deployment** -- the server embeds the frontend assets via `rust-embed`, so you ship one executable.
 - **Zero dependencies** -- no MySQL or Redis to install; SQLite is embedded in the binary.
@@ -99,18 +99,23 @@ All agent-to-server communication uses WebSocket with JSON-encoded messages. Ter
   <Card title="File Manager" href="/en/docs/file-manager" />
   <Card title="Ping Monitoring" href="/en/docs/ping" />
   <Card title="Firewall Blocklist" href="/en/docs/firewall" />
+  <Card title="Security Events" href="/en/docs/security-events" />
   <Card title="IP Quality" href="/en/docs/ip-quality" />
+  <Card title="Cost Insights" href="/en/docs/cost-insights" />
   <Card title="Tailscale Integration" href="/en/docs/tailscale" />
   <Card title="Capabilities" href="/en/docs/capabilities" />
   <Card title="Status Page" href="/en/docs/status-page" />
   <Card title="Custom Widgets" href="/en/docs/custom-widgets" />
   <Card title="iOS Mobile" href="/en/docs/mobile" />
+  <Card title="Push Relay Operations" href="/en/docs/push-relay" />
   <Card title="Security" href="/en/docs/security" />
   <Card title="Admin Guide" href="/en/docs/admin" />
   <Card title="API Reference" href="/en/docs/api-reference" />
+  <Card title="Resource Usage" href="/en/docs/resource-usage" />
   <Card title="Storage & Sizing" href="/en/docs/storage-sizing" />
   <Card title="Architecture" href="/en/docs/architecture" />
   <Card title="Testing & Quality" href="/en/docs/testing" />
   <Card title="Deployment" href="/en/docs/deployment" />
   <Card title="Configuration" href="/en/docs/configuration" />
+  <Card title="Troubleshooting" href="/en/docs/troubleshooting" />
 </Cards>

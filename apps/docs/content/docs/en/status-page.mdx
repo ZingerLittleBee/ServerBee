@@ -23,27 +23,29 @@ Sensitive identifiers such as IP addresses, hostnames, and interface details are
 
 Configure the page in **Settings → Status Page**. The status page is a singleton: there is one page, edited in place rather than created per slug.
 
-| Setting | API field | Description |
-|---------|-----------|-------------|
-| Enabled | `enabled` | When disabled, the public page returns no data |
-| Title | `title` | Public page title |
-| Description | `description` | Optional introductory text |
-| Servers | `server_ids` | Servers shown on the page |
-| Default layout | `default_layout` | `list` or `grid` |
-| Show server detail | `show_server_detail` | Allow drilling into a server's detail view |
-| Show network | `show_network` | Show the network quality section |
-| Show IP quality | `show_ip_quality` | Show the IP quality section |
-| Show incidents | `show_incidents` | Show the incidents section |
-| Show maintenance | `show_maintenance` | Show the maintenance section |
-| Yellow uptime threshold | `uptime_yellow_threshold` | Days below this percentage show as degraded |
-| Red uptime threshold | `uptime_red_threshold` | Days below this percentage show as a major outage |
+| Setting | API field | Default | Description |
+|---------|-----------|---------|-------------|
+| Enabled | `enabled` | `false` | When `false`, `GET /api/status/config` still returns HTTP `200` with `enabled: false`, while all other `/api/status*` endpoints return `403 Forbidden` |
+| Title | `title` | -- | Public page title |
+| Description | `description` | -- | Optional introductory text |
+| Servers | `server_ids` | `[]` | Servers shown on the page; an empty array `[]` includes all non-hidden servers. Servers with `hidden = true` are always excluded, and requesting an out-of-scope `{id}` returns `404` |
+| Default layout | `default_layout` | `"grid"` | `list` or `grid` |
+| Show server detail | `show_server_detail` | `true` | Allow drilling into a server's detail view |
+| Show network | `show_network` | `false` | Show the network quality section |
+| Show IP quality | `show_ip_quality` | `false` | Show the IP quality section |
+| Show incidents | `show_incidents` | `true` | Show the incidents section |
+| Show maintenance | `show_maintenance` | `true` | Show the maintenance section |
+| Yellow uptime threshold | `uptime_yellow_threshold` | `99.0` | Days below this percentage show as degraded |
+| Red uptime threshold | `uptime_red_threshold` | `95.0` | Days below this percentage show as a major outage |
+
+When `show_network` is enabled, public network detail opens at `/status/server/{id}?tab=network` whenever `show_server_detail` is `true`, and falls back to `/status/network/{id}` when `show_server_detail` is `false`.
 
 ### Admin API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/status-page` | Read the status page configuration |
-| PUT | `/api/status-page` | Update the status page configuration |
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| GET | `/api/status-page` | Authenticated (Admin + Member) | Read the status page configuration |
+| PUT | `/api/status-page` | Admin | Update the status page configuration |
 
 Update example:
 
@@ -66,22 +68,22 @@ Update example:
 
 ## Public API
 
-These endpoints are unauthenticated and power the public page:
+These endpoints are unauthenticated and power the public page. All `/api/status/*` endpoints enforce a per-IP rate limit of **60 requests per 60 seconds** (returning `429 Too Many Requests` when exceeded).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/status/config` | Page metadata and display options |
+| GET | `/api/status/config` | Page metadata and display options (returns HTTP `200` even when `enabled: false`) |
 | GET | `/api/status` | Selected server statuses with live metrics and uptime |
 | GET | `/api/status/servers/{id}` | Detail view for one server |
-| GET | `/api/status/servers/{id}/metrics` | Time-series metrics for one server |
+| GET | `/api/status/servers/{id}/metrics` | Time-series metrics for one server (clamped to at most **25 hours** for raw records or **120 days** for hourly records) |
 | GET | `/api/status/servers/{id}/uptime-daily` | 90-day daily uptime for one server |
 | GET | `/api/status/network` | Network quality overview |
 | GET | `/api/status/network/{id}` | Network quality detail for one server |
 | GET | `/api/status/ip-quality` | IP quality overview |
-| GET | `/api/status/incidents` | Active and recent incidents |
+| GET | `/api/status/incidents` | Active and recent incidents (`{ active, recent }`, where `recent` includes incidents resolved within the last 7 days) |
 | GET | `/api/status/maintenances` | Active and upcoming maintenance windows |
 
-Each server entry includes `id`, `name`, `group_name`, region/country, `os`, `online`, `in_maintenance`, `uptime_percent`, and `uptime_daily`.
+Each `PublicServerSummary` entry includes `id`, `name`, `group_name`, `region`, `country_code`, `os`, `online`, `in_maintenance`, `public_remark`, `metrics`, `uptime_percent`, and `uptime_daily`.
 
 ## Uptime Timeline
 

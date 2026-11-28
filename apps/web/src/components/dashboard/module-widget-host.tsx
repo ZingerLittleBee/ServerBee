@@ -1,4 +1,4 @@
-import type { ActionsHelper } from '@serverbee/widget-sdk'
+import { createActionsHelper } from '@serverbee/widget-sdk'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { DashboardCard } from '@/components/dashboard/dashboard-card'
@@ -11,12 +11,9 @@ import type { DashboardWidget } from '@/lib/widget-types'
 import { useWidgetRegistry } from '@/widgets-runtime/registry'
 
 interface ModuleWidgetHostProps {
+  isEditing?: boolean
   servers: ServerMetrics[]
   widget: DashboardWidget
-}
-
-const NOOP_ACTIONS: ActionsHelper = {
-  render: () => null
 }
 
 function Placeholder({ message }: { message: string }) {
@@ -27,7 +24,7 @@ function Placeholder({ message }: { message: string }) {
   )
 }
 
-export function ModuleWidgetHost({ widget, servers: _servers }: ModuleWidgetHostProps) {
+export function ModuleWidgetHost({ isEditing = false, widget, servers: _servers }: ModuleWidgetHostProps) {
   const { t } = useTranslation('dashboard')
   const moduleId = widget.module_id ?? ''
   const entry = useWidgetRegistry((state) => (moduleId ? state.modules.get(moduleId) : undefined))
@@ -45,6 +42,8 @@ export function ModuleWidgetHost({ widget, servers: _servers }: ModuleWidgetHost
       return { ok: false as const, error: message }
     }
   }, [entry, widget.config_json])
+
+  const actions = useMemo(() => createActionsHelper(entry?.module.actions ?? []), [entry?.module.actions])
 
   if (!moduleId) {
     return <Placeholder message={t('module_not_installed', 'Widget module not installed')} />
@@ -69,9 +68,9 @@ export function ModuleWidgetHost({ widget, servers: _servers }: ModuleWidgetHost
       <WidgetHeader title={title} />
       <ScrollArea className="min-h-0 flex-1">
         <Component
-          actions={NOOP_ACTIONS}
+          actions={actions}
           config={parsed.config}
-          isEditing={false}
+          isEditing={isEditing}
           size={{ w: widget.grid_w, h: widget.grid_h }}
         />
       </ScrollArea>

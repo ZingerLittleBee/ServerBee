@@ -74,16 +74,23 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
 
 ```bash
 sudo serverbee status
+sudo serverbee start | stop | restart [server|agent]
 sudo serverbee upgrade -y
 sudo serverbee upgrade --channel beta -y   # 显式保持预发布轨道
-sudo serverbee restart
 sudo serverbee config
+sudo serverbee config set <key> <value>
 sudo serverbee env
+sudo serverbee env set SERVERBEE_AUTH__SECURE_COOKIE true
+sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
+sudo serverbee version
+sudo serverbee help
 sudo serverbee uninstall agent -y
 ```
 
+安装脚本还支持 `--caps <list>`、`--skip-dns-check`、`--no-wait` 与 `--lang <en|zh>` 等选项；安装后校验退出码为 `0`（通过或跳过）、`1`（Server 不健康）、`75`（Agent 暂未验证通过）和 `78`（Agent 认证被拒）。脚本同时支持 macOS（`darwin` amd64/arm64）二进制下载，[GitHub Releases](https://github.com/ZingerLittleBee/ServerBee/releases) 也提供 `darwin-amd64`、`darwin-arm64` 和 `windows-amd64` 预编译二进制供手动安装。
+
 <Callout type="info">
-`install server` / `install agent` 是引导命令。如果 `/usr/local/bin` 中已经存在对应二进制，安装脚本会直接沿用现有文件而不会覆盖。向已部署主机下发新 release 二进制时，请改用 `upgrade`（或手动替换二进制）。
+`install server` / `install agent` 是引导命令。如果 `/opt/serverbee/bin` 中已经存在对应二进制（旧版 `/usr/local/bin` 布局会先自动迁移），安装脚本会直接沿用现有文件而不会覆盖。向已部署主机下发新 release 二进制时，请改用 `upgrade`（或手动替换二进制）。
 </Callout>
 
 默认 `auto` 通道会在无后缀稳定版存在时选择最新稳定版，否则回退到最新预发布版。安装器会按组件保存该策略，并在升级时复用。传 `--channel stable` 或 `--channel beta` 可显式固定轨道，也可用 `--version vX.Y.Z-beta.N` 固定精确版本。CLI 会拒绝用较旧的 SemVer 覆盖当前安装。
@@ -210,7 +217,7 @@ WorkingDirectory=/var/lib/serverbee
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/serverbee /var/log/serverbee
+ReadWritePaths=/var/lib/serverbee
 PrivateTmp=true
 
 # 资源限制
@@ -227,8 +234,8 @@ WantedBy=multi-user.target
 sudo useradd -r -s /sbin/nologin -d /var/lib/serverbee serverbee
 
 # 创建目录
-sudo mkdir -p /var/lib/serverbee /var/log/serverbee /etc/serverbee
-sudo chown serverbee:serverbee /var/lib/serverbee /var/log/serverbee
+sudo mkdir -p /var/lib/serverbee /etc/serverbee
+sudo chown serverbee:serverbee /var/lib/serverbee
 
 # 放置配置文件
 sudo cp server.toml /etc/serverbee/server.toml
@@ -238,7 +245,7 @@ sudo cp serverbee-server /usr/local/bin/
 sudo chmod +x /usr/local/bin/serverbee-server
 ```
 
-systemd 部署使用的生产 `server.toml`：
+systemd 部署使用的生产 `server.toml`（`serverbee-server` 将日志输出到 stdout/stderr，由 systemd 统一收入 `journald`）：
 
 ```toml
 [server]
@@ -247,7 +254,6 @@ data_dir = "/var/lib/serverbee"
 
 [log]
 level = "info"
-file = "/var/log/serverbee/server.log"
 ```
 
 启用并启动：
@@ -279,7 +285,9 @@ sudo systemctl status serverbee-server
 
 使用域名访问时，需要先添加 DNS `A` 或 `AAAA` 记录指向服务器，再用 Nginx、Caddy 或 Traefik 终止 HTTPS，并把请求反向代理到 ServerBee 的 `127.0.0.1:9527`。
 
-如果你是通过快速开始脚本安装的，脚本会为了 HTTP 直连写入 `auth.secure_cookie = false`。在把同一套安装切换到 HTTPS 前，请修改 `/opt/serverbee/etc/server.toml`：
+如果你是通过快速开始脚本以 HTTP 直连方式安装的，在切换到 HTTPS 前将 `auth.secure_cookie` 改回 `true` 的步骤取决于安装方式：
+
+- **二进制安装（`--method binary`）**：修改 `/opt/serverbee/etc/server.toml`（或执行 `sudo serverbee config set auth.secure_cookie true`）：
 
 ```toml
 [auth]
@@ -289,16 +297,22 @@ secure_cookie = true
 然后重启服务端：
 
 ```bash
-sudo systemctl restart serverbee-server
+sudo serverbee restart server
 ```
 
-如果 ServerBee 已经通过安装脚本部署，也可以让 CLI 自动完成 Caddy HTTPS 配置：
+- **Docker 安装（`--method docker`）**：生成的 `docker-compose.server.yml` 注入了 `SERVERBEE_AUTH__SECURE_COOKIE=false`（优先级高于 `server.toml`），且 `serverbee restart` 执行 `docker compose restart`，不会应用 Compose 环境变量修改。请执行以下命令更新环境变量并重建容器：
+
+```bash
+sudo serverbee env set SERVERBEE_AUTH__SECURE_COOKIE true
+```
+
+如果 ServerBee 已经通过安装脚本部署（二进制或 Docker 均适用），也可以让 CLI 自动完成 Caddy HTTPS 配置：
 
 ```bash
 sudo serverbee domain setup --domain monitor.example.com --email admin@example.com -y
 ```
 
-该命令会校验域名是否解析到当前服务器，安装并配置 Caddy，把 ServerBee 改为只监听 `127.0.0.1:9527`，并把 `auth.secure_cookie` 设置为 `true`。如果 DNS 还没生效，命令会停止并打印你需要添加的 `A`/`AAAA` 记录。
+该命令会校验域名是否解析到当前服务器，安装并配置 Caddy，把 ServerBee 改为只监听 `127.0.0.1:9527`，启用 `auth.secure_cookie = true`（Docker 模式会同步更新 Compose 环境变量），并重启或重建服务端。如果 DNS 还没生效，命令会停止并打印你需要添加的 `A`/`AAAA` 记录。
 
 ### Nginx
 
@@ -322,9 +336,7 @@ server {
     ssl_protocols       TLSv1.2 TLSv1.3;
     ssl_ciphers         HIGH:!aNULL:!MD5;
 
-    # 安全响应头
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
+    # ServerBee 已在所有响应上统一设置 X-Frame-Options: DENY 和 X-Content-Type-Options: nosniff。
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
     location / {
@@ -618,7 +630,7 @@ ServerBee 面向轻量级 VPS 实例设计：
 | 服务端内存 | 128 MB | 256 MB |
 | 服务端磁盘 | 100 MB + 数据 | 1 GB+（取决于保留策略） |
 | Agent CPU | 可忽略 | < 单核的 1% |
-| Agent 内存 | 实测稳态 cgroup 约 27 MB | 30–40 MB 余量 |
+| Agent 内存 | 32 MiB（热缓存约 2.6–3.0 MiB / 冷缓存约 19–21 MiB cgroup；VmRSS 约 11 MiB） | 64 MiB（开启 Web 终端或 >500 进程时推荐 128 MiB） |
 
 数据库大小取决于服务器数量、启用的数据写入功能、采样间隔和保留设置。请使用[存储与容量规划](/zh/docs/storage-sizing)中的实测 30 天基线、功能乘数和 WAL 预留建议，避免混用不同保留窗口的粗略估算。
 

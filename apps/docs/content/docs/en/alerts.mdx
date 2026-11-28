@@ -8,26 +8,25 @@ ServerBee includes a flexible alerting system that evaluates metric thresholds a
 
 ## How Alerts Work
 
-A background task evaluates all enabled rules every 60 seconds:
+A background task evaluates all enabled polling rules every 60 seconds:
 
 1. Resolve which servers each rule covers.
 2. Check whether the rule's conditions are met for each covered server.
-3. Send a notification when a rule triggers (subject to debounce).
-4. Clear the alert state when a previously triggered rule recovers.
+3. Send a notification (`event: "triggered"`) when a rule triggers (subject to debounce).
+4. Clear the alert state and send a recovery notification (`event: "resolved"`) when a previously triggered rule recovers.
 
-Alert state is persisted in the database and survives server restarts. Event-driven rules (IP change, SSH login, brute-force, port scan, temporary capability grant) are evaluated when an agent reports the event, not on the 60-second cycle.
+Alert state is persisted in the database and survives server restarts. Event-driven rules (`ip_changed`, `ssh_new_ip_login`, `ssh_brute_force_detected`, `port_scan_detected`, `capability_grant_detected`) are evaluated when an agent reports the event, not on the 60-second cycle.
 
 ## Creating Alert Rules
 
 An alert rule consists of:
 
 - **Name** -- A descriptive label.
-- **Rules** -- One or more metric conditions. All conditions must be true simultaneously (AND logic).
-- **Trigger mode** -- `always` (repeat with debounce) or `once` (notify only on the first trigger).
+- **Rules** -- One or more condition items. For polling metric rules, all conditions must be true simultaneously (AND logic). Security-event items (`ssh_new_ip_login`, `ssh_brute_force_detected`, `port_scan_detected`) cannot be mixed with non-security items, and at most one security item is allowed per rule.
+- **Trigger mode** -- `always` (repeat with 5-minute debounce) or `once` (notify only on the first trigger). Ignored by security-event rules, which use per-source deduplication instead.
 - **Cover type** -- Which servers the rule applies to.
-- **Notification group** -- Where notifications are sent.
-- **Trigger/recover tasks** -- Optional. Remote commands run automatically when the rule triggers or recovers.
-- **Block source IP** -- Optional. For security-event rules, automatically instructs the agent's firewall to block the offending source IP when the rule triggers.
+- **Notification group** -- Optional. Where notifications are sent.
+- **Block source IP** -- Optional (`actions` with `type: "block_source_ip"`). For `ssh_brute_force_detected` and `port_scan_detected` rules, automatically instructs targeted agents' firewalls to block the offending source IP when the rule matches.
 
 ## Supported Metric Types
 
@@ -60,14 +59,16 @@ Used to monitor cumulative traffic over a time window:
 | `transfer_out_cycle` | Outbound traffic accumulated per cycle |
 | `transfer_all_cycle` | Combined inbound + outbound traffic per cycle |
 
-Cycle options: `hour` / `day` / `week` / `month` / `year`
+Cycle options: `hour` / `day` / `week` / `month` / `year` / `billing` (where `billing` uses each server's configured `billing_cycle` and `billing_start_day`; note that the Web UI rule form currently omits `billing`, so configure it via the REST API).
 
 ### Network Quality
 
+Evaluates [Network Quality Monitoring](/en/docs/monitoring#network-quality-monitoring) probe records (`network_probe_record`), not Ping tasks:
+
 | Rule Type | Description |
 |-----------|-------------|
-| `network_latency` | Triggers when average probe latency (ms) exceeds the threshold |
-| `network_packet_loss` | Triggers when the packet loss percentage exceeds the threshold |
+| `network_latency` | Triggers when the maximum (`MAX`) probe latency (ms) across all probe targets over the last 10 minutes meets the threshold |
+| `network_packet_loss` | Triggers when the maximum (`MAX`) probe packet loss percentage (`0`–`100`) across all probe targets over the last 10 minutes meets the threshold |
 
 ### Offline, Expiration & Events
 
@@ -76,12 +77,16 @@ Cycle options: `hour` / `day` / `week` / `month` / `year`
 | `offline` | Triggers when the server has been offline for `duration` seconds |
 | `expiration` | Triggers when `expired_at` is within `duration` days |
 | `ip_changed` | Event-driven; triggers when the agent reports an IP change event (not part of the 60-second cycle) |
-| `ssh_login_detected` | Event-driven; successful SSH login. Supports `first_seen_only` filter. See [Security Events](/en/docs/security-events) |
-| `ssh_brute_force_detected` | Event-driven; SSH brute-force burst. Supports `severity_min` (medium/high/critical) and `exclude_cidrs` |
-| `port_scan_detected` | Event-driven; port scan from a single source IP. Supports `severity_min` and `exclude_cidrs` |
+| `ssh_new_ip_login` | Event-driven; fires on a successful SSH login from a first-seen source IP (`first_seen == true`, always enforced). Supports `security.exclude_users`, `security.exclude_cidrs`, and `security.dedupe_window_seconds`. See [Security Events](/en/docs/security-events) |
+| `ssh_brute_force_detected` | Event-driven; SSH brute-force burst. Supports `security.min_failed_count` and `security.dedupe_window_seconds` |
+| `port_scan_detected` | Event-driven; port scan from a single source IP. Supports `security.min_distinct_ports` and `security.dedupe_window_seconds` |
 | `capability_grant_detected` | Event-driven; fires when a high-risk capability (`terminal` / `exec` / `file` / `docker`) is **temporarily granted** on a server via the host-local `serverbee-agent grant` CLI. Expiry, revoke, and low-risk grants are audited but do not alert. See [Capabilities → Temporary grants](/en/docs/capabilities#temporary-grants) |
 
-The Alerts page offers a one-click **preset card** for `capability_grant_detected` ("Capability Temporarily Granted") with sensible defaults; the rule type is also selectable directly in the rule editor. It carries no `severity_min` / `exclude_cidrs` filters and no auto-block action — it fires on any high-risk temporary grant — but it follows the same cover-type and maintenance-suppression behavior as the other event-driven rules.
+<Callout type="info">
+**Settings → Alerts** provides one-click preset cards (`SecurityAlertPresets`) for creating the three security alert rules (`ssh_new_ip_login`, `ssh_brute_force_detected`, `port_scan_detected`) with sensible defaults (see [Security Events](/en/docs/security-events)). The manual rule-type dropdown does not expose those three types, so custom creation or editing outside the presets uses the Alert Rules REST API (`POST /api/alert-rules` / `PUT /api/alert-rules/{id}`).
+</Callout>
+
+The Alerts page offers a one-click **preset card** for `capability_grant_detected` ("Capability Temporarily Granted") with sensible defaults; the rule type is also selectable directly in the rule editor. It carries no `security` filter parameters and no auto-block action -- it fires on any high-risk temporary grant -- but it follows the same cover-type and maintenance-suppression behavior as the other event-driven rules.
 
 ## Threshold Configuration
 
@@ -94,15 +99,25 @@ Each rule item supports these fields:
   "max": null,
   "duration": null,
   "cycle_interval": null,
-  "cycle_limit": null
+  "cycle_limit": null,
+  "security": null
 }
 ```
 
-- **`min`** -- Lower bound. For most metrics, the alert triggers when the value is at or above this threshold.
-- **`max`** -- Upper bound. When both `min` and `max` are set, the alert triggers when the value falls within the range.
+- **`min`** -- Lower threshold. When only `min` is set, the alert triggers when `value >= min`.
+- **`max`** -- When only `max` is set (`min` omitted), the alert triggers when `value >= max`. When both `min` and `max` are set, `max` acts as an upper bound and the alert triggers when the value falls within `[min, max]` (`min <= value <= max`).
 - **`duration`** -- Used by `offline` (seconds before triggering) and `expiration` (days threshold).
-- **`cycle_interval`** -- Time window for transfer cycle rules: `hour`, `day`, `week`, `month`, `year`.
+- **`cycle_interval`** -- Time window for transfer cycle rules: `hour`, `day`, `week`, `month`, `year`, or `billing`.
 - **`cycle_limit`** -- Traffic limit in bytes for transfer cycle rules.
+- **`security`** -- Optional `SecurityRuleParams` object used only by the three security-event rule types (ignored by metric rules):
+
+| Parameter | Applicable Rule Types | Default | Description |
+|-----------|-----------------------|---------|-------------|
+| `min_failed_count` | `ssh_brute_force_detected` | `null` | Minimum failed SSH attempts required to trigger |
+| `min_distinct_ports` | `port_scan_detected` | `null` | Minimum distinct probed ports required to trigger |
+| `exclude_users` | `ssh_new_ip_login` | `[]` | Usernames excluded from alerting |
+| `exclude_cidrs` | `ssh_new_ip_login` | `[]` | Source IP CIDR ranges excluded from alerting |
+| `dedupe_window_seconds` | All 3 security rule types | `600` | Per-`(rule_id, server_id, source_ip)` notification deduplication window in seconds |
 
 ### Examples
 
@@ -135,7 +150,19 @@ Each rule item supports these fields:
 { "rule_type": "expiration", "duration": 7 }
 ```
 
-**Multiple conditions (AND logic):** a rule with several conditions triggers only when all of them hold. The following fires when CPU usage is at or above 90% *and* memory usage is at or above 8 GB:
+**SSH login from a new IP (excluding office CIDR and `deploy` user):**
+```json
+{
+  "rule_type": "ssh_new_ip_login",
+  "security": {
+    "exclude_users": ["deploy"],
+    "exclude_cidrs": ["203.0.113.0/24"],
+    "dedupe_window_seconds": 600
+  }
+}
+```
+
+**Multiple conditions (AND logic):** a polling rule with several conditions triggers only when all of them hold. The following fires when CPU usage is at or above 90% *and* memory usage is at or above 8 GB:
 ```json
 [
   { "rule_type": "cpu", "min": 90.0 },
@@ -152,6 +179,8 @@ For resource threshold alerts (CPU, memory, disk, load, etc.), ServerBee does no
 3. The alert triggers only if **70% or more** of the samples exceed the threshold (at least 7 of 10).
 
 This prevents false positives from brief, transient spikes.
+
+For `network_latency` and `network_packet_loss` rules, ServerBee does **not** use the 70% sample model. Instead, it evaluates the single worst (`MAX`) latency or packet-loss percentage recorded across all of the server's Network Quality probe targets during the **last 10 minutes**.
 
 ## Cover Types
 
@@ -175,6 +204,10 @@ Each alert rule specifies which servers it applies to:
 - Sends a notification only on the **first trigger**.
 - No further notifications are sent until the condition recovers and triggers again.
 
+### Security Rule Deduplication
+
+Security-event rules (`ssh_new_ip_login`, `ssh_brute_force_detected`, `port_scan_detected`) ignore `trigger_mode` and the 5-minute polling debounce. Instead, notifications are deduplicated per `(rule_id, server_id, source_ip)` tuple using `security.dedupe_window_seconds` (default **600 seconds**).
+
 ### Renewal Expiration Reminders
 
 For a server with a stored renewal occurrence, an expiration rule in `once` mode sends at most one reminder for each rule, server and occurrence. A new monthly deadline can therefore send its own reminder even when a 60-day window stays continuously true. Retries, Server restart and disabling automatic tracking do not resend the same occurrence.
@@ -192,10 +225,10 @@ Trigger state is persisted to the `alert_states` table in SQLite and loaded into
 
 ### Recovery
 
-When a previously triggered alert recovers (the condition is no longer met):
+When a previously triggered polling alert recovers (the condition is no longer met):
 
 1. The alert is marked as recovered, and its state is cleared in both the in-memory cache and the database.
-2. If recover tasks (`recover_trigger_tasks`) are configured, the corresponding remote commands run.
+2. A recovery notification is dispatched to the linked notification group with `event: "resolved"`.
 3. If the condition triggers again later, notifications fire according to the trigger mode.
 
 ## Maintenance Suppression
@@ -204,7 +237,20 @@ Alert notifications are suppressed while the affected server is in an active mai
 
 ## Blocking Source IPs
 
-Security-event rules (`ssh_brute_force_detected`, `port_scan_detected`) can enable **Block source IP**. When the rule triggers, ServerBee tells the affected agent's firewall to block the offending IP, turning detection into automatic mitigation. This requires the agent to have the `firewall_block` capability (`CAP_FIREWALL_BLOCK`), which is on by default but can be disabled on the agent host via `[capabilities]`. See [Security Events](/en/docs/security-events) and [Firewall](/en/docs/firewall).
+Security-event rules whose payloads carry a `source_ip` (`ssh_brute_force_detected`, `port_scan_detected`) can attach at most one `block_source_ip` action in `actions`:
+
+```json
+{
+  "type": "block_source_ip",
+  "cover_type": "all",
+  "server_ids_json": null,
+  "comment": "Auto-blocked by alert rule"
+}
+```
+
+- **Target scope**: `cover_type` (`all`, `include`, or `exclude`, defaulting to `all`) and optional `server_ids_json` control which servers receive the firewall block rule, allowing an attack detected on one host to be blocked fleet-wide or on a selected subset.
+- **Execution independent of notifications**: Source IP blocking runs on every matching event, even when notification delivery is suppressed by `dedupe_window_seconds` or when no notification group is attached to the rule.
+- **Agent capability**: Blocking requires each target agent to report the `firewall_block` capability (`CAP_FIREWALL_BLOCK`), which is on by default and can be disabled on the agent host via `[capabilities]`; the server cannot toggle it. See [Security Events](/en/docs/security-events) and [Firewall](/en/docs/firewall).
 
 ## Notification Channels
 
@@ -265,11 +311,11 @@ Channel config:
 }
 ```
 
-`to` is an array — a single channel can deliver to multiple recipients in one API call. The subject follows the format `[ServerBee] {server_name} {event}`; the body is HTML with a plain-text fallback.
+`to` is an array -- a single channel can deliver to multiple recipients in one API call. The subject follows the format `[ServerBee] {server_name} {event}`; the body is HTML with a plain-text fallback.
 
 ### APNs
 
-Send native Apple Push Notification service pushes to registered mobile devices.
+Send direct Apple Push Notification service pushes using your own Apple Developer credentials.
 
 ```json
 {
@@ -283,6 +329,10 @@ Send native Apple Push Notification service pushes to registered mobile devices.
 
 APNs requires an Apple developer key, team ID, bundle ID, and private key. Set `sandbox: true` only for development builds.
 
+### Authenticated Mobile Alert Push (Push Relay)
+
+Independent of manually configured `apns` notification channels, ServerBee automatically enqueues encrypted mobile alert pushes through the [Push Relay](/en/docs/push-relay) on alert rule state transitions for paired iOS installations that have mobile push enabled. You do not need to create an `apns` channel or link a notification group for paired iOS devices to receive these pushes. See [iOS Mobile Companion](/en/docs/mobile).
+
 ### Template Variables
 
 Notification messages support the following template variables:
@@ -292,31 +342,33 @@ Notification messages support the following template variables:
 | `{{server_name}}` | Name of the affected server |
 | `{{server_id}}` | Unique ID of the affected server |
 | `{{rule_name}}` | Name of the triggered alert rule |
-| `{{event}}` | Event type (e.g., "triggered") |
+| `{{event}}` | Event type (e.g., `"triggered"`, `"resolved"`) |
 | `{{message}}` | Human-readable alert message |
 | `{{time}}` | Timestamp of the event (UTC) |
-| `{{cpu}}` | Current CPU usage string |
-| `{{memory}}` | Current memory usage string |
+| `{{cpu}}` | Populated only in test notifications (`POST /api/notifications/{id}/test`); empty in live alert notifications |
+| `{{memory}}` | Populated only in test notifications (`POST /api/notifications/{id}/test`); empty in live alert notifications |
 
 The default notification template is:
 
-```
+```text
 [ServerBee] {{server_name}} {{event}}
 {{message}}
-Time: {{time}}
+时间: {{time}}
 ```
+
+Webhook, Telegram, and Bark use the default template above (`时间: {{time}}`), while Email and APNs format the timestamp line with `Time: {{time}}`.
 
 ### Testing a Channel
 
 After creating a channel, verify its configuration with the test endpoint:
 
-```
-POST /api/notifications/:id/test
+```text
+POST /api/notifications/{id}/test
 ```
 
 ## Notification Groups
 
-Notification channels are organized into **groups**. An alert rule is linked to a notification group, and when the rule triggers, all enabled channels in the group are dispatched.
+Notification channels are organized into **groups**. An alert rule is linked to a notification group, and when the rule triggers or recovers, all enabled channels in the group are dispatched.
 
 This allows you to:
 
@@ -332,6 +384,30 @@ Offline status is determined by a dedicated background task and works together w
 - A server is marked offline when its last report is more than 30 seconds old.
 - The `offline` rule's `duration` sets how many seconds a server must stay offline before the alert fires. For example, `{ "rule_type": "offline", "duration": 60 }` triggers after 60 seconds offline.
 
+## REST API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/alert-rules` | List all alert rules (admin) |
+| POST | `/api/alert-rules` | Create an alert rule (admin) |
+| GET | `/api/alert-rules/{id}` | Get alert rule details (admin) |
+| PUT | `/api/alert-rules/{id}` | Update an alert rule (admin) |
+| DELETE | `/api/alert-rules/{id}` | Delete an alert rule (admin) |
+| GET | `/api/alert-rules/{id}/states` | List active/recent states for a rule (admin) |
+| GET | `/api/alert-events` | List recent alert events (`?limit=20`) |
+| GET | `/api/alert-events/{alert_key}` | Get detail for a single alert event |
+| GET | `/api/notifications` | List notification channels (admin) |
+| POST | `/api/notifications` | Create a notification channel (admin) |
+| GET | `/api/notifications/{id}` | Get notification channel details (admin) |
+| PUT | `/api/notifications/{id}` | Update a notification channel (admin) |
+| DELETE | `/api/notifications/{id}` | Delete a notification channel (admin) |
+| POST | `/api/notifications/{id}/test` | Send a test notification (admin) |
+| GET | `/api/notification-groups` | List notification groups (admin) |
+| POST | `/api/notification-groups` | Create a notification group (admin) |
+| GET | `/api/notification-groups/{id}` | Get notification group details (admin) |
+| PUT | `/api/notification-groups/{id}` | Update a notification group (admin) |
+| DELETE | `/api/notification-groups/{id}` | Delete a notification group (admin) |
+
 ## Example: Complete Alert Setup
 
 Here is a typical setup for monitoring CPU usage across all servers with Telegram notifications:
@@ -345,7 +421,7 @@ Here is a typical setup for monitoring CPU usage across all servers with Telegra
    - Cover type: `all`
    - Notification group: (the group you created)
 
-Now, when any server's CPU stays above 90% for at least 70% of a 10-minute sampling window, you will receive a Telegram message. Subsequent notifications are debounced to once every 5 minutes while the condition persists.
+Now, when any server's CPU stays above 90% for at least 70% of a 10-minute sampling window, you will receive a Telegram message. Subsequent notifications are debounced to once every 5 minutes while the condition persists, and a `resolved` notification is sent when CPU returns below the threshold.
 
 <Cards>
   <Card title="Security Events" href="/en/docs/security-events" />

@@ -30,7 +30,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
-安装布局：二进制在 `/opt/serverbee/bin/`，配置在 `/opt/serverbee/etc/agent.toml`，管理 CLI 软链为 `/usr/local/bin/serverbee`。
+安装布局：二进制在 `/opt/serverbee/bin/`，配置在 `/opt/serverbee/etc/agent.toml`，管理 CLI 软链为 `/usr/local/bin/serverbee`。常用可选参数包括 `--caps <列表>`（预置初始能力，例如 `--caps terminal,file`）与 `--no-wait`（跳过安装后的连接验证等待）。
 
 安装完成后，使用 `serverbee` CLI 管理 Agent（安装时自动部署）：
 
@@ -173,14 +173,15 @@ Agent 完成 claim 后便不再使用注册码。替换或重装时使用「Agen
 
 ## 配置文件
 
-Agent 按以下顺序读取 TOML 配置文件：
+Agent 按以下顺序合并配置，后面的来源会覆盖前面的来源：
 
-1. `/etc/serverbee/agent.toml`（系统级，优先）
-2. `agent.toml`（工作目录）
-3. 带 `SERVERBEE_` 前缀的环境变量
+1. 内置默认值
+2. `/etc/serverbee/agent.toml`
+3. 工作目录下的 `agent.toml`（覆盖 `/etc/serverbee/agent.toml`；持久化 run token 时也会优先写入本地 `agent.toml`）
+4. 带 `SERVERBEE_` 前缀的环境变量
 
 <Callout type="info">
-通过安装脚本部署时，配置文件位于 `/opt/serverbee/etc/agent.toml`（`/etc/serverbee` 为旧版布局，脚本会自动迁移）。
+通过安装脚本部署时，systemd 单元会将 `WorkingDirectory` 设为 `/opt/serverbee/etc`，因此托管服务加载并持久化 `/opt/serverbee/etc/agent.toml`（`/etc/serverbee` 为旧版布局，脚本会自动迁移）。
 </Callout>
 
 下面是首次连接所需的最小 `agent.toml`。[配置参考](/zh/docs/configuration)才是 `file`、`capabilities`、`security`、`ip_change`、`upgrade` 等分组的权威完整列表：
@@ -200,8 +201,7 @@ enable_gpu = false             # 启用 NVIDIA GPU 监控（需要启用 GPU 特
 enable_temperature = true      # 启用温度传感器监控
 
 [log]
-level = "info"                 # 日志级别：trace、debug、info、warn、error
-file = ""                      # 日志文件路径（留空仅输出到 stdout）
+level = "info"                 # 日志级别：trace、debug、info、warn、error（输出到 stdout）
 ```
 
 | 配置项 | 类型 | 默认值 | 说明 |
@@ -211,8 +211,7 @@ file = ""                      # 日志文件路径（留空仅输出到 stdout�
 | `token` | string | Agent 生成 | Agent 在 claim 前原子写入的 run token；Server 仅保存哈希 |
 | `collector.enable_gpu` | bool | `false` | 是否启用 GPU 指标采集 |
 | `collector.enable_temperature` | bool | `true` | 是否启用温度采集 |
-| `log.level` | string | `"info"` | 日志级别 |
-| `log.file` | string | `""` | 日志文件路径（留空仅输出到 stdout） |
+| `log.level` | string | `"info"` | 日志级别（输出到 stdout，`RUST_LOG` 优先级更高） |
 
 ### 环境变量
 
@@ -235,11 +234,18 @@ Server 当前在 `Welcome` 消息中下发 3 秒的 `report_interval`，Agent �
 ```bash
 serverbee-agent --allow-cap terminal --allow-cap exec
 serverbee-agent --deny-cap ping_http
+serverbee-agent --release-repo https://mirror.example.com/serverbee/releases
+
+# 在 Agent 主机上使用的一次性临时能力授予子命令：
+serverbee-agent grant terminal --for 30m --reason "debugging"
+serverbee-agent revoke terminal
+serverbee-agent grants
 ```
 
 - 默认集合为 `upgrade`、`ping_icmp`、`ping_tcp`、`ping_http`、`security_events`、`firewall_block`、`ip_quality`、`tailscale`
 - 高风险能力（`terminal`、`exec`、`file`、`docker`）默认关闭
 - `--deny-cap` 优先级高于 `--allow-cap`
+- `--release-repo` 可在不修改 `agent.toml` 的情况下覆盖 `[upgrade] release_repo_url` 固定升级源
 
 Server 只镜像上报结果，并拒绝集合之外的请求。Server 没有能力开关，不能开启或进一步配置 Agent 的集合。详见[功能开关](/zh/docs/capabilities)。
 
@@ -289,8 +295,10 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/serverbee-agent
+Environment=SERVERBEE_SUPERVISED=1
 Restart=always
 RestartSec=5
+RestartPreventExitStatus=78
 User=root
 WorkingDirectory=/etc/serverbee
 AmbientCapabilities=CAP_NET_RAW
@@ -303,7 +311,7 @@ CPUQuota=10%
 WantedBy=multi-user.target
 ```
 
-`AmbientCapabilities=CAP_NET_RAW` 是 ICMP Ping 探测所需的权限；不需要 ICMP 探测可移除此行。
+`Environment=SERVERBEE_SUPERVISED=1` 告知自升级器在升级或回滚时直接退出并交由 systemd 重启服务。`RestartPreventExitStatus=78` 会在注册码被永久拒绝（无效、过期或已使用）时阻止反复重启，避免无谓消耗注册速率限制。`AmbientCapabilities=CAP_NET_RAW` 是 ICMP Ping 探测所需的权限；不需要 ICMP 探测可移除此行。
 
 然后启用并启动服务：
 
@@ -329,21 +337,22 @@ Agent 需以 root 运行才能访问全部系统指标（温度传感器、进�
 | 平台 | 支持级别 | 说明 |
 |------|----------|------|
 | Linux (amd64/arm64) | 完整支持 | 主要目标平台，所有功能可用 |
-| macOS (amd64/arm64) | 完整支持 | 适用于开发和测试 |
-| Windows (amd64) | 基本支持 | TCP/UDP 连接数采集走不同代码路径 |
-| FreeBSD | 基本支持 | `sysinfo` 对 FreeBSD 的支持有限 |
+| macOS (amd64/arm64) | 部分支持 | 适用于开发和测试；TCP/UDP 连接数恒上报 `0`，且不支持 Linux 安全事件检测与 nftables 防火墙 |
+| Windows (amd64) | 基本支持 | TCP/UDP 连接数通过 `netstat` 采集；不支持 Linux 安全事件检测与 nftables 防火墙 |
+| FreeBSD | 基本支持 | `sysinfo` 支持有限；TCP/UDP 连接数恒上报 `0`，且不支持 Linux 安全事件检测与 nftables 防火墙 |
 
 ## 自动更新
 
 Server 可以向在线 Agent 推送升级命令。触发升级时：
 
 1. Server 发送 `Upgrade` 消息，包含目标版本和任务 ID
-2. Agent 根据本地 `[upgrade] release_repo_url` 固定源推导二进制及 checksum URL
-3. Agent 使用 `sha256sums.txt` 校验下载的二进制
-4. 预检探针会执行候选二进制，并要求其报告的内置版本与目标版本一致
-5. Agent 持久化升级事务，将当前二进制复制为 `.bak`，再原子替换候选版本
-6. systemd/OpenRC 负责重启服务；若 Agent 由手动启动，旧进程会启动并监控候选进程，直到其通过健康检查
-7. 候选版本必须在 90 秒内重新连接并发送 `SystemInfo`，随后继续通过五秒稳定窗口。若进程退出或未通过任一检查，Agent 会恢复 `.bak`、重启旧版本，并在重新连接后上报升级失败
+2. Agent 执行严格的 SemVer 防降级校验，拒绝任何不严格大于当前运行版本的目标版本
+3. Agent 根据本地 `[upgrade] release_repo_url` 固定源推导二进制及 checksum URL
+4. Agent 使用 `sha256sums.txt` 校验下载的二进制
+5. 预检探针会执行候选二进制，并要求其报告的内置版本与目标版本一致
+6. Agent 持久化升级事务，将当前二进制复制为 `.bak`，再原子替换候选版本
+7. systemd/OpenRC 负责重启服务；若 Agent 由手动启动，旧进程会启动并监控候选进程，直到其通过健康检查
+8. 候选版本必须在 90 秒内重新连接并发送 `SystemInfo`，随后继续通过五秒稳定窗口。若进程退出或未通过任一检查，Agent 会恢复 `.bak`、重启旧版本，并在重新连接后上报升级失败
 
 管理员可以在 Dashboard 的服务器详情页触发升级，也可以通过 API：
 
@@ -366,8 +375,8 @@ curl -X POST https://your-server/api/servers/{id}/upgrade \
 
 Agent 与 Server 之间维持一条持久 WebSocket 连接。连接断开后会自动重连：
 
-- **指数退避**：从 1 秒起步（1s → 2s → 4s → 8s → 16s → 30s 上限）
-- **随机抖动**：每次退避增加 +/-20% 的随机偏移，避免大量 Agent 同时重连造成雷群效应
+- **指数退避**：异常断线时从 1 秒起步（1s → 2s → 4s → 8s → 16s → 30s 上限），每次退避增加 +/-20% 随机抖动，避免大量 Agent 同时重连造成雷群效应
+- **正常断连抖动**：正常关闭连接（如 Server 优雅重启）时，采用 `1.0–8.0s` 均匀随机延迟重连
 - **重连恢复**：重连成功后退避重置为 1 秒，并自动重新上报 `SystemInfo`
 - **心跳检测**：Server 每 30 秒发送一次 Ping，Agent 回复 Pong；超过 30 秒无上报即判定为离线
 
@@ -376,7 +385,7 @@ Agent 与 Server 之间维持一条持久 WebSocket 连接。连接断开后会�
 1. Server 发送 `Welcome` 消息，包含分配的 `server_id` 和 `report_interval`
 2. Agent 发送 `SystemInfo`（CPU 型号、核心数、架构、操作系统、内核、内存、磁盘、IP 地址、虚拟化类型、Agent 版本）
 3. Server 以 `Ack` 确认
-4. Server 同步所有已分配的 Ping 任务
+4. Server 同步并对齐已分配的 Ping 任务、网络探测、IP 质量检测服务和防火墙黑名单
 5. Agent 开始周期性指标上报循环
 
 ## 采集指标详情
@@ -388,10 +397,11 @@ Agent 采集以下指标（来源于 `sysinfo` 库、Linux 下的 `/proc`，以�
 | CPU | `cpu`（使用率 %）、型号、核心数、架构 | `sysinfo::System` |
 | 内存 | `mem_used`、`swap_used`（字节） | `sysinfo::System` |
 | 磁盘 | `disk_used`（字节） | `sysinfo::Disks` |
+| 磁盘 I/O | `disk_io`（单设备读写字节/秒） | `/proc/diskstats`（Linux）、`sysinfo::Disks`（非 Linux）+ 差值计算 |
 | 网络 | `net_in_speed` / `net_out_speed`、`net_in_transfer` / `net_out_transfer`（字节） | `sysinfo::Networks` + 差值计算 |
 | 负载 | `load1` / `load5` / `load15` | `sysinfo::System::load_average()` |
-| 连接数 | `tcp_conn` / `udp_conn` | `/proc/net/tcp`（Linux） |
-| 进程 | `process_count` | `sysinfo::System::processes()` |
+| 连接数 | `tcp_conn` / `udp_conn` | `/proc/net/{tcp,udp}{,6}`（Linux）、`netstat`（Windows） |
+| 进程 | `process_count` | Linux 直接扫描 `/proc` 数字目录，非 Linux 使用 `sysinfo::System::processes()` |
 | 运行时间 | `uptime`（秒） | `sysinfo::System` |
 | 温度 | `temperature`（°C，可选） | `sysinfo::Components` |
 | GPU | `gpu`（利用率、显存、温度，可选） | `nvml-wrapper` |

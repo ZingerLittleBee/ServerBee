@@ -14,15 +14,22 @@ icon: Smartphone
 
 每安装密钥保密时，AES-256-GCM 保护业务内容及已认证身份，不认证公开 Relay 调用方。原始 APNs alert 使用固定通用文字，因为 Notification Service Extension 可能失败或超时；无效密文不保证静默丢弃。应用拒绝无效或旧账号导航。
 
-防护包括严格字段与大小限制、解析前的流式读取硬上限、读取/发送期限、固定 APNs 主机/topic/环境允许列表、有界并发、来源与目标 Map 容量硬上限，以及 isolate 整体请求上限。限流状态仅在各 Worker isolate 内尽力生效，会随重启清除且可独立扩容，不是全局费用预算、精确全局限流、重放数据库或抗拒绝服务保证。部署前单独确认平台限制与账户费用控制，不假定付费方案或 WAF 功能已具备。
+内置防护措施（仅保存在各 Worker isolate 的易失内存中）：
+
+- **请求体与上传期限**：在完整读取与 JSON 解析前强制 `8192` 字节（8 KiB）流式请求上限，以及 `5s` 整体上传期限。
+- **字段与 APNs 上限**：`device_token` 为 `2–1024` 位小写十六进制字符（偶数长度），`envelope.identity` 为 `64` 位小写十六进制字符，解码后 `ciphertext` 为 `16–2070` 字节，APNs 载荷与服务商响应体上限均为 `4096` 字节，APNs 请求期限为 `10s`。
+- **固定 APNs 允许列表**：仅允许 `api.sandbox.push.apple.com` 与 `api.push.apple.com`，由部署固定 `APNS_TOPIC` 及可选 `APNS_ENVIRONMENTS`。
+- **并发与单 isolate 限流**：最多 `32` 个并发处理中的请求；按 `CF-Connecting-IP` 每分钟 `120` 次；按 `environment:device_token` 每分钟 `60` 次；单 isolate 每分钟 `600` 次；来源与目标限流 Map 均设 `4096` 条容量硬上限（满载时拒绝新键，不淘汰活跃记录）。
+
+限流状态仅在各 Worker isolate 内尽力生效，会随重启清除且可独立扩容，不是全局费用预算、精确全局限流、重放数据库或抗拒绝服务保证。部署前单独确认平台限制与账户费用控制，不假定付费方案或 WAF 功能已具备。
 
 ## Cloudflare 快速设置
 
-使用独立 ServerBee Worker 和合成测试数据，与 Heeler、生产服务隔离。记录准确版本、签名构建、APNs 环境和 UTC 时间。
+使用独立 ServerBee Worker 和合成测试数据，与生产及其他无关服务隔离。记录准确版本、签名构建、APNs 环境和 UTC 时间。
 
 1. 使用仓库声明的 Bun 版本和 Node 24 安装锁定的开发依赖。生产代码使用 Web API、WebCrypto 和 fetch；Bun 仅为工具，不是部署运行时。
-2. 检查 `apps/push-relay/wrangler.jsonc`。选择独立 Worker 名称，固定 `APNS_TOPIC`、`APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_ENVIRONMENTS`。官方 topic 为 `app.serverbee`，必须与主应用 bundle 标识一致，不能使用扩展标识 `app.serverbee.notifications`。可选环境允许列表为 `sandbox`、`production` 或逗号分隔两者；省略时允许两者。
-3. 将发布者 PKCS#8 P-256 PEM 内容配置为 Worker secret `APNS_PRIVATE_KEY`。使用已授权的安全凭据输入流程，不写入 Git、公开变量、应用或 Server。Worker 不使用 PEM 文件路径。
+2. 检查 `apps/push-relay/wrangler.jsonc`。选择独立 Worker 名称，在 `compatibility_flags` 中保留 `enable_request_signal`（必需项，用于把入站取消信号接入上传/APNs 超时与清理；仅设置 compatibility date 不会启用），并在 `vars` 中设置 `APNS_TOPIC` 与 `APNS_ENVIRONMENTS`。官方 topic 为 `app.serverbee`，必须与主应用 bundle 标识一致，不能使用扩展标识 `app.serverbee.notifications`。可选环境允许列表为 `sandbox`、`production` 或 `sandbox,production`（默认）；省略时允许两者。
+3. 参考 `apps/push-relay/README.md`，通过 `wrangler secret put` 配置 `APNS_TEAM_ID`、`APNS_KEY_ID` 和 `APNS_PRIVATE_KEY`。Team ID 与 Key ID 均须为 10 位大写 `[A-Z0-9]` 字符，也可作为普通 Wrangler 变量提供；而保存发布者 PKCS#8 P-256 PEM 内容的 `APNS_PRIVATE_KEY` 必须始终作为 Worker secret 保存。严禁将私钥写入 Git、公开变量、应用或 Server。Worker 不使用 PEM 文件路径。
 4. 按 `apps/push-relay/README.md` 运行类型检查、Workers 运行时测试与部署 dry run。dry run 仅在本地打包，不验证 Apple 凭据，也不执行部署。
 5. 另行授权后才能部署，然后将 Server 的 `SERVERBEE_PUSH_RELAY__URL` 设置为最终 HTTPS Worker 地址。应用也应使用最终 HTTPS Server 地址，含密钥的 Server 请求拒绝重定向。
 6. 使用签名应用完成下方真机验收。注册成功或 APNs 回执不证明手机展示。
@@ -32,17 +39,28 @@ icon: Smartphone
 | 所有者 | 配置 |
 | --- | --- |
 | 自托管 Server | `SERVERBEE_PUSH_RELAY__URL` 或 `[push_relay].url`；加密持久 outbox 和接收方/会话/注册版本检查 |
-| Worker 变量 | `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_TOPIC`、`APNS_ENVIRONMENTS` |
-| Worker secret | `APNS_PRIVATE_KEY`，仅由发布者控制的 PKCS#8 PEM 内容 |
+| Worker 变量（`wrangler.jsonc` `vars`） | `APNS_TOPIC`、`APNS_ENVIRONMENTS`（以及 `compatibility_flags: ["enable_request_signal"]`） |
+| Worker secrets（`wrangler secret put`） | `APNS_PRIVATE_KEY`（必需 secret，仅由发布者控制的 PKCS#8 PEM 内容）；`APNS_TEAM_ID` 与 `APNS_KEY_ID`（10 位大写 `[A-Z0-9]` 字符，建议设为 secret，也可作为普通 Wrangler 变量） |
 | 签名 iOS 应用与 NSE | 匹配的 APNs 环境、嵌入扩展与应用/扩展共享 Keychain 组；登录凭据留在应用私有组 |
 
-Cloudflare 管理入站 HTTPS 与出站连接。不需要 Bun 监听器、可信反向代理头配置、OpenSSL 子进程、自建 HTTP/2 池、容器或 Relay SQLite 卷。来源限流使用平台提供的客户端 IP，不信任任意转发头。禁止记录请求正文、设备令牌或内容密钥。
+Cloudflare 管理入站 HTTPS 与出站连接。不需要 Bun 监听器、可信反向代理头配置、OpenSSL 子进程、自建 HTTP/2 池、容器或 Relay SQLite 卷。来源限流仅使用平台提供的 `CF-Connecting-IP`，忽略 `X-Forwarded-For` 与 `X-Real-IP`。禁止记录请求正文、设备令牌或内容密钥。
 
 ## 注册、投递与隐私
 
 应用调用已认证的 `POST /api/mobile/push/encrypted-register`，提交令牌、环境、注册版本、部署绑定与每安装内容密钥，不调用 Relay。Server 继续检查账号/安装/移动会话归属与版本。旧客户端的直连 APNs 注册路由独立保留。
 
 Server 向 `POST /v1/send` 提交 `device_token`、`environment`、`event_id`、`expires_at` 与版本化加密 `envelope`。Relay 可见令牌、来源 IP、时间、大小、环境、事件/投递元数据和密文，不能收到内容密钥或业务明文。不得记录请求体、设备令牌、密钥或服务商认证头。
+
+所有 `POST /v1/send` 响应均携带 `Cache-Control: no-store`，并使用统一 JSON 结构 `{ "outcome": "...", "reason": "...", "device_invalid": false }`：
+
+| HTTP 状态码 | 结果与含义 |
+| --- | --- |
+| `200` | 服务商/事件判定：`accepted`（APNs `200`）、`expired`（转发前已过期）、`permanent`（仅 APNs `410 Unregistered` 返回 `Unregistered` 且 `device_invalid: true`；其他 APNs 4xx/配置失败返回 `device_invalid: false`，其中 `BadDeviceToken` 映射为 `DeviceOrEnvironmentMismatch`），或 `retryable`（APNs `429`/5xx 或网络/超时/异常响应） |
+| `400` / `413` / `415` | `permanent` 参数校验、请求体超限（`> 8192` B）或 Content-Type 错误 |
+| `408` | `retryable` 上传超时（超过 `5s` 上传期限） |
+| `429` | `retryable` 触发单 IP、单目标或单 isolate 限流（附带 `Retry-After`） |
+| `503` | `retryable` 并发满载（`32` 个处理中请求），或缺少/非法部署配置时返回 `permanent` `RelayNotConfigured` |
+| `404` / `405` | 未知路径或不支持的 HTTP 方法 |
 
 原始 30 分钟期限在重试和 Server 重启后不变。每次发送前重新核验归属、会话、角色、订阅和注册版本。可重试结果保留密文；终态清除密文并保留无秘密的回执。退出/撤销不能撤回已发送或接受的请求。仅删除原目标会话的离线退出清理与 Relay 无关，继续保留。
 

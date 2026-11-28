@@ -57,6 +57,7 @@ docker run -d \
 
 - **能力归属 Agent 主机**：`tailscale` 属于**低风险**能力，**默认开启**（`CAP_DEFAULT = 3900`）。与所有[功能开关](/zh/docs/capabilities)一致，该能力完全由 Agent 主机本地控制——如需在某台机器上关闭 Tailscale 状态上报，可在 `agent.toml` 的 `[capabilities].deny` 中加入 `"tailscale"`，或传入 `--deny-cap tailscale`。
 - **采集方式**：在 Unix 主机上，Agent 通过 Unix Domain Socket 请求 `tailscaled` LocalAPI 的 `GET /localapi/v0/status`（按顺序探测 `tailscale.socket_path`、`/var/run/tailscale/tailscaled.sock`、`/run/tailscale/tailscaled.sock`、`/var/run/tailscaled.socket`，超时时间 3 秒）。若 Socket 不可达、权限不足或运行在非 Unix 平台，则自动回退到执行 `tailscale status --json`。
+- **退避与去重**：宿主机上 `tailscaled` 不可用时，Agent 按 `30`、`60`、`120`、`300`、`900` 秒退避重试；状态快照上报前会基于 SHA-256 指纹去重，无变化时跳过重复发送。
 
 ### 观测指标与对端路径诊断
 
@@ -65,16 +66,16 @@ docker run -d \
 - **节点概览**：后端运行状态（`Running`、`NeedsLogin`、`Stopped`）、主 Tailscale IPv4 与 IPv6、MagicDNS 域名、Tailnet 名称、客户端版本、DERP 主区域、Exit Node 状态（`exit_node` / `exit_node_option`）、通告的子网路由（Advertised Routes）、ACL 标签（Tags）以及健康告警（Health Warnings）。
 - **密钥过期（Key Expiry）追踪**：展示节点密钥过期时间与剩余时长，便于在无人值守服务器因密钥过期掉线前及时续期或关闭密钥过期。
 - **对端连接模式（Connection Mode）**：展示每个 Peer 的操作系统、Tailscale IP、收发字节数、最近一次 WireGuard 握手时间，以及实时连接路径分类：
-  - **Direct（直连）** —— 已建立 UDP WireGuard 点对点直连隧道（存在活跃 `cur_addr`），具备最高吞吐与最低延迟。
-  - **DERP（中继）** —— 流量正通过 Tailscale DERP 中继节点转发（如 `DERP (tok)`、`DERP (sfo)`）。若高流量节点长期处于 `DERP` 模式，通常意味着严格 NAT 或防火墙拦截了 UDP 打洞。
-  - **Peer Relay（对端中继）** —— 通过对端中继节点转发。
-  - **Idle（空闲）** —— 已知对端节点，当前无活跃隧道流量。
+  - **Direct（直连）** -- 已建立 UDP WireGuard 点对点直连隧道（存在活跃 `cur_addr`），具备最高吞吐与最低延迟。
+  - **DERP（中继）** -- 流量正通过 Tailscale DERP 中继节点转发（如 `DERP (tok)`、`DERP (sfo)`）。若高流量节点长期处于 `DERP` 模式，通常意味着严格 NAT 或防火墙拦截了 UDP 打洞。
+  - **Peer Relay（对端中继）** -- 通过对端中继节点转发。
+  - **Idle（空闲）** -- 已知对端节点，当前无活跃隧道流量。
 
 Server 同时会将每台主机的主 `tailscale_ipv4`、`tailscale_ipv6`、`tailscale_dns_name` 和 `tailscale_tailnet` 持久化在服务器记录中；即使 Agent 暂时离线，控制台依然可以展示并搜索最后已知的 Tailnet 地址（`cached: true`）。
 
 ## 控制面 API 集成与仪表盘组件
 
-单机 `CAP_TAILSCALE` 反映每台 Agent 本地看到的 WireGuard 状态，而 Server 端可选的控制面集成则直接查询 **Tailscale 官方控制面**（API v2，`/api/v2/tailnet/{tailnet}/devices`）或自建 **Headscale**（API v1，`/api/v1/node`，兼容 Headscale v0.26+ 标签结构）的全局设备清单。
+单机 `CAP_TAILSCALE` 反映每台 Agent 本地看到的 WireGuard 状态，而 Server 端可选的控制面集成则直接查询 **Tailscale 官方控制面**（API v2，`/api/v2/tailnet/{tailnet}/devices`）或自建 **Headscale**（API v1，`/api/v1/node`，遇到 `404` 时自动回退至旧版 `/api/v1/machine` 端点，兼容 Headscale v0.26+ 标签结构）的全局设备清单。
 
 ### 配置 Tailscale 或 Headscale
 
@@ -93,9 +94,9 @@ Server 同时会将每台主机的主 `tailscale_ipv4`、`tailscale_ipv6`、`tai
 
 ### 自动关联服务器与 `com.serverbee.tailscale-overview` 组件
 
-`GET /api/tailscale/overview`（服务端内置 30 秒短期缓存，避免频繁请求上游 API）会按 Tailscale IPv4/IPv6、上报的 IPv4、MagicDNS 域名或主机名将每台 Tailnet 设备与已接入的 ServerBee 服务器自动匹配：
+`GET /api/tailscale/overview`（服务端内置 30 秒短期缓存，避免频繁请求上游 API）会按 Tailscale IPv4/IPv6、上报的 IPv4/IPv6、MagicDNS 域名或主机名将每台 Tailnet 设备与已接入的 ServerBee 服务器自动匹配：
 
-- **设置 → Tailscale** 汇总展示全局指标（**总设备数**、**在线设备**、**已关联 ServerBee 服务器**、**即将过期密钥**），已匹配设备可直接跳转到对应的 `/servers/{id}` 详情页。
+- **设置 → Tailscale** 汇总展示全局指标（**总设备数**、**在线设备**、**已关联 ServerBee 服务器**、**即将过期密钥**——即 `14` 天内过期的节点密钥），已匹配设备可直接跳转到对应的 `/servers/{id}` 详情页。
 - **内置仪表盘组件（`com.serverbee.tailscale-overview`）**：可在任意[自定义仪表盘](/zh/docs/dashboards)的组件选择器中添加 **Tailscale 概览（Tailscale Overview）** 组件，一屏查看 Tailnet 在线节点数、已关联监控主机数及临近过期的节点密钥数量。
 
 ## 原生 iOS 客户端支持
@@ -106,38 +107,16 @@ Server 同时会将每台主机的主 `tailscale_ipv4`、`tailscale_ipv6`、`tai
 - **设置 → 管理 → Tailscale（`TailscaleAdminView`）**：管理员可配置 Tailscale 或 Headscale 控制面凭据、已保存的 API Key、首选 Server 地址及 Tailscale Serve 回环认证，执行 **测试连接**，并通过 `TailnetOverviewSection` 查看全局设备清单并直接跳转到已关联的服务器详情；只读成员亦可查看 Tailnet 概览与设备列表。
 - **隐私模式 IP 打码**：开启 **设置 → 隐私模式** 后，所有卡片与列表中的 Tailscale IPv4/IPv6 地址、对端 Endpoint、子网路由、含 IP 的主机名及 Tailnet URL 均会自动隐藏后两段，而复制操作与编辑输入框仍保留真实完整地址。
 
-## 身份认证方案
-
-ServerBee 支持两种基于 Tailscale 身份的登录方式，可按部署架构择一或组合使用。
-
-### 方案一：通过 `[oauth.oidc]` 接入 Tailscale OIDC（`tsidp`）
-
-如果你在 Tailnet 内运行了 Tailscale 官方 OIDC Identity Provider（`tsidp`），或使用配合 Pocket ID、Authelia、Authentik 等外部 IdP 的 Headscale，可直接接入 ServerBee 标准的 OpenID Connect 配置：
-
-```toml
-[oauth]
-base_url = "https://serverbee.tailnet-name.ts.net"
-# 仅当你的 OIDC 提供方已通过 Tailnet ACL / 组织成员范围严格受控时才可开启：
-allow_registration = false
-
-[oauth.oidc]
-issuer_url = "https://idp.tailnet-name.ts.net"
-client_id = "your-tsidp-client-id"
-client_secret = "your-tsidp-client-secret"
-scopes = ["openid", "email", "profile"]
-```
-
-由于该方式走标准 OAuth2 授权码重定向流程而不依赖受信任请求头，因此无论 ServerBee 部署在反向代理后、另一台 Tailnet 节点还是云平台上均可安全工作。详见[安全设置 → OAuth 社交登录](/zh/docs/security#oauth-社交登录)。
-
-### 方案二：Tailscale Serve 回环身份认证
+## Tailscale Serve 回环身份认证 [#方案二tailscale-serve-回环身份认证]
 
 当 `tailscale serve` 与 `serverbee-server` 运行在**同一台宿主机或共享同一个容器网络命名空间**时，Tailscale 会在本地终止 Tailnet TLS，并在转发至回环地址的请求中注入 `Tailscale-User-Login` 请求头。开启 `SERVERBEE_TAILSCALE__AUTH_ENABLED=true`（`tailscale.auth_enabled = true`）后，浏览器访问 HTTP API 与升级实时 WebSocket 时均可免密登录。
 
 <Callout type="warn">
-**回环安全边界（Loopback Security Boundary）：** 一旦从不可信网络对端或普通反向代理接受身份请求头，攻击者便可轻易伪造登录身份。因此 ServerBee 在信任 `Tailscale-User-Login` 前强制执行两条硬性边界：
+**回环安全边界（Loopback Security Boundary）：** 一旦从不可信网络对端或普通反向代理接受身份请求头，攻击者便可轻易伪造登录身份。因此 ServerBee 在信任 `Tailscale-User-Login` 前强制执行以下边界：
 
 1. `tailscale.auth_enabled` **默认关闭（`false`）**。
-2. 即使显式开启，ServerBee 也**仅在同时满足以下两个条件时**才接受 `Tailscale-User-Login`：底层 TCP 连接对端（`ConnectInfo`）严格为回环地址（`127.0.0.1` 或 `::1`），**且**请求中不存在 `X-Forwarded-For` 或 `Forwarded` 转发头（若本地 `tailscaled` Unix Socket 可达，ServerBee 还会通过 `/localapi/v0/whois` 交叉核验对端身份）。
+2. 即使显式开启，ServerBee 也**仅在同时满足以下两个条件时**才接受 `Tailscale-User-Login`：底层 TCP 连接对端（`ConnectInfo`）严格为回环地址（`127.0.0.1` 或 `::1`），**且**请求中不存在 `X-Forwarded-For` 或 `Forwarded` 转发头。
+3. 可选的 `/localapi/v0/whois` 交叉核验**仅在显式配置了 `tailscale.socket_path` 且该路径存在时**执行（与 `server_tailnet_url` 探测不同，不会自动扫描默认 Socket 路径）。若连接该 Socket 失败（例如权限不足），核验会**fail-open** 放行该回环请求。
 
 任何来自非回环 IP、或携带 `X-Forwarded-For` / `Forwarded` 头的 `Tailscale-User-Login` 请求都会直接返回 `401 Unauthorized`。启用此模式时，请将 `server.listen` 绑定在 `127.0.0.1:9527`，确保所有外部与 Tailnet 流量都只能经由本机 `tailscale serve` 进入。
 </Callout>
@@ -184,14 +163,14 @@ cat > config/ts-serve.json <<'EOF'
 EOF
 ```
 
-3. 使用 `deploy/docker-compose.tailscale.yml` 部署（下方示例固定为当前发布镜像版本）：
+3. 使用 `deploy/docker-compose.tailscale.yml` 部署（仓库模板支持通过 `SERVERBEE_IMAGE_TAG` 覆盖镜像标签，下方示例展示当前默认发布版本）：
 
 ```yaml
 services:
   tailscale:
     image: tailscale/tailscale:latest
     container_name: serverbee-tailscale
-    hostname: serverbee
+    hostname: ${TS_HOSTNAME:-serverbee}
     restart: unless-stopped
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
@@ -209,6 +188,7 @@ services:
       - NET_RAW
 
   serverbee-server:
+    # 在 deploy/docker-compose.tailscale.yml 中可通过 SERVERBEE_IMAGE_TAG 覆盖
     image: ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.7
     container_name: serverbee-server
     restart: unless-stopped
@@ -223,7 +203,8 @@ services:
       - SERVERBEE_SERVER__DATA_DIR=/data
       - SERVERBEE_AUTH__SECURE_COOKIE=true
       - SERVERBEE_TAILSCALE__SOCKET_PATH=/var/run/tailscale/tailscaled.sock
-      - SERVERBEE_TAILSCALE__AUTH_ENABLED=false
+      - SERVERBEE_TAILSCALE__AUTH_ENABLED=${SERVERBEE_TAILSCALE__AUTH_ENABLED:-false}
+      - SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE=${SERVERBEE_TAILSCALE__AUTO_PROVISION_ROLE:-}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9527/healthz"]
       interval: 30s

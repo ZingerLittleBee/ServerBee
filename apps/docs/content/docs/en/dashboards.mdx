@@ -8,37 +8,39 @@ ServerBee dashboards are configurable pages made of widgets. You can keep the de
 
 ## Managing Dashboards
 
-Use the dashboard switcher in the top bar of the home page to:
+All users can switch between dashboards from the dashboard switcher in the top bar of the home page. Management actions are **Admin-only** and live in the top-right overflow (`⋯`) menu of the switcher:
 
-- Switch between dashboards
 - Create a new dashboard
+- Edit the current dashboard layout
 - Rename a dashboard
-- Delete dashboards you no longer need
 - Set a dashboard as the default
+- Delete dashboards you no longer need
 
-The first dashboard is created automatically if none exists. A dashboard marked as default cannot be unset directly; set another dashboard as default instead.
+The first dashboard is created automatically if none exists. A dashboard marked as default cannot be unset directly; set another dashboard as default first. Deleting the default dashboard or the last remaining dashboard is blocked.
 
 ## Editing Layouts
 
-1. Open a dashboard.
-2. Click **Edit**.
+1. Open a dashboard as an Admin.
+2. Open the top-right overflow (`⋯`) menu and click **Edit**.
 3. Add widgets from the widget picker.
-4. Drag widgets to rearrange them.
+4. Drag widgets to rearrange them, or lock individual widgets in place (`is_static`). Press `Escape` to cancel an in-progress drag or resize.
 5. Resize widgets within their min/max size constraints.
-6. Configure each widget's data source and title.
+6. Configure each widget's data source, title, and optional accent colors.
 7. Click **Save**.
 
-The layout is stored as grid coordinates (`grid_x`, `grid_y`, `grid_w`, `grid_h`) and widget configuration JSON. Saving a dashboard performs a diff: existing widgets are updated, new widgets are inserted, and widgets removed from the layout are deleted.
+The layout is stored as grid coordinates (`grid_x`, `grid_y`, `grid_w`, `grid_h`) and widget configuration JSON. Saving a dashboard performs a diff: existing widgets are updated, new widgets are inserted, and widgets removed from the layout are deleted. On viewports narrower than `900px`, the grid automatically falls back to a single-column layout.
+
+You can switch between light, dark, and system appearance using the theme switcher or the `d` keyboard shortcut. Site branding lives under **Settings → Appearance** (legacy custom theme packages were replaced by [Custom Widgets](/en/docs/custom-widgets)).
 
 ## Widget Types
 
-ServerBee ships with **18 built-in widgets** across Real-time, Charts, and Status categories:
+ServerBee ships with **19 built-in widgets** (17 core widgets plus 2 built-in widget modules) across Real-time, Charts, and Status categories:
 
 | Widget | Category | Typical use |
 |--------|----------|-------------|
-| `stat-number` | Real-time | Show one fleet-wide summary metric (server count, average CPU/memory, total bandwidth, or health) |
-| `metric-card` | Real-time | Show several key metrics for one server as a colored card |
-| `server-cards` | Real-time | Show compact server cards for selected servers |
+| `stat-number` | Real-time | Show one fleet-wide summary metric (`server_count`, `avg_cpu`, `avg_memory`, `total_bandwidth`, or `health`) |
+| `metric-card` | Real-time | Show one metric (`cpu`, `memory`, `network`, or `disk_io`) for one server with its 1h delta, 24h peak/average, and a 24h sparkline |
+| `server-cards` | Real-time | Show compact server cards for selected servers (`grid` or `list` layout) |
 | `gauge` | Real-time | Gauge visualization for one metric and server |
 | `line-chart` | Charts | Historical chart for one metric on one server |
 | `multi-line` | Charts | Compare one metric across multiple servers |
@@ -50,10 +52,11 @@ ServerBee ships with **18 built-in widgets** across Real-time, Charts, and Statu
 | `server-map` | Status | Show server locations on a map when GeoIP is installed |
 | `markdown` | Status | Add notes, runbooks, or links using Markdown |
 | `uptime-timeline` | Status | Show uptime bars for selected servers |
-| `network-latency` | Charts | Show network latency probe history for a server |
+| `network-latency` | Charts | Show network latency probe history (or live mode with `hours: 0`) for a server |
 | `network-quality` | Real-time | Show network quality score and live metrics |
 | `network-overview` | Status | Show aggregate network quality across servers |
-| `com.serverbee.tailscale-overview` | Status | Show Tailnet online/total devices, linked ServerBee servers, and expiring keys (**Tailscale Overview**; see [Tailscale Integration](/en/docs/tailscale)) |
+| `com.serverbee.tailscale-overview` | Status | Built-in widget module showing Tailnet online/total devices, linked ServerBee servers, and expiring keys (**Tailscale Overview**; see [Tailscale Integration](/en/docs/tailscale)) |
+| `com.serverbee.hello-world` | Real-time | Minimal built-in widget module showing the active theme mode and online server count (**Hello World**) |
 
 ## Common Widget Configuration
 
@@ -63,18 +66,23 @@ Most widgets store their settings in `config_json`. Common fields include:
 |-------|---------|---------|
 | `server_id` | Single-server widgets | Server ID to query |
 | `server_ids` | Multi-server widgets | List of server IDs to include |
-| `metric` | Metric widgets | Metric key such as CPU, memory, disk, traffic, or load |
-| `hours` | Historical widgets | Lookback window for chart data |
+| `metric` | Metric widgets | Metric key (for example `avg_cpu` on `stat-number`, or `cpu`/`memory`/`network`/`disk_io` on `metric-card`) |
+| `hours` | Historical widgets | Lookback window in hours (`network-latency` supports `0` for realtime mode) |
 | `interval` | Historical widgets | Data granularity (`raw`, `hourly`, or `auto`) |
-| `monitor_ids` | Service Status | Service Monitor IDs to display |
-| `content` | Markdown | Markdown content |
+| `color` / `color_secondary` | `metric-card`, `gauge`, `line-chart`, `top-n`, `traffic-bar`, `disk-io` | Optional custom `#RRGGBB` primary/secondary series color |
+| `layout` | `server-cards` | Card layout mode (`grid` or `list`; cost figures appear in `list` mode) |
+| `count` / `sort` | `top-n` | Maximum number of ranked servers and sort order (`asc` or `desc`) |
+| `max_items` | `alert-list` | Maximum number of alert entries to display |
+| `days` | `uptime-timeline` | Number of days to show in the uptime timeline |
+| `monitor_ids` | `service-status` | Service Monitor IDs to display |
+| `content` | `markdown` | Markdown content |
 
 ## GeoIP and Server Map
 
 The Server Map widget requires GeoIP data. You can either:
 
 - Configure a custom MaxMind-compatible MMDB file with `geoip.mmdb_path`, or
-- Download the DB-IP Lite database from **Settings → GeoIP Database**.
+- Download the DB-IP Lite database from **Settings → Settings** (`/settings`, under **Data sources**).
 
 The widget shows an installation prompt when GeoIP data is missing.
 
@@ -90,26 +98,30 @@ Measured (desktop Chrome, no CPU/network throttling, **local backend**, widgets 
 | 30 – 60      | ~360 ms       | Usable, mild jank during fast scroll |
 | > 60         | ~360 ms       | Visible stutter while scrolling, main thread saturated by chart layout measurement |
 
-Against a remote server over the public internet, cold-load LCP grows with the number of **in-viewport** charts, because each one waits on its own history query before painting — a 40-widget dashboard measured over WAN loads in seconds, not ~360 ms. The scrolling characteristics above still apply.
+Against a remote server over the public internet, cold-load LCP grows with the number of **in-viewport** charts, because each one waits on its own history query before painting: a 40-widget dashboard measured over WAN loads in seconds, not ~360 ms. The scrolling characteristics above still apply.
 
 **Recommended sizing**:
 
 - **Comfortable**: ≤ **30 widgets** per dashboard.
 - **Acceptable**: 30 – 60 widgets. If you must exceed 30, favour static/non-chart widgets (`markdown`, `alert-list`, `service-status`, `stat-number`) and keep the chart-heavy ones (`line-chart`, `multi-line`, `disk-io`, `traffic-bar`, `gauge`) under 30.
-- **Not recommended**: > 60 widgets per dashboard — split by team, region, or use case across multiple dashboards instead.
+- **Not recommended**: > 60 widgets per dashboard; split by team, region, or use case across multiple dashboards instead.
 
 If you genuinely need dozens of charts in one dashboard, **group them in the same vertical region** rather than spreading them across a long page. Fewer charts enter the viewport in any given scroll, lowering peak main-thread pressure.
 
 ## API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/dashboards` | List dashboards |
-| GET | `/api/dashboards/default` | Get the default dashboard, creating one if needed |
-| GET | `/api/dashboards/{id}` | Get a dashboard with widgets |
-| POST | `/api/dashboards` | Create a dashboard |
-| PUT | `/api/dashboards/{id}` | Update metadata and/or widgets |
-| DELETE | `/api/dashboards/{id}` | Delete a dashboard |
+Read routes are available to all authenticated users; write routes (`POST`, `PUT`, `DELETE`) require **Admin**.
+
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| GET | `/api/dashboards` | Authenticated | List dashboards |
+| GET | `/api/dashboards/default` | Authenticated | Get the default dashboard, creating one if needed |
+| GET | `/api/dashboards/{id}` | Authenticated | Get a dashboard with widgets |
+| POST | `/api/dashboards` | Admin | Create a dashboard |
+| PUT | `/api/dashboards/{id}` | Admin | Update metadata and/or widgets |
+| DELETE | `/api/dashboards/{id}` | Admin | Delete a dashboard (blocked for the default or last remaining dashboard) |
+
+To place a built-in or custom widget module on a dashboard, set `"widget_type": "module"` and pass the installed module ID in `"module_id"`.
 
 Update request example:
 
@@ -120,17 +132,26 @@ Update request example:
   "widgets": [
     {
       "widget_type": "stat-number",
-      "title": "Web CPU",
+      "title": "Fleet Avg CPU",
       "config_json": {
-        "server_id": "server-id",
-        "metric": "cpu",
-        "unit": "%"
+        "metric": "avg_cpu"
       },
       "grid_x": 0,
       "grid_y": 0,
       "grid_w": 2,
       "grid_h": 1,
       "sort_order": 0
+    },
+    {
+      "widget_type": "module",
+      "module_id": "com.serverbee.tailscale-overview",
+      "title": "Tailscale Overview",
+      "config_json": {},
+      "grid_x": 2,
+      "grid_y": 0,
+      "grid_w": 4,
+      "grid_h": 3,
+      "sort_order": 1
     }
   ]
 }
@@ -138,6 +159,7 @@ Update request example:
 
 <Cards>
   <Card title="Monitoring" href="/en/docs/monitoring" />
+  <Card title="Custom Widgets" href="/en/docs/custom-widgets" />
   <Card title="Service Monitors" href="/en/docs/service-monitors" />
   <Card title="Storage & Sizing" href="/en/docs/storage-sizing" />
 </Cards>

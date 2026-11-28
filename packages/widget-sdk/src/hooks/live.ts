@@ -12,7 +12,8 @@ const CAPS: Record<string, number> = {
   CAP_DOCKER: 128,
   CAP_SECURITY_EVENTS: 256,
   CAP_FIREWALL_BLOCK: 512,
-  CAP_IP_QUALITY: 1024
+  CAP_IP_QUALITY: 1024,
+  CAP_TAILSCALE: 2048
 }
 
 export function useServers(): ServerSummary[] {

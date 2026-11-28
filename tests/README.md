@@ -9,12 +9,12 @@ cd apps/web && bun install && bun run build && cd ../..
 # 2. 构建 Rust
 cargo build --workspace
 
-# 3. 启动 Server（设置管理员密码，开发环境关闭 secure cookie）
-SERVERBEE_ADMIN__PASSWORD=admin123 SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server &
+# 3. 启动 Server（开发环境关闭 secure cookie；首次启动会在日志中打印一次性随机管理员密码）
+SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server &
 
-# 4. 原子创建 Server 和绑定的 enrollment offer
+# 4. 首次登录后修改密码，再原子创建 Server 和绑定的 enrollment offer
 curl -s -c /tmp/sb-cookies.txt -X POST http://localhost:9527/api/auth/login \
-  -H 'Content-Type: application/json' -d '{"username":"admin","password":"admin123"}'
+  -H 'Content-Type: application/json' -d '{"username":"admin","password":"<ADMIN_PASSWORD>"}'
 curl -s -b /tmp/sb-cookies.txt -X POST http://localhost:9527/api/servers \
   -H 'Content-Type: application/json' \
   -d "{\"onboarding_request_id\":\"$(uuidgen)\",\"name\":\"Local Agent\"}"

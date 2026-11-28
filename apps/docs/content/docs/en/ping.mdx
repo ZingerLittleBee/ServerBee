@@ -10,22 +10,32 @@ ServerBee includes built-in ping monitoring that tracks the availability and lat
 
 Three probe types are available. Each measures round-trip latency and reports a success/failure status.
 
-| Type | What it does | Target format | Timeout | Privileges |
-|------|--------------|---------------|---------|------------|
-| **ICMP** | Standard ICMP echo request/reply | IP or hostname (e.g., `8.8.8.8`, `google.com`) | 10 s | `CAP_NET_RAW` on Linux |
-| **TCP** | TCP connection test (handshake) | `host:port` (e.g., `google.com:443`) | 10 s | None |
-| **HTTP** | HTTP(S) GET request and response time | Full URL (e.g., `https://example.com/health`) | 10 s | None |
+| Type | What it does | Target format | Timeout | Requirements |
+|------|--------------|---------------|---------|--------------|
+| **ICMP** | Executes the system `ping -c 1 -W 5 <host>` command | IP or hostname (e.g., `1.1.1.1`, `google.com`) | 5 s per probe (10 s command timeout) | System `ping` binary in `PATH`; agent `CAP_PING_ICMP` |
+| **TCP** | TCP connection test (handshake) | `host:port` (e.g., `google.com:443`) | 10 s | Agent `CAP_PING_TCP` |
+| **HTTP** | HTTP(S) GET request and response time | Full URL (e.g., `https://example.com/health`) | 10 s | Agent `CAP_PING_HTTP` |
+
+### Probe Behavior & Security
+
+- **ICMP**: The agent invokes the host's `ping` binary (`ping -c 1 -W 5 <host>`) rather than opening raw sockets directly.
+- **HTTP**: Does not follow HTTP redirects, accepts invalid or self-signed TLS certificates, prepends `http://` when no scheme is provided, and treats HTTP `2xx` and `3xx` responses as successful.
+- **SSRF guard**: Loopback (`127.0.0.0/8`, `::1`, `localhost`), link-local, and cloud metadata (`169.254.169.254`) targets are blocked both when saving a task on the server and at runtime on the agent.
+
+## Capabilities (Agent-Owned)
+
+Each probe type is gated by its own agent-owned capability (`ping_icmp` / `CAP_PING_ICMP`, `ping_tcp` / `CAP_PING_TCP`, `ping_http` / `CAP_PING_HTTP`). All three are **enabled by default** (`CAP_DEFAULT`). If an agent host denies a capability in `[capabilities].deny` (or via `--deny-cap`), that agent skips tasks of the corresponding probe type. See [Capabilities](/en/docs/capabilities).
 
 ## Creating Ping Tasks
 
-Create probe tasks from the **Ping** page in the dashboard, or via the API. Each task requires:
+Create probe tasks from **Settings → Ping Tasks** (`/settings/ping-tasks`) in the dashboard, or via the API. Each task requires:
 
 | Field | Description |
 |-------|-------------|
 | Name | A descriptive label, e.g., "Cloudflare DNS" |
 | Probe type | `icmp`, `tcp`, or `http` |
 | Target | The endpoint to probe (format depends on probe type) |
-| Interval | How often to run the probe, in seconds |
+| Interval | How often to run the probe, in seconds (clamped to a minimum of `5` seconds by the agent) |
 | Server IDs | Which agents should run this probe |
 | Enabled | Whether the task is active |
 
@@ -37,7 +47,7 @@ Monitor basic connectivity to Cloudflare DNS:
 |-------|-------|
 | Name | Cloudflare DNS |
 | Probe Type | icmp |
-| Target | 1.1.1.1 |
+| Target | `1.1.1.1` |
 | Interval | 60 |
 
 ### Example: TCP Port Check
@@ -48,7 +58,7 @@ Verify that a database port is reachable:
 |-------|-------|
 | Name | PostgreSQL Primary |
 | Probe Type | tcp |
-| Target | db.internal:5432 |
+| Target | `db.internal:5432` |
 | Interval | 30 |
 
 ### Example: HTTP Health Check
@@ -59,7 +69,7 @@ Monitor a web service endpoint:
 |-------|-------|
 | Name | API Health |
 | Probe Type | http |
-| Target | https://api.example.com/health |
+| Target | `https://api.example.com/health` |
 | Interval | 60 |
 
 ## Target Format
@@ -69,12 +79,12 @@ The target format depends on the probe type:
 | Probe type | Target format | Example |
 |------------|---------------|---------|
 | ICMP | IP address or hostname | `1.1.1.1`, `google.com` |
-| TCP | host:port | `example.com:443`, `10.0.0.1:3306` |
+| TCP | `host:port` | `example.com:443`, `10.0.0.1:3306` |
 | HTTP | Full URL | `https://example.com`, `http://10.0.0.1:8080/health` |
 
 ## Choosing an Interval
 
-The interval is in seconds. Tune it to the target's importance and probe type:
+The interval is in seconds. The agent enforces a **5-second minimum floor** (any smaller value is clamped to `5` seconds). Tune it to the target's importance and probe type:
 
 | Scenario | Suggested interval |
 |----------|--------------------|
@@ -108,7 +118,7 @@ In the web dashboard, ping task create/delete/enable/disable actions show locali
 
 ## Assigning Tasks to Servers
 
-The `server_ids_json` field controls which agents execute the probe:
+In create and update API requests (`POST /api/ping-tasks`, `PUT /api/ping-tasks/{id}`), the `server_ids` array controls which agents execute the probe (stored and returned on the task record as `server_ids_json`):
 
 - **Specific servers** -- Provide an array of server IDs: `["srv-1", "srv-2"]`
 - **All servers** -- Use an empty array `[]`
@@ -146,8 +156,8 @@ The ping task detail page shows latency trend charts per agent. Charts support f
 
 Query probe records through the REST API:
 
-```
-GET /api/ping-tasks/:id/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&server_id=xxx
+```text
+GET /api/ping-tasks/{id}/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&server_id=xxx
 ```
 
 Filtering by time range and agent is supported.
@@ -163,12 +173,12 @@ ping_records_days = 14
 
 The cleanup task runs hourly and removes records older than the configured retention period.
 
-## Integration with Alerts
+## Relationship to Alerts & Network Quality
 
-Ping monitoring works with alert rules. The `network_latency` and `network_packet_loss` rule types let you alert on probe latency or packet loss, so you're notified when a critical endpoint degrades or becomes unreachable. Ping data is stored alongside regular monitoring data and reuses the same alerting infrastructure. See [Alerts & Notifications](/en/docs/alerts).
+Ping tasks do **not** currently trigger alert rules. If you need latency or packet-loss alerting, configure [Network Quality Monitoring](/en/docs/monitoring#network-quality-monitoring) probes and attach `network_latency` or `network_packet_loss` rules in [Alerts & Notifications](/en/docs/alerts).
 
 <Cards>
   <Card title="Monitoring" href="/en/docs/monitoring" />
   <Card title="Alerts & Notifications" href="/en/docs/alerts" />
-  <Card title="Agent Configuration" href="/en/docs/agent" />
+  <Card title="Capabilities" href="/en/docs/capabilities" />
 </Cards>

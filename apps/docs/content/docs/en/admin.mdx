@@ -1,6 +1,6 @@
 ---
 title: Admin Guide
-description: User management, audit logs, remote commands, billing, Agent Authority, and Tailscale control plane administration.
+description: General settings, appearance branding, rate limits, backup and restore, user management, audit logs, remote commands, billing and renewal tracking, Agent Authority, and Tailscale administration.
 icon: UserCog
 ---
 
@@ -12,8 +12,8 @@ ServerBee supports multiple users across two roles:
 
 | Role | Permissions |
 |------|-------------|
-| **Admin** | Full management: users, server config, alert rules, notifications, audit logs, etc. |
-| **Member** | Read-only access to **all** servers' monitoring data — dashboards, server details, Ping results, security events, public IPs — plus self-service settings (own password, 2FA, API key list, mobile devices) |
+| **Admin** | Full management: users, server config, alert rules, notifications, audit logs, rate limits, branding, API key creation, etc. |
+| **Member** | Read-only access to **all** servers' monitoring data — dashboards, server details, Ping results, security events, public IPs — plus self-service settings (own password, 2FA, existing API key list, mobile devices). Creating new API keys (`POST /api/auth/api-keys`) is **Admin-only**. |
 
 <Callout type="warn">
 Member visibility is fleet-wide; there is no per-server scoping. A member account is for trusted collaborators only. To show selected servers to outsiders (e.g., customers), use a [status page](/en/docs/status-page) instead.
@@ -24,7 +24,7 @@ Member visibility is fleet-wide; there is no per-server scoping. A member accoun
 Go to Settings → Users:
 
 - **Create user**: Enter username, password, and role
-- **Edit role**: Change a user's role (Admin/Member)
+- **Edit role / reset password**: Change a user's role (Admin/Member; cannot demote the last Admin) or reset a user's password (automatically revokes all active web and mobile sessions for that user)
 - **Delete user**: Remove a user account (cannot delete the last Admin)
 
 ### Recovering a Lost Admin Account
@@ -44,48 +44,113 @@ This removes **all** user accounts, and their API keys stop working. Monitoring 
 | `/api/users` | GET | List all users |
 | `/api/users` | POST | Create a user |
 | `/api/users/{id}` | GET | Get user details |
-| `/api/users/{id}` | PUT | Update user role |
-| `/api/users/{id}` | DELETE | Delete a user |
+| `/api/users/{id}` | PUT | Update user role (blocks demoting the last Admin) and/or reset password (revokes all sessions) |
+| `/api/users/{id}` | DELETE | Delete a user (blocks deleting the last Admin) |
+
+## General Settings & Backup / Restore
+
+### Data Sources and About
+
+Go to **Settings** (`/settings`) to manage built-in lookup databases and view server version information:
+
+- **Data sources**: One-click download and status display for the DB-IP GeoIP Country database (`GET /api/geoip/status`, `POST /api/geoip/download`) and DB-IP ASN database (`GET /api/asn/status`, `POST /api/asn/download`), licensed under CC BY 4.0. Downloaded MMDB files are stored under `{data_dir}` unless overridden by `geoip.mmdb_path` / `asn.mmdb_path`.
+- **About**: Displays the running server build version (`GET /api/about`).
+
+### System Settings and Database Backup / Restore
+
+Administrators can also manage system settings and database backups via the settings API:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/settings` | GET | Read system settings (`site_name`, `site_description`, `custom_css`, `custom_js`) |
+| `/api/settings` | PUT | Update system settings |
+| `/api/settings/backup` | POST | Stream a consistent SQLite snapshot (`VACUUM INTO`) as `application/octet-stream` (audited as `settings.backup`) |
+| `/api/settings/restore` | POST | Restore from an uploaded raw SQLite binary (`Content-Type: application/octet-stream`; audited as `settings.restore`). **Requires a server restart** after restore |
+
+<Callout type="info">
+`/api/settings/backup` and `/api/settings/restore` export and restore **only the SQLite database**. Separate persistent assets (`{data_dir}/brand/`, downloaded GeoIP/ASN MMDB files, and `server.toml`) must be backed up separately. See [Deployment → What to Back Up](/en/docs/deployment#persistent-data).
+</Callout>
+
+## Appearance & Custom Branding
+
+Go to **Settings → Appearance** (`/settings/appearance`) to customize the dashboard and status page branding:
+
+- **Site title & footer text**: Configure `site_title` and `footer_text`.
+- **Custom Logo & Favicon**: Upload **PNG** or **ICO** images up to **512 KiB** each (validated by file magic bytes). Uploaded assets are stored under `{data_dir}/brand/` and served publicly at `/api/brand/logo` and `/api/brand/favicon`.
+
+| Endpoint | Method | Access | Description |
+|----------|--------|--------|-------------|
+| `/api/settings/brand` | GET | Public | Fetch current brand configuration |
+| `/api/settings/brand` | PUT | Admin | Update `site_title`, `footer_text`, `logo_path`, `favicon_path` |
+| `/api/settings/brand/logo` | POST | Admin | Upload custom logo (`multipart/form-data`, PNG/ICO, max 512 KiB) |
+| `/api/settings/brand/favicon` | POST | Admin | Upload custom favicon (`multipart/form-data`, PNG/ICO, max 512 KiB) |
+| `/api/brand/logo` | GET | Public | Serve uploaded logo image |
+| `/api/brand/favicon` | GET | Public | Serve uploaded favicon image |
+
+## Rate Limit Management
+
+Go to **Settings → Rate Limits** (`/settings/rate-limits`) to monitor and reset in-memory per-IP rate-limit buckets across all three scopes:
+
+| Scope | Endpoints Covered | Default Limit | Window |
+|-------|-------------------|---------------|--------|
+| `login` | `POST /api/auth/login`, `POST /api/mobile/auth/login`, `POST /api/mobile/auth/recover` (all requests before credential verification) | `5` (`rate_limit.login_max`) | 15 minutes |
+| `register` | Agent registration endpoints | `10` (`rate_limit.register_max`) | 15 minutes |
+| `public` | Unauthenticated `/api/status/*` endpoints | `60` (fixed) | 60 seconds |
+
+Administrators can inspect currently tracked or blocked IPs (with request counts and remaining window seconds), unblock a single IP in a scope, or clear all entries in a scope or globally. Every reset writes a `rate_limit.reset` audit entry.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/admin/rate-limit` | GET | List active per-IP rate-limit entries and configured limits across all scopes |
+| `/api/admin/rate-limit/reset` | POST | Reset rate-limit entries; optional JSON filters `{ "scope": "login", "ip": "203.0.113.5" }` (omit to clear broader scope or all) |
 
 ## Audit Logs
 
-ServerBee automatically records audit logs for critical operations so administrators can track security events.
+ServerBee automatically records audit logs for critical operations so administrators can track security and administrative events.
 
 ### Recorded Events
 
-- User login (success/failure)
-- Password changes
-- 2FA enable/disable
-- Terminal connect/disconnect
-- Capability denial events
-- `capability_temporarily_granted` — a host-local temporary grant turned an off-by-default capability on
-- `capability_grant_expired` — a temporary grant reached its deadline and the capability turned back off
-- `capability_grant_revoked` — a host operator revoked a temporary grant early
-- `tailscale.config.update` — an administrator updated Tailscale / Headscale control-plane or Serve authentication settings
+- **Authentication & account security**: `login`, `login_failed`, `login_rate_limited`, `onboarding`, password changes, 2FA enable/disable
+- **Users & API keys**: `user.create`, `user.update`, `user.delete`, `api_key.create`, `api_key.delete`
+- **Terminal & File Manager**: `terminal_opened`, `terminal_closed`, `terminal_open_denied`, `file_*` (including `file_read_denied`, `file_download_denied`)
+- **Firewall & Docker**: `firewall_*` (block create/delete/apply/remove/reject/reset/conflict), `docker_*` (container lifecycle actions)
+- **Remote commands & scheduled tasks**: `task_created`, `task_updated`, `task_deleted`, `exec_started`, `exec_finished`, `exec_denied`
+- **Capabilities**: `capability_temporarily_granted`, `capability_grant_expired`, `capability_grant_revoked`, and capability denial events
+- **System, rate limits, audit & Tailscale**: `settings.backup`, `settings.restore`, `rate_limit.reset`, `audit_log_clear`, `tailscale.config.update`, `tailscale.auto_provision`
 
-### Viewing Audit Logs
+### Viewing and Managing Audit Logs
 
-Go to Settings → Audit Logs:
+Go to **Settings → Audit Logs**:
 
-- Browse all audit records (paginated)
+- Browse all audit records (paginated) and filter by action type or user
 - View user, action type, details, IP address, and timestamp
+- Clear all audit logs (creates a new `audit_log_clear` record noting the administrator and deleted count)
 
-### API Endpoint
+### API Endpoints
 
-```
-GET /api/audit-logs?limit=50&offset=0
-```
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/audit-logs` | GET | Paginated audit log list; supports `limit` (default `50`, max `200`), `offset`, `action`, and `user_id` |
+| `/api/audit-logs/options` | GET | Distinct `actions` and `users` available for filter dropdowns |
+| `/api/audit-logs` | DELETE | Clear all audit log entries (logs a fresh `audit_log_clear` entry) |
 
-Returns a paginated list of audit records. Each entry contains:
+Example response from `GET /api/audit-logs?limit=50&offset=0`:
 
 ```json
 {
-  "id": 1,
-  "user_id": "user-uuid",
-  "action": "login",
-  "detail": "Login successful",
-  "ip": "192.168.1.100",
-  "created_at": "2026-03-14T10:30:00Z"
+  "data": {
+    "entries": [
+      {
+        "id": 1,
+        "user_id": "user-uuid",
+        "action": "login",
+        "detail": null,
+        "ip": "192.168.1.100",
+        "created_at": "2026-03-14T10:30:00Z"
+      }
+    ],
+    "total": 1
+  }
 }
 ```
 
@@ -111,9 +176,10 @@ Administrators can dispatch commands to online servers and retrieve execution re
 
 ### Limitations
 
-- Command execution timeout: 300 seconds
-- Requires the target agent to have the `exec` capability (CAP_EXEC), which is off by default. Capabilities are agent-owned — enable it on the agent host by adding `exec` to its `[capabilities]` allow list (or `--allow-cap exec`). See [Capabilities](/en/docs/capabilities)
-- Servers whose agent does not report CAP_EXEC receive a synthetic result: `exit_code = -2`, message: "Capability disabled"
+- Default command execution timeout: **300 seconds** (configurable per task via `timeout`; the web UI one-shot form defaults to **30 seconds**)
+- Command stdout/stderr output is truncated at **512 KB** (`MAX_TASK_OUTPUT_SIZE`)
+- Requires the target agent to have the `exec` capability (`CAP_EXEC`), which is off by default. Capabilities are agent-owned — enable it on the agent host by adding `exec` to its `[capabilities]` allow list (or `--allow-cap exec`). See [Capabilities](/en/docs/capabilities)
+- Servers whose agent does not report `CAP_EXEC` receive a synthetic result: `exit_code = -2`, message: `"Capability denied: exec is disabled in the agent's config (capabilities are agent-owned)"`
 - Only Admin role can create tasks
 
 ### API Endpoints
@@ -122,7 +188,7 @@ Administrators can dispatch commands to online servers and retrieve execution re
 |----------|--------|-------------|
 | `/api/tasks` | POST | Create and dispatch a command |
 | `/api/tasks/{id}` | GET | Get task details |
-| `/api/tasks/{id}/results` | GET | Get execution results |
+| `/api/tasks/{id}/results` | GET | Get execution results (supports `?run_id=<uuid>`; unfiltered queries cap at `500` results) |
 
 Request body for creating a one-shot task:
 
@@ -142,7 +208,7 @@ Scheduled tasks extend remote commands with cron-based execution, retries, and r
 
 1. Go to **Settings → Tasks**.
 2. Switch to the scheduled task section.
-3. Enter a name, command, cron expression, target servers, timeout, retry count, and retry interval.
+3. Enter a name, command, 6-field cron expression, target servers, timeout, retry count, and retry interval.
 4. Save the task. Enabled tasks are registered with the server-side scheduler immediately.
 
 Scheduled tasks use the server's `scheduler.timezone` setting when calculating `next_run_at`.
@@ -153,27 +219,27 @@ Scheduled tasks use the server's `scheduler.timezone` setting when calculating `
 |-------|-------------|
 | `name` | Display name for the scheduled task |
 | `task_type` | Use `scheduled` for cron tasks; omitted/default is `oneshot` |
-| `cron_expression` | Cron expression parsed by the server scheduler |
+| `cron_expression` | **6-field** cron expression with leading seconds (`sec min hour day-of-month month day-of-week`, e.g. `0 0 8 * * *` for daily at 08:00:00) |
 | `command` | Shell command sent to each target agent |
 | `server_ids` | Target servers |
-| `timeout` | Per-attempt command timeout in seconds; default execution timeout is 300 seconds |
-| `retry_count` | Number of retry attempts after the first attempt; must be 0-10 |
-| `retry_interval` | Seconds to wait between retries; must be at least 1 |
+| `timeout` | Per-attempt command timeout in seconds; default execution timeout is `300` seconds |
+| `retry_count` | Number of retry attempts after the first attempt; must be `0`–`10` |
+| `retry_interval` | Seconds to wait between retries; must be at least `1` |
 | `enabled` | Disabled tasks are removed from the scheduler and do not run automatically |
 
 ### Execution Behavior
 
 - Each scheduled trigger creates a `run_id` used to group results from all target servers and retry attempts.
 - ServerBee prevents overlapping runs of the same scheduled task. If the previous run is still active, the new trigger is skipped.
-- `POST /api/tasks/{id}/run` starts a manual run and skips retry logic.
+- `POST /api/tasks/{id}/run` is restricted to `scheduled` tasks only, starts a manual run, and skips retry logic.
 - Disabling or deleting a task cancels its active run.
-- Results include an `attempt` number so you can distinguish retries.
+- Results include an `attempt` number so you can distinguish retries, and stdout/stderr is truncated at **512 KB**.
 
 Synthetic exit codes:
 
 | Exit code | Meaning |
 |-----------|---------|
-| `-2` | `CAP_EXEC` disabled or blocked by agent-local capability policy |
+| `-2` | `CAP_EXEC` disabled or blocked by agent-local capability policy (`"Capability denied: exec is disabled in the agent's config (capabilities are agent-owned)"`) |
 | `-3` | Server offline or dispatch failed |
 | `-4` | No agent response before timeout |
 
@@ -200,25 +266,44 @@ Relevant endpoints:
 | `/api/tasks` | POST | Create one-shot or scheduled task |
 | `/api/tasks/{id}` | PUT | Update task fields, enable/disable, and scheduler registration |
 | `/api/tasks/{id}` | DELETE | Delete a task and cancel active execution |
-| `/api/tasks/{id}/run` | POST | Manually run a task |
-| `/api/tasks/{id}/results` | GET | Fetch task results grouped by task/run/attempt |
+| `/api/tasks/{id}/run` | POST | Manually trigger a `scheduled` task (not supported for `oneshot` tasks) |
+| `/api/tasks/{id}/results` | GET | Fetch task results grouped by task/run/attempt (supports `?run_id=<uuid>`; unfiltered cap `500`) |
 
 ## Billing Information
 
-Administrators can record billing details for each server to track VPS costs and expiration dates.
+Administrators can record billing details for each server to track VPS costs, traffic allowances, and expiration dates.
 
 ### Managing Billing Info
 
-1. Go to server detail page → click Edit
-2. Fill in the "Billing" section:
+1. Go to server detail page → click **Edit**
+2. Fill in the **Billing** section:
 
 | Field | Description |
 |-------|-------------|
 | `price` | Price amount |
-| `billing_cycle` | Billing cycle (monthly/quarterly/yearly, etc.) |
-| `currency` | Currency unit (CNY/USD, etc.) |
-| `expired_at` | Expiration date |
+| `billing_cycle` | Billing cycle (`monthly`, `quarterly`, `yearly`, etc.) |
+| `currency` | Currency unit (`CNY`, `USD`, etc.) |
+| `expired_at` / `renewal.expiry_date` | Expiration date (calendar `YYYY-MM-DD` via `renewal.expiry_date`, or legacy UTC `expired_at`; do not submit both together) |
+| `renewal` | Optional automatic renewal configuration (`enabled`, IANA `billing_timezone`, `expiry_date`) |
 | `traffic_limit` | Traffic limit in bytes |
+| `traffic_limit_type` | Accounting direction: `sum` (in + out), `up` (outbound), or `down` (inbound) |
+| `billing_start_day` | Day of the month (`1`–`31`) when the monthly traffic cycle resets |
+
+### Automatic Renewal Tracking
+
+Automatic renewal tracking is **opt-in per server** (disabled by default) and keeps recurring VPS deadlines rolling forward on the provider's billing calendar:
+
+- **Requirements**: Enabling `renewal.enabled = true` requires an expiry date (`renewal.expiry_date` or existing `expired_at`), a valid IANA `billing_timezone` (for example `Asia/Shanghai`, `America/New_York`, or `UTC`), and a supported `billing_cycle` (`monthly`, `quarterly`, or `yearly`).
+- **Billing-calendar dates**: Clients submit local calendar dates (`YYYY-MM-DD`) in `renewal.expiry_date` rather than raw UTC timestamps. The server computes the exact end-of-day UTC boundary in `billing_timezone`.
+- **Response projection & `deadline_origin`**: Server responses expose a `renewal` object (`enabled`, `billing_timezone`, `expiry_date`, `confirmed_expired_at`, `deadline_origin`, `occurrence_id`). `deadline_origin` distinguishes how the current deadline was produced:
+  - `confirmed` — explicitly confirmed by an operator (auto-renewal disabled).
+  - `projected` — auto-renewal is enabled and the deadline is projected forward automatically while retaining the original anchor day (clamping to month-end for shorter months).
+  - `frozen` — auto-renewal was disabled after previously being `projected`; the last projected deadline stays frozen until an operator sets a new confirmed date.
+- **Offline catch-up**: If the server is offline past one or more renewal boundaries, the renewal task catches up directly to the first unexpired occurrence while preserving the original anchor day. Skipped historical occurrences are never recorded as payments.
+
+<Callout type="info">
+Automatic renewal tracking is a **calendar forecast only** — it does not connect to your VPS provider or confirm that an actual payment succeeded.
+</Callout>
 
 ### Expiration Alerts
 
@@ -255,11 +340,24 @@ Admins manage onboarding and re-enrollment from **Add Server** and each Server's
 
 For an unclaimed Server, an admin may issue an offer. For a claimed Server, start either graceful re-enrollment (keep current authority until the replacement claim) or emergency re-enrollment (revoke and fence it immediately). Only one offer may be outstanding, and replacement or revocation targets that exact offer ID. Revoking Agent Authority is a separate action and never creates an offer implicitly.
 
-The Agent Authority history records actor, source, transition, mode, offer outcome, and before/after status without storing plaintext secrets. These events survive Server deletion for operational investigation.
+The Agent Authority history records actor, source, transition, mode, offer outcome, and before/after status without storing plaintext secrets. These events survive Server deletion for operational investigation and are pruned by the cleanup task according to `retention.audit_logs_days` (default 180 days).
 
 ### Clean Up Unconnected Placeholders
 
-Abandoned onboarding can leave behind offline Server placeholders. The Servers page then shows a **Clean up unconnected** action that removes only never-initialized offline placeholders and deliberately keeps online-but-uninitialized agents.
+Abandoned onboarding can leave behind offline Server placeholders. The Servers page then shows a **Clean up unconnected** action (`DELETE /api/servers/cleanup`) that removes only never-initialized offline placeholders and deliberately keeps online-but-uninitialized agents.
+
+### Agent Authority API Endpoints
+
+| Endpoint | Method | Access | Description |
+|----------|--------|--------|-------------|
+| `/api/servers/{id}/agent-authority` | GET | Authenticated | Inspect Agent Authority state and active offer metadata |
+| `/api/agent-authority/events` | GET | Authenticated | List Agent Authority transition history |
+| `/api/servers/{id}/agent-authority/offers` | POST | Admin | Issue an enrollment offer for an unclaimed server |
+| `/api/servers/{id}/agent-authority/re-enrollment` | POST | Admin | Start `graceful` or `emergency` re-enrollment for a claimed server |
+| `/api/servers/{id}/agent-authority/offers/{offer_id}/replace` | POST | Admin | Replace an outstanding enrollment offer |
+| `/api/servers/{id}/agent-authority/offers/{offer_id}` | DELETE | Admin | Revoke an outstanding enrollment offer |
+| `/api/servers/{id}/agent-authority` | DELETE | Admin | Revoke active Agent Authority (does not create a new offer) |
+| `/api/servers/cleanup` | DELETE | Admin | Remove never-initialized offline server placeholders |
 
 ## Tailscale Control Plane Administration
 
