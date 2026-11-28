@@ -708,10 +708,6 @@ impl MobileAuthService {
         mobile_session_id: &str,
     ) -> Result<(), AppError> {
         let txn = db.begin().await?;
-        let user_id = mobile_session::Entity::find_by_id(mobile_session_id)
-            .one(&txn)
-            .await?
-            .map(|ms| ms.user_id);
 
         session::Entity::delete_many()
             .filter(session::Column::MobileSessionId.eq(mobile_session_id))
@@ -722,6 +718,11 @@ impl MobileAuthService {
             .filter(device_token::Column::MobileSessionId.eq(mobile_session_id))
             .exec(&txn)
             .await?;
+
+        let user_id = mobile_session::Entity::find_by_id(mobile_session_id)
+            .one(&txn)
+            .await?
+            .map(|ms| ms.user_id);
 
         mobile_session::Entity::delete_by_id(mobile_session_id)
             .exec(&txn)
