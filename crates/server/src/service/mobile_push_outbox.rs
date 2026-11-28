@@ -1,5 +1,8 @@
 //! Durable installation-scoped delivery. Network work never runs on event evaluation.
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, LazyLock, OnceLock},
+    time::Duration,
+};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::Utc;
@@ -8,6 +11,7 @@ use sea_orm::{
     QueryOrder, QuerySelect, Statement, TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 
 use crate::{
@@ -21,6 +25,39 @@ use crate::{
 
 const SEND_TIMEOUT: u64 = 15;
 const LEASE_SECONDS: i64 = 30;
+const FALLBACK_SWEEP_SECS: u64 = 20;
+
+static OUTBOX_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
+static TASK_RECOVERY_NOTIFY: LazyLock<Notify> = LazyLock::new(Notify::new);
+static PUSH_HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+pub(crate) fn notify_outbox() {
+    OUTBOX_NOTIFY.notify_waiters();
+}
+
+pub(crate) fn notify_task_recovery() {
+    TASK_RECOVERY_NOTIFY.notify_waiters();
+}
+
+fn push_http_client() -> Result<&'static reqwest::Client, reqwest::Error> {
+    if let Some(client) = PUSH_HTTP_CLIENT.get() {
+        return Ok(client);
+    }
+    let built = reqwest::Client::builder()
+        .timeout(Duration::from_secs(SEND_TIMEOUT))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let _ = PUSH_HTTP_CLIENT.set(built);
+    Ok(PUSH_HTTP_CLIENT
+        .get()
+        .expect("push http client initialized"))
+}
+
+enum DeliveryWait {
+    Immediate,
+    Delay(Duration),
+    Idle,
+}
 
 /// Immutable recipient identity, without keys or delivery credentials.
 #[derive(Serialize, Deserialize)]
@@ -157,33 +194,51 @@ struct RelayDelivery {
     device_invalid: bool,
 }
 
-/// Production startup entry point, also used by restart integration tests.
-/// Four independent workers bound concurrency; durable leases fence overlapping
-/// workers/restarts. Aborting this owner cancels its in-flight network requests.
 pub fn start(state: Arc<AppState>) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut workers = tokio::task::JoinSet::new();
         let recovery_state = state.clone();
         workers.spawn(async move {
             loop {
-                if super::task_notification::recover_pending(&recovery_state)
-                    .await
-                    .is_err()
-                {
-                    tracing::warn!("Scheduled task notification recovery will retry");
+                let notified = TASK_RECOVERY_NOTIFY.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                match super::task_notification::recover_pending(&recovery_state).await {
+                    Ok(count) if count >= 32 => continue,
+                    Ok(_) => {}
+                    Err(_) => {
+                        tracing::warn!("Scheduled task notification recovery will retry");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
                 }
-                tokio::time::sleep(Duration::from_secs(1)).await;
+                tokio::select! {
+                    _ = &mut notified => {}
+                    _ = tokio::time::sleep(Duration::from_secs(FALLBACK_SWEEP_SECS)) => {}
+                }
             }
         });
         for _ in 0..4 {
             let state = state.clone();
             workers.spawn(async move {
                 loop {
-                    if deliver_next(&state).await.is_err() {
-                        // Do not print network bodies, credentials or ciphertext.
-                        tracing::warn!("Mobile push worker could not update delivery state");
+                    let notified = OUTBOX_NOTIFY.notified();
+                    tokio::pin!(notified);
+                    notified.as_mut().enable();
+                    let wait = match deliver_next(&state).await {
+                        Ok(DeliveryWait::Immediate) => continue,
+                        Ok(DeliveryWait::Delay(delay)) => delay,
+                        Ok(DeliveryWait::Idle) => Duration::from_secs(FALLBACK_SWEEP_SECS),
+                        Err(_) => {
+                            tracing::warn!("Mobile push worker could not update delivery state");
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    };
+                    tokio::select! {
+                        _ = &mut notified => {}
+                        _ = tokio::time::sleep(wait) => {}
                     }
-                    tokio::time::sleep(Duration::from_millis(250)).await;
                 }
             });
         }
@@ -270,26 +325,28 @@ pub(crate) async fn eligible(
     }
 }
 
-async fn deliver_next(state: &AppState) -> Result<(), AppError> {
+async fn deliver_next(state: &AppState) -> Result<DeliveryWait, AppError> {
     let now = Utc::now().timestamp();
-    // Idle workers only read. Avoid competing for SQLite's writer lock on
-    // every poll when there is no due/expired work. Recheck under the lock below.
-    let ready = outbox::Entity::find()
-        .filter(outbox::Column::Outcome.is_in(["pending", "retryable"]))
-        .filter(outbox::Column::LeaseUntil.lte(now))
-        .filter(
-            sea_orm::Condition::any()
-                .add(outbox::Column::NextAttemptAt.lte(now))
-                .add(outbox::Column::ExpiresAt.lte(now)),
-        )
-        .limit(1)
-        .one(&state.db)
-        .await?;
-    if ready.is_none() {
-        return Ok(());
+    let next_wake = state
+        .db
+        .query_one(Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            "SELECT MIN(MAX(lease_until, MIN(next_attempt_at, expires_at))) \
+             FROM mobile_push_outbox \
+             WHERE outcome IN ('pending', 'retryable')",
+            [],
+        ))
+        .await?
+        .and_then(|row| row.try_get_by_index::<Option<i64>>(0).ok().flatten());
+    match next_wake {
+        None => return Ok(DeliveryWait::Idle),
+        Some(wake_ts) if wake_ts > now => {
+            let secs = (wake_ts - now).clamp(1, FALLBACK_SWEEP_SECS as i64) as u64;
+            return Ok(DeliveryWait::Delay(Duration::from_secs(secs)));
+        }
+        Some(_) => {}
     }
     let txn = state.db.begin().await?;
-    // Take the SQLite writer lock before selection, eligibility and claim.
     txn.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
         "UPDATE mobile_push_outbox SET outcome='expired', reason='Expired', envelope=NULL, lease_id=NULL, lease_until=0 WHERE outcome IN ('pending','retryable') AND expires_at<=? AND lease_until<=?",
         [now.into(), now.into()])).await?;
@@ -303,7 +360,7 @@ async fn deliver_next(state: &AppState) -> Result<(), AppError> {
         .await?;
     let Some(job) = job else {
         txn.commit().await?;
-        return Ok(());
+        return Ok(DeliveryWait::Immediate);
     };
     let row = eligible(&txn, &job).await?;
     let Some(row) = row else {
@@ -311,25 +368,22 @@ async fn deliver_next(state: &AppState) -> Result<(), AppError> {
             "UPDATE mobile_push_outbox SET outcome='permanent', reason='Ineligible', envelope=NULL WHERE event_id=? AND installation_id=?",
             [job.event_id.into(), job.installation_id.into()])).await?;
         txn.commit().await?;
-        return Ok(());
+        return Ok(DeliveryWait::Immediate);
     };
     let lease = uuid::Uuid::new_v4().to_string();
     txn.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
         "UPDATE mobile_push_outbox SET lease_id=?, lease_until=?, attempts=attempts+1 WHERE event_id=? AND installation_id=?",
         [lease.clone().into(), (now+LEASE_SECONDS).into(), job.event_id.clone().into(), job.installation_id.clone().into()])).await?;
     txn.commit().await?;
-    // The eligibility transaction is the start boundary. A subsequent revocation
-    // cannot retract a request already in flight or an accepted provider receipt.
     let delivery = send(state, &job, &row).await;
     let finished = Utc::now().timestamp();
     let txn = state.db.begin().await?;
-    // Serialize response handling with replacement and revocation writes.
     let locked = txn.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
         "UPDATE mobile_push_outbox SET lease_until=lease_until WHERE event_id=? AND installation_id=? AND lease_id=?",
         [job.event_id.clone().into(), job.installation_id.clone().into(), lease.clone().into()])).await?;
     if locked.rows_affected() != 1 {
         txn.commit().await?;
-        return Ok(());
+        return Ok(DeliveryWait::Immediate);
     }
     let (outcome, reason) = if delivery.outcome == "retryable" && finished >= job.expires_at {
         ("expired", "Expired")
@@ -337,8 +391,6 @@ async fn deliver_next(state: &AppState) -> Result<(), AppError> {
         (delivery.outcome.as_str(), delivery.reason.as_str())
     };
     if delivery.device_invalid && delivery.reason == "Unregistered" && outcome == "permanent" {
-        // CAS all sending identity fields: late terminal responses cannot erase
-        // a new token, environment, key or login while this send is outstanding.
         txn.execute(Statement::from_sql_and_values(DatabaseBackend::Sqlite,
             "UPDATE mobile_push_registrations SET device_token=NULL, revision=revision+1 WHERE installation_id=? AND user_id=? AND mobile_session_id=? AND revision=? AND device_token=? AND environment=? AND content_key_id=? AND content_key=? AND deployment_id=?",
             [row.installation_id.into(), row.user_id.into(), row.mobile_session_id.into(), row.revision.into(), row.device_token.into(), row.environment.into(), row.content_key_id.into(), row.content_key.into(), row.deployment_id.into()])).await?;
@@ -348,7 +400,7 @@ async fn deliver_next(state: &AppState) -> Result<(), AppError> {
         "UPDATE mobile_push_outbox SET outcome=?, reason=?, next_attempt_at=?, lease_id=NULL, lease_until=0, envelope=CASE WHEN ?='retryable' THEN envelope ELSE NULL END WHERE event_id=? AND installation_id=? AND lease_id=?",
         [outcome.into(), reason.into(), (finished+backoff).min(job.expires_at).into(), outcome.into(), job.event_id.into(), job.installation_id.into(), lease.into()])).await?;
     txn.commit().await?;
-    Ok(())
+    Ok(DeliveryWait::Immediate)
 }
 
 async fn send(state: &AppState, job: &outbox::Model, row: &registration::Model) -> RelayDelivery {
@@ -372,11 +424,7 @@ async fn send(state: &AppState, job: &outbox::Model, row: &registration::Model) 
             device_invalid: false,
         };
     };
-    let Ok(client) = reqwest::Client::builder()
-        .timeout(Duration::from_secs(SEND_TIMEOUT))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-    else {
+    let Ok(client) = push_http_client() else {
         return retry();
     };
     let result = client.post(format!("{url}/v1/send"))

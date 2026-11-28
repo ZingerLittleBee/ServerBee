@@ -44,6 +44,9 @@ pub(crate) fn authority_fingerprint(token_hash: &str) -> String {
     format!("{:x}", Sha256::digest(token_hash.as_bytes()))
 }
 
+const MAX_RETAINED_EVENTS: usize = 4096;
+const RECOVERY_FALLBACK_SWEEP_SECS: u64 = 20;
+
 pub struct SecurityService {
     pub db: DatabaseConnection,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
@@ -55,6 +58,7 @@ pub struct SecurityService {
     retained: tokio::sync::Mutex<VecDeque<RetainedSecurityEvent>>,
     recovery_cursor: tokio::sync::Mutex<Option<(DateTime<Utc>, String)>>,
     push_cursor: tokio::sync::Mutex<Option<(DateTime<Utc>, String)>>,
+    recovery_notify: tokio::sync::Notify,
 }
 
 impl SecurityService {
@@ -77,13 +81,10 @@ impl SecurityService {
             retained: tokio::sync::Mutex::new(VecDeque::new()),
             recovery_cursor: tokio::sync::Mutex::new(None),
             push_cursor: tokio::sync::Mutex::new(None),
+            recovery_notify: tokio::sync::Notify::new(),
         }
     }
 
-    /// The WS caller transfers the original event to this service-owned queue
-    /// while still holding its current-connection gate. No storage or effects
-    /// await in that critical section. Before the first successful raw write,
-    /// retention is in memory: process death cannot recover an unwritten event.
     pub async fn retain_agent_event(
         &self,
         server_id: &str,
@@ -95,12 +96,21 @@ impl SecurityService {
             .ok_or_else(|| AppError::Forbidden("Security authority unavailable".into()))?;
         let mut retained = Self::original_event(server_id, payload)?;
         retained.event.authority_fingerprint = Some(fingerprint);
-        self.retained.lock().await.push_back(retained);
+        {
+            let mut queue = self.retained.lock().await;
+            if queue.len() >= MAX_RETAINED_EVENTS {
+                queue.pop_front();
+                tracing::warn!(
+                    capacity = MAX_RETAINED_EVENTS,
+                    "Security retained event queue full; dropping oldest event"
+                );
+            }
+            queue.push_back(retained);
+        }
+        self.recovery_notify.notify_waiters();
         Ok(())
     }
 
-    /// Synchronous trusted service entry point; production WS uses retention.
-    /// A storage failure returns once instead of waiting under a caller's lock.
     pub async fn record_event(
         &self,
         server_id: &str,
@@ -110,6 +120,7 @@ impl SecurityService {
         let id = retained.event.id.clone();
         self.persist_original(&retained).await?;
         if self.recover_pending().await.is_err() {
+            self.recovery_notify.notify_waiters();
             tracing::warn!("Security admission deferred; original event remains durable");
         }
         Ok(id)
@@ -226,27 +237,36 @@ impl SecurityService {
         Ok(())
     }
 
-    /// Production startup owner, also used by file-SQLite restart tests. Pending
-    /// records are original events, not another detection or a new delivery window.
     pub fn start_recovery(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         let service = self.clone();
         tokio::spawn(async move {
             loop {
-                if service.recover_pending().await.is_err() {
-                    tracing::warn!("Security admission recovery remains pending");
+                let notified = service.recovery_notify.notified();
+                tokio::pin!(notified);
+                notified.as_mut().enable();
+                match service.recover_pending_once().await {
+                    Ok(true) => continue,
+                    Ok(false) => {}
+                    Err(_) => {
+                        tracing::warn!("Security admission recovery remains pending");
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
                 }
-                tokio::time::sleep(Duration::from_millis(250)).await;
+                tokio::select! {
+                    _ = &mut notified => {}
+                    _ = tokio::time::sleep(Duration::from_secs(RECOVERY_FALLBACK_SWEEP_SECS)) => {}
+                }
             }
         })
     }
 
     async fn recover_pending(&self) -> Result<(), AppError> {
-        // Preserve original event ordering for sliding cooldown. The SQLite
-        // writer lock and durable markers also fence overlapping Server owners.
+        self.recover_pending_once().await.map(|_| ())
+    }
+
+    async fn recover_pending_once(&self) -> Result<bool, AppError> {
         let _guard = self.admission_lock.lock().await;
-        // Never move an item out before persistence: cancellation/shutdown of
-        // the worker leaves it owned by the service. Each item gets one attempt
-        // per pass, so a faulty source cannot starve other original events.
         let retained: Vec<_> = self
             .retained
             .lock()
@@ -255,6 +275,7 @@ impl SecurityService {
             .take(64)
             .cloned()
             .collect();
+        let mut had_work = !retained.is_empty();
         for original in retained {
             let id = &original.event.id;
             let completed = self.persist_original(&original).await.is_ok();
@@ -263,8 +284,6 @@ impl SecurityService {
                 if completed {
                     let _ = queue.remove(position);
                 } else if let Some(pending) = queue.remove(position) {
-                    // Rotate retry failures inside the owner, never across an
-                    // await. Other sources still receive bounded write attempts.
                     queue.push_back(pending);
                     tracing::warn!(
                         "Security raw storage unavailable; owner retains original event"
@@ -273,40 +292,41 @@ impl SecurityService {
             }
         }
 
-        // Select only the oldest durable original per potential rule dedup key.
-        // A missing snapshot or failed admission must not expose that key's tail.
-        // Cursor rotation prevents blocked keys from monopolizing the 64 slots.
         let cursor = self.recovery_cursor.lock().await.clone();
-        let mut pending = self.pending_heads(cursor).await?;
-        if pending.is_empty() {
+        let mut pending = self.pending_heads(cursor.clone()).await?;
+        if pending.is_empty() && cursor.is_some() {
             pending = self.pending_heads(None).await?;
         }
         *self.recovery_cursor.lock().await = pending
             .last()
             .map(|event| (event.created_at, event.id.clone()));
+        if !pending.is_empty() {
+            had_work = true;
+        }
         let mut error = None;
         for event in pending {
             if let Err(e) = self.admit_original_event(&event.id).await {
                 error = Some(e);
-                // This key remains pending, but unrelated originals may proceed.
             }
         }
-        // Poll these independently: even many broken push intents must never
-        // starve raw events' rule decisions, firewall or external channels.
+
         let cursor = self.push_cursor.lock().await.clone();
-        let mut intents = self.pending_push_intents(cursor).await?;
-        if intents.is_empty() {
+        let mut intents = self.pending_push_intents(cursor.clone()).await?;
+        if intents.is_empty() && cursor.is_some() {
             intents = self.pending_push_intents(None).await?;
         }
         *self.push_cursor.lock().await = intents
             .last()
             .map(|event| (event.created_at, event.id.clone()));
+        if !intents.is_empty() {
+            had_work = true;
+        }
         for event in intents {
             if let Err(e) = self.materialize_push_intent(&event.id).await {
                 error = Some(e);
             }
         }
-        error.map_or(Ok(()), Err)
+        error.map_or(Ok(had_work), Err)
     }
 
     async fn pending_push_intents(
@@ -537,9 +557,8 @@ impl SecurityService {
         let mut model: security_event::ActiveModel = event.into();
         model.push_intent = Set(None);
         model.update(&txn).await?;
-        // All fan-out jobs and consuming the intent commit together; an INSERT
-        // failure leaves no partial jobs and retains the original recovery marker.
         txn.commit().await?;
+        super::mobile_push_outbox::notify_outbox();
         Ok(())
     }
 

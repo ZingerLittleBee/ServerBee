@@ -171,6 +171,9 @@ async fn replay_one(
     }
     intent::Entity::delete_by_id(id).exec(&txn).await?;
     txn.commit().await?;
+    if notify {
+        crate::service::mobile_push_outbox::notify_outbox();
+    }
     manager.publish_state(&state);
     drop(admission);
     // Existing external channels remain best-effort. Only the transaction that
