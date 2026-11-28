@@ -153,25 +153,32 @@ pub async fn download_dbip(data_dir: &str) -> Result<GeoIpService, String> {
         .await
         .map_err(|e| format!("Failed to read response: {e}"))?;
 
-    // Decompress gzip
-    let mut decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(&compressed));
-    let mut decompressed = Vec::new();
-    decoder
-        .read_to_end(&mut decompressed)
-        .map_err(|e| format!("Failed to decompress: {e}"))?;
+    let data_dir = data_dir.to_string();
+    let (service, final_path) = tokio::task::spawn_blocking(move || {
+        let mut decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(&compressed));
+        let mut decompressed = Vec::new();
+        decoder
+            .read_to_end(&mut decompressed)
+            .map_err(|e| format!("Failed to decompress: {e}"))?;
 
-    // Validate it's a valid MMDB before writing to disk
-    let final_path = Path::new(data_dir).join(DBIP_FILENAME);
-    let service =
-        GeoIpService::load_from_bytes(decompressed.clone(), final_path.display().to_string())?;
+        Reader::from_source(decompressed.as_slice())
+            .map_err(|e| format!("Invalid MMDB data: {e}"))?;
 
-    // Atomic write: tmp file then rename
-    std::fs::create_dir_all(data_dir)
-        .map_err(|e| format!("Failed to create data directory: {e}"))?;
-    let tmp_path = Path::new(data_dir).join(format!("{DBIP_FILENAME}.tmp"));
-    std::fs::write(&tmp_path, &decompressed)
-        .map_err(|e| format!("Failed to write database: {e}"))?;
-    std::fs::rename(&tmp_path, &final_path).map_err(|e| format!("Failed to save database: {e}"))?;
+        let final_path = Path::new(&data_dir).join(DBIP_FILENAME);
+        std::fs::create_dir_all(&data_dir)
+            .map_err(|e| format!("Failed to create data directory: {e}"))?;
+        let tmp_path = Path::new(&data_dir).join(format!("{DBIP_FILENAME}.tmp"));
+        std::fs::write(&tmp_path, &decompressed)
+            .map_err(|e| format!("Failed to write database: {e}"))?;
+        std::fs::rename(&tmp_path, &final_path)
+            .map_err(|e| format!("Failed to save database: {e}"))?;
+
+        let service =
+            GeoIpService::load_from_bytes(decompressed, final_path.display().to_string())?;
+        Ok::<_, String>((service, final_path))
+    })
+    .await
+    .map_err(|e| format!("Decompression task failed: {e}"))??;
 
     tracing::info!("GeoIP database saved to {}", final_path.display());
     Ok(service)

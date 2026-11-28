@@ -329,13 +329,9 @@ impl TailscaleUpstreamTransport for ReqwestTailscaleTransport {
             .to_string();
         let port = query.base_url.port_or_known_default().unwrap_or(443);
 
-        let resolve_host = clean_host.clone();
-        let validated_addrs = tokio::task::spawn_blocking(move || {
-            ssrf::resolve_and_check_monitor(&resolve_host, port)
-        })
-        .await
-        .map_err(|e| format!("DNS resolution task failed: {e}"))?
-        .map_err(|e| e.to_string())?;
+        let validated_addrs = ssrf::resolve_and_check_monitor_async(&clean_host, port)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let mut builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))

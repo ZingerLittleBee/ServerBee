@@ -9,5 +9,6 @@ serde_json.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 anyhow.workspace = true
+tokio = { version = "1", features = ["net"] }
 url = "2"
 utoipa = { version = "5", features = ["chrono"], optional = true }

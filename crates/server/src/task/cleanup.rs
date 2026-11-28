@@ -5,7 +5,10 @@ use chrono::{Duration as ChronoDuration, Utc};
 use sea_orm::*;
 
 use crate::config::RetentionConfig;
-use crate::entity::{audit_log, ping_record, security_event};
+use crate::entity::{
+    agent_authority_event, audit_log, enrollment_offer, mobile_push_outbox, ping_record,
+    security_event, task_run, traceroute_record,
+};
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::network_probe::NetworkProbeService;
 use crate::service::record::RecordService;
@@ -45,7 +48,8 @@ pub(crate) async fn run_cleanup_tick(
     }
 
     // Clean up hourly records
-    match RecordService::cleanup_expired(db, retention.records_hourly_days, "records_hourly").await {
+    match RecordService::cleanup_expired(db, retention.records_hourly_days, "records_hourly").await
+    {
         Ok(n) if n > 0 => tracing::info!("Cleaned up {n} expired hourly records"),
         Err(e) => tracing::error!("Failed to clean up hourly records: {e}"),
         _ => {}
@@ -136,12 +140,17 @@ pub(crate) async fn run_cleanup_tick(
         _ => {}
     }
 
-    // Clean up stale IP risk cache entries (fixed 30-day window)
     match cleanup_ip_risk_cache(db, 30).await {
         Ok(n) if n > 0 => tracing::info!("Cleaned up {n} stale IP risk cache entries"),
         Err(e) => tracing::error!("Failed to clean up IP risk cache: {e}"),
         _ => {}
     }
+
+    cleanup_mobile_push_outbox(db, 7).await;
+    cleanup_task_runs(db, retention.task_results_days).await;
+    cleanup_traceroute_records(db, retention.network_probe_days).await;
+    cleanup_agent_authority_events(db, retention.audit_logs_days).await;
+    cleanup_enrollment_offers(db, 30).await;
 }
 
 async fn cleanup_ping_records(db: &DatabaseConnection, retention_days: u32) {
@@ -194,7 +203,10 @@ async fn cleanup_audit_logs(db: &DatabaseConnection, retention_days: u32) {
     }
 }
 
-pub async fn cleanup_ip_quality_events(db: &DatabaseConnection, retention_days: u32) -> Result<u64, sea_orm::DbErr> {
+pub async fn cleanup_ip_quality_events(
+    db: &DatabaseConnection,
+    retention_days: u32,
+) -> Result<u64, sea_orm::DbErr> {
     let cutoff = Utc::now() - ChronoDuration::days(retention_days as i64);
     let result = crate::entity::unlock_event::Entity::delete_many()
         .filter(crate::entity::unlock_event::Column::ChangedAt.lt(cutoff))
@@ -203,13 +215,117 @@ pub async fn cleanup_ip_quality_events(db: &DatabaseConnection, retention_days: 
     Ok(result.rows_affected)
 }
 
-pub async fn cleanup_ip_risk_cache(db: &DatabaseConnection, retention_days: u32) -> Result<u64, sea_orm::DbErr> {
+pub async fn cleanup_ip_risk_cache(
+    db: &DatabaseConnection,
+    retention_days: u32,
+) -> Result<u64, sea_orm::DbErr> {
     let cutoff = Utc::now() - ChronoDuration::days(retention_days as i64);
     let result = crate::entity::ip_risk_cache::Entity::delete_many()
         .filter(crate::entity::ip_risk_cache::Column::CheckedAt.lt(cutoff))
         .exec(db)
         .await?;
     Ok(result.rows_affected)
+}
+
+async fn cleanup_mobile_push_outbox(db: &DatabaseConnection, retention_days: u32) {
+    let cutoff = (Utc::now() - ChronoDuration::days(retention_days as i64)).timestamp();
+    match mobile_push_outbox::Entity::delete_many()
+        .filter(mobile_push_outbox::Column::Outcome.is_in(["accepted", "permanent", "expired"]))
+        .filter(mobile_push_outbox::Column::ExpiresAt.lt(cutoff))
+        .exec(db)
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {
+            tracing::info!(
+                "Cleaned up {} expired mobile push outbox rows",
+                result.rows_affected
+            );
+        }
+        Err(e) => tracing::error!("Failed to clean up mobile push outbox: {e}"),
+        _ => {}
+    }
+}
+
+async fn cleanup_task_runs(db: &DatabaseConnection, retention_days: u32) {
+    let cutoff = (Utc::now() - ChronoDuration::days(retention_days as i64)).timestamp();
+    match task_run::Entity::delete_many()
+        .filter(task_run::Column::Status.is_in(["completed", "incomplete"]))
+        .filter(task_run::Column::CompletedAt.lt(cutoff))
+        .exec(db)
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {
+            tracing::info!("Cleaned up {} expired task runs", result.rows_affected);
+        }
+        Err(e) => tracing::error!("Failed to clean up task runs: {e}"),
+        _ => {}
+    }
+}
+
+async fn cleanup_traceroute_records(db: &DatabaseConnection, retention_days: u32) {
+    let cutoff = (Utc::now() - ChronoDuration::days(retention_days as i64)).timestamp();
+    match traceroute_record::Entity::delete_many()
+        .filter(traceroute_record::Column::StartedAt.lt(cutoff))
+        .exec(db)
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {
+            tracing::info!(
+                "Cleaned up {} expired traceroute records",
+                result.rows_affected
+            );
+        }
+        Err(e) => tracing::error!("Failed to clean up traceroute records: {e}"),
+        _ => {}
+    }
+}
+
+async fn cleanup_agent_authority_events(db: &DatabaseConnection, retention_days: u32) {
+    let cutoff = Utc::now() - ChronoDuration::days(retention_days as i64);
+    match agent_authority_event::Entity::delete_many()
+        .filter(agent_authority_event::Column::CreatedAt.lt(cutoff))
+        .exec(db)
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {
+            tracing::info!(
+                "Cleaned up {} expired agent authority events",
+                result.rows_affected
+            );
+        }
+        Err(e) => tracing::error!("Failed to clean up agent authority events: {e}"),
+        _ => {}
+    }
+}
+
+async fn cleanup_enrollment_offers(db: &DatabaseConnection, retention_days: u32) {
+    let cutoff = Utc::now() - ChronoDuration::days(retention_days as i64);
+    match enrollment_offer::Entity::delete_many()
+        .filter(
+            Condition::any()
+                .add(
+                    Condition::all()
+                        .add(enrollment_offer::Column::Outcome.is_not_null())
+                        .add(enrollment_offer::Column::TerminalAt.lt(cutoff)),
+                )
+                .add(
+                    Condition::all()
+                        .add(enrollment_offer::Column::Outcome.is_null())
+                        .add(enrollment_offer::Column::ExpiresAt.lt(cutoff)),
+                ),
+        )
+        .exec(db)
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {
+            tracing::info!(
+                "Cleaned up {} expired enrollment offers",
+                result.rows_affected
+            );
+        }
+        Err(e) => tracing::error!("Failed to clean up enrollment offers: {e}"),
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -325,10 +441,7 @@ mod tests {
     }
 
     /// Insert an `unlock_event` with the given `changed_at` offset (negative = in the past).
-    async fn insert_event(
-        db: &sea_orm::DatabaseConnection,
-        days_ago: i64,
-    ) -> String {
+    async fn insert_event(db: &sea_orm::DatabaseConnection, days_ago: i64) -> String {
         use crate::entity::unlock_service;
 
         ensure_server(db).await;
@@ -357,11 +470,7 @@ mod tests {
     }
 
     /// Insert an `ip_risk_cache` row with the given `checked_at` offset.
-    async fn insert_cache(
-        db: &sea_orm::DatabaseConnection,
-        ip: &str,
-        days_ago: i64,
-    ) {
+    async fn insert_cache(db: &sea_orm::DatabaseConnection, ip: &str, days_ago: i64) {
         let checked_at = Utc::now() - ChronoDuration::days(days_ago);
         ip_risk_cache::ActiveModel {
             ip: Set(ip.to_string()),
@@ -419,7 +528,11 @@ mod tests {
         assert_eq!(removed, 1, "should delete the old cache entry");
 
         let remaining = ip_risk_cache::Entity::find().all(&db).await.unwrap();
-        assert_eq!(remaining.len(), 1, "only the recent cache entry should remain");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "only the recent cache entry should remain"
+        );
         assert_eq!(remaining[0].ip, "10.0.0.2");
     }
 
@@ -444,7 +557,11 @@ mod tests {
         cleanup_ping_records(&db, 7).await;
 
         let remaining = ping_record::Entity::find().all(&db).await.unwrap();
-        assert_eq!(remaining.len(), 1, "only the old ping record should be deleted");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "only the old ping record should be deleted"
+        );
     }
 
     // --- cleanup_audit_logs ---
@@ -467,7 +584,11 @@ mod tests {
         cleanup_audit_logs(&db, 180).await;
 
         let remaining = audit_log::Entity::find().all(&db).await.unwrap();
-        assert_eq!(remaining.len(), 1, "only the old audit log should be deleted");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "only the old audit log should be deleted"
+        );
     }
 
     // --- cleanup_security_events ---
@@ -490,8 +611,15 @@ mod tests {
         cleanup_security_events(&db, 30).await;
 
         let remaining = security_event::Entity::find().all(&db).await.unwrap();
-        assert_eq!(remaining.len(), 1, "only the old security event should be deleted");
-        assert_eq!(remaining[0].id, recent_id, "the recent event should be retained");
+        assert_eq!(
+            remaining.len(),
+            1,
+            "only the old security event should be deleted"
+        );
+        assert_eq!(
+            remaining[0].id, recent_id,
+            "the recent event should be retained"
+        );
     }
 
     #[tokio::test]
@@ -562,8 +690,14 @@ mod tests {
             security_event::Entity::find().all(&db).await.unwrap().len(),
             0
         );
-        assert_eq!(unlock_event::Entity::find().all(&db).await.unwrap().len(), 0);
-        assert_eq!(ip_risk_cache::Entity::find().all(&db).await.unwrap().len(), 0);
+        assert_eq!(
+            unlock_event::Entity::find().all(&db).await.unwrap().len(),
+            0
+        );
+        assert_eq!(
+            ip_risk_cache::Entity::find().all(&db).await.unwrap().len(),
+            0
+        );
     }
 
     #[tokio::test]

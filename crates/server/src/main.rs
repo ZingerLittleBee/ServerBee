@@ -67,9 +67,8 @@ async fn main() -> anyhow::Result<()> {
         .synchronous(SqliteSynchronous::Normal)
         .foreign_keys(true)
         .busy_timeout(Duration::from_secs(5))
-        // Preserve the previous sea-orm behavior (sqlx_logging(false)); raw
-        // SqliteConnectOptions otherwise logs every statement at debug and
-        // slow statements at warn.
+        .pragma("temp_store", "MEMORY")
+        .pragma("cache_size", "-16000")
         .disable_statement_logging();
 
     let pool = SqlitePoolOptions::new()

@@ -164,7 +164,15 @@ pub fn is_global_addr(addr: IpAddr) -> bool {
 /// keep the validated result and the connected address identical.
 pub fn resolve_and_check(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
     let addrs: Vec<SocketAddr> = (host, port).to_socket_addrs()?.collect();
+    validate_global_addrs(host, addrs)
+}
 
+pub async fn resolve_and_check_async(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port)).await?.collect();
+    validate_global_addrs(host, addrs)
+}
+
+fn validate_global_addrs(host: &str, addrs: Vec<SocketAddr>) -> Result<Vec<SocketAddr>> {
     if addrs.is_empty() {
         bail!("SSRF guard: could not resolve host '{}'", host);
     }
@@ -254,7 +262,15 @@ pub fn is_monitor_safe_addr(addr: IpAddr) -> bool {
 /// (without re-resolving the host) to close the DNS-rebinding window.
 pub fn resolve_and_check_monitor(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
     let addrs: Vec<SocketAddr> = (host, port).to_socket_addrs()?.collect();
+    validate_monitor_addrs(host, addrs)
+}
 
+pub async fn resolve_and_check_monitor_async(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port)).await?.collect();
+    validate_monitor_addrs(host, addrs)
+}
+
+fn validate_monitor_addrs(host: &str, addrs: Vec<SocketAddr>) -> Result<Vec<SocketAddr>> {
     if addrs.is_empty() {
         bail!("SSRF guard: could not resolve host '{}'", host);
     }
