@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Timelike, Utc};
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, TransactionTrait};
 use serverbee_common::types::SystemReport;
 
 use crate::service::record::RecordService;
@@ -57,28 +57,39 @@ pub(crate) async fn flush_reports(
         return 0;
     }
 
-    // Truncate to hour boundary for hourly bucketing
     let hour = now
         .date_naive()
         .and_hms_opt(now.time().hour(), 0, 0)
         .unwrap()
         .and_utc();
 
+    let txn = match db.begin().await {
+        Ok(txn) => txn,
+        Err(e) => {
+            tracing::error!("Failed to begin record writer transaction: {e}");
+            return 0;
+        }
+    };
+
     let mut count = 0;
+    let mut cache_updates: Vec<(String, i64, i64)> = Vec::new();
     for (server_id, report) in reports {
-        // Save metrics record
-        if let Err(e) = RecordService::save_report(db, server_id, report).await {
+        if let Err(e) = RecordService::save_report(&txn, server_id, report).await {
             tracing::error!("Failed to save record for {server_id}: {e}");
         } else {
             count += 1;
         }
 
-        // Compute traffic delta
+        if let Some(ref gpu) = report.gpu
+            && let Err(e) = RecordService::save_gpu_records(&txn, server_id, gpu).await
+        {
+            tracing::error!("Failed to save GPU records for {server_id}: {e}");
+        }
+
         let curr_in = report.net_in_transfer;
         let curr_out = report.net_out_transfer;
 
         if curr_in == 0 && curr_out == 0 {
-            // No traffic data available, skip
             continue;
         }
 
@@ -87,29 +98,34 @@ pub(crate) async fn flush_reports(
         {
             compute_delta(prev_in, prev_out, curr_in, curr_out)
         } else {
-            // First observation: no previous state, skip delta (just record state)
-            transfer_cache.insert(server_id.clone(), (curr_in, curr_out));
-            if let Err(e) = TrafficService::upsert_state(db, server_id, curr_in, curr_out).await {
+            cache_updates.push((server_id.clone(), curr_in, curr_out));
+            if let Err(e) = TrafficService::upsert_state(&txn, server_id, curr_in, curr_out).await {
                 tracing::error!("Failed to upsert traffic state for {server_id}: {e}");
             }
             continue;
         };
 
-        // Update cache
-        transfer_cache.insert(server_id.clone(), (curr_in, curr_out));
+        cache_updates.push((server_id.clone(), curr_in, curr_out));
 
-        // Only write if there's actual traffic
         if (delta_in > 0 || delta_out > 0)
             && let Err(e) =
-                TrafficService::upsert_hourly(db, server_id, hour, delta_in, delta_out).await
+                TrafficService::upsert_hourly(&txn, server_id, hour, delta_in, delta_out).await
         {
             tracing::error!("Failed to upsert traffic hourly for {server_id}: {e}");
         }
 
-        // Always update state
-        if let Err(e) = TrafficService::upsert_state(db, server_id, curr_in, curr_out).await {
+        if let Err(e) = TrafficService::upsert_state(&txn, server_id, curr_in, curr_out).await {
             tracing::error!("Failed to upsert traffic state for {server_id}: {e}");
         }
+    }
+
+    if let Err(e) = txn.commit().await {
+        tracing::error!("Failed to commit record writer transaction: {e}");
+        return 0;
+    }
+
+    for (server_id, curr_in, curr_out) in cache_updates {
+        transfer_cache.insert(server_id, (curr_in, curr_out));
     }
 
     tracing::debug!("Wrote {count} metric records");
@@ -180,7 +196,10 @@ mod tests {
             .await
             .expect("query records should succeed");
         assert!(records.is_empty(), "no records should be persisted");
-        assert!(cache.is_empty(), "cache should be untouched for empty batch");
+        assert!(
+            cache.is_empty(),
+            "cache should be untouched for empty batch"
+        );
     }
 
     /// Happy path: a batch of reports is persisted as records, one per server.

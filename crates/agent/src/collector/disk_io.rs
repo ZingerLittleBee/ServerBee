@@ -1,9 +1,12 @@
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 #[cfg(any(test, target_os = "linux"))]
 use std::collections::HashSet;
 
 use serverbee_common::types::DiskIo;
+
+const DEVICE_LIST_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 
 #[cfg(target_os = "linux")]
 const SECTOR_SIZE_BYTES: u64 = 512;
@@ -14,58 +17,93 @@ pub(crate) struct DiskCounters {
     pub(crate) write_bytes: u64,
 }
 
-pub fn collect(
-    elapsed_secs: f64,
-    previous: &mut HashMap<String, DiskCounters>,
-) -> Option<Vec<DiskIo>> {
-    let current = read_disk_counters()?;
-
-    if previous.is_empty() {
-        *previous = current;
-        return Some(vec![]);
-    }
-
-    let rates = compute_disk_io(previous, &current, elapsed_secs);
-    *previous = current;
-    Some(rates)
+pub(crate) struct DiskIoState {
+    previous: HashMap<String, DiskCounters>,
+    #[cfg(target_os = "linux")]
+    physical_devices: Option<HashSet<String>>,
+    #[cfg(not(target_os = "linux"))]
+    disks: sysinfo::Disks,
+    last_devices_refresh: Option<Instant>,
 }
 
-fn read_disk_counters() -> Option<HashMap<String, DiskCounters>> {
-    #[cfg(target_os = "linux")]
-    {
-        let physical_devices = read_linux_physical_devices()?;
-        let diskstats = std::fs::read_to_string("/proc/diskstats").ok()?;
-        Some(parse_linux_diskstats(&diskstats, &physical_devices))
+impl DiskIoState {
+    pub(crate) fn new() -> Self {
+        Self {
+            previous: HashMap::new(),
+            #[cfg(target_os = "linux")]
+            physical_devices: None,
+            #[cfg(not(target_os = "linux"))]
+            disks: sysinfo::Disks::new_with_refreshed_list_specifics(
+                sysinfo::DiskRefreshKind::nothing().with_io_usage(),
+            ),
+            last_devices_refresh: Some(Instant::now()),
+        }
     }
 
-    #[cfg(not(target_os = "linux"))]
-    {
-        use sysinfo::{DiskRefreshKind, Disks};
+    pub(crate) fn collect(&mut self, elapsed_secs: f64) -> Option<Vec<DiskIo>> {
+        let current = self.read_disk_counters()?;
 
-        // Use mount_point as key: stable between samples, unique per mount path.
-        // This gives per-mount-path (not per-physical-disk) semantics.
-        let disks =
-            Disks::new_with_refreshed_list_specifics(DiskRefreshKind::nothing().with_io_usage());
-        let mut counters = HashMap::new();
-
-        for disk in disks.list() {
-            let name = disk.mount_point().to_string_lossy().to_string();
-
-            if counters.contains_key(&name) {
-                continue;
-            }
-
-            let usage = disk.usage();
-            counters.insert(
-                name,
-                DiskCounters {
-                    read_bytes: usage.total_read_bytes,
-                    write_bytes: usage.total_written_bytes,
-                },
-            );
+        if self.previous.is_empty() {
+            self.previous = current;
+            return Some(vec![]);
         }
 
-        Some(counters)
+        let rates = compute_disk_io(&self.previous, &current, elapsed_secs);
+        self.previous = current;
+        Some(rates)
+    }
+
+    fn read_disk_counters(&mut self) -> Option<HashMap<String, DiskCounters>> {
+        #[cfg(target_os = "linux")]
+        {
+            let should_refresh = self.physical_devices.is_none()
+                || self
+                    .last_devices_refresh
+                    .is_none_or(|t| t.elapsed() >= DEVICE_LIST_REFRESH_INTERVAL);
+            if should_refresh {
+                self.physical_devices = read_linux_physical_devices();
+                self.last_devices_refresh = Some(Instant::now());
+            }
+            let physical_devices = self.physical_devices.as_ref()?;
+            let diskstats = std::fs::read_to_string("/proc/diskstats").ok()?;
+            Some(parse_linux_diskstats(&diskstats, physical_devices))
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            use sysinfo::DiskRefreshKind;
+
+            let kind = DiskRefreshKind::nothing().with_io_usage();
+            let should_refresh_list = self
+                .last_devices_refresh
+                .is_none_or(|t| t.elapsed() >= DEVICE_LIST_REFRESH_INTERVAL);
+            if should_refresh_list {
+                self.disks.refresh_specifics(true, kind);
+                self.last_devices_refresh = Some(Instant::now());
+            } else {
+                for disk in self.disks.list_mut() {
+                    disk.refresh_specifics(kind);
+                }
+            }
+
+            let mut counters = HashMap::with_capacity(self.disks.list().len());
+            for disk in self.disks.list() {
+                let name = disk.mount_point().to_string_lossy().to_string();
+                if counters.contains_key(&name) {
+                    continue;
+                }
+                let usage = disk.usage();
+                counters.insert(
+                    name,
+                    DiskCounters {
+                        read_bytes: usage.total_read_bytes,
+                        write_bytes: usage.total_written_bytes,
+                    },
+                );
+            }
+
+            Some(counters)
+        }
     }
 }
 
@@ -98,22 +136,21 @@ fn parse_linux_diskstats(
     content: &str,
     physical_devices: &HashSet<String>,
 ) -> HashMap<String, DiskCounters> {
-    let mut counters = HashMap::new();
+    let mut counters = HashMap::with_capacity(physical_devices.len());
 
     for line in content.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() <= 9 {
+        let mut parts = line.split_whitespace();
+        let Some(name) = parts.nth(2) else {
             continue;
-        }
-
-        let name = parts[2];
+        };
         if !should_track_device(name, physical_devices) {
             continue;
         }
 
-        let read_sectors = parts[5].parse::<u64>().ok();
-        let write_sectors = parts[9].parse::<u64>().ok();
-        let (Some(read_sectors), Some(write_sectors)) = (read_sectors, write_sectors) else {
+        let Some(read_sectors) = parts.nth(2).and_then(|s| s.parse::<u64>().ok()) else {
+            continue;
+        };
+        let Some(write_sectors) = parts.nth(3).and_then(|s| s.parse::<u64>().ok()) else {
             continue;
         };
 

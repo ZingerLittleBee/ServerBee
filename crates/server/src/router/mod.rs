@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::http::{HeaderValue, Request};
+use tower_http::compression::CompressionLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
@@ -16,28 +17,26 @@ use crate::openapi::ApiDoc;
 use crate::state::AppState;
 
 pub fn create_router(state: Arc<AppState>) -> Router {
-    Router::new()
+    let ws_routes = Router::new()
+        .nest("/api", ws::agent::router())
+        .nest("/api", ws::browser::router())
+        .nest("/api", ws::terminal::router())
+        .nest("/api", ws::docker_logs::router());
+
+    let http_routes = Router::new()
         .route("/healthz", axum::routing::get(|| async { "ok" }))
         .nest("/api", api::router(state.clone()))
-        // Agent WS authenticates inside the handler. Current agents use the
-        // Authorization header; the handler retains query-token compatibility
-        // for upgrades from older releases.
-        .nest("/api", ws::agent::router())
-        // Browser WS: /api/ws/servers (auth checked inside handler)
-        .nest("/api", ws::browser::router())
-        // Terminal WS: /api/ws/terminal/:server_id (auth checked inside handler)
-        .nest("/api", ws::terminal::router())
-        // Docker logs WS: /api/ws/docker/logs/:server_id (auth checked inside handler)
-        .nest("/api", ws::docker_logs::router())
-        // Unknown API paths must not fall through to the SPA index with 200.
         .route(
             "/api/{*path}",
             axum::routing::any(|| async { axum::http::StatusCode::NOT_FOUND }),
         )
-        // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // Embedded frontend: serve the rust-embed SPA assets.
         .fallback(static_files::spa_handler)
+        .layer(CompressionLayer::new());
+
+    Router::new()
+        .merge(http_routes)
+        .merge(ws_routes)
         // Security headers
         .layer(SetResponseHeaderLayer::overriding(
             axum::http::header::X_FRAME_OPTIONS,

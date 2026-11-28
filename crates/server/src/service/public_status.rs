@@ -348,10 +348,20 @@ pub fn to_public_config(model: &status_page::Model) -> PublicStatusConfig {
     }
 }
 
-/// Resolve the in-scope server IDs by intersecting the admin-selected list
-/// with the live, non-hidden `servers` rows. An empty selection means "every
-/// server" — the admin UI advertises exactly that semantic for the selector.
 pub async fn resolve_scope(db: &DatabaseConnection) -> Result<PublicScope, AppError> {
+    let (scope, _) = resolve_scope_with_servers(db).await?;
+    Ok(scope)
+}
+
+pub(crate) async fn resolve_scope_with_servers(
+    db: &DatabaseConnection,
+) -> Result<
+    (
+        PublicScope,
+        std::collections::HashMap<String, server::Model>,
+    ),
+    AppError,
+> {
     let config = load_config(db).await?;
     let selected: Vec<String> = if config.server_ids_json.trim().is_empty() {
         Vec::new()
@@ -360,24 +370,24 @@ pub async fn resolve_scope(db: &DatabaseConnection) -> Result<PublicScope, AppEr
             .map_err(|e| AppError::Internal(format!("invalid server_ids_json: {e}")))?
     };
 
-    let live_ids: HashSet<String> = server::Entity::find()
+    let live_servers: std::collections::HashMap<String, server::Model> = server::Entity::find()
         .filter(server::Column::Hidden.eq(false))
         .all(db)
         .await?
         .into_iter()
-        .map(|s| s.id)
+        .map(|s| (s.id.clone(), s))
         .collect();
 
     let server_ids = if selected.is_empty() {
-        live_ids.into_iter().collect()
+        live_servers.keys().cloned().collect()
     } else {
         selected
             .into_iter()
-            .filter(|id| live_ids.contains(id))
+            .filter(|id| live_servers.contains_key(id))
             .collect()
     };
 
-    Ok(PublicScope { config, server_ids })
+    Ok((PublicScope { config, server_ids }, live_servers))
 }
 
 // ---------------------------------------------------------------------------
@@ -480,30 +490,28 @@ fn unlock_to_public(r: &crate::service::ip_quality::UnlockResultDto) -> PublicUn
 // Per-endpoint queries
 // ---------------------------------------------------------------------------
 
-/// List all in-scope servers with their summary metrics + uptime band.
 pub async fn list_servers(
     db: &DatabaseConnection,
     agent_manager: &crate::service::agent_manager::AgentManager,
 ) -> Result<Vec<PublicServerSummary>, AppError> {
-    let scope = resolve_scope(db).await?;
+    let (scope, servers) = resolve_scope_with_servers(db).await?;
+    list_servers_with_resolved(db, agent_manager, &scope, servers).await
+}
+
+pub(crate) async fn list_servers_with_resolved(
+    db: &DatabaseConnection,
+    agent_manager: &crate::service::agent_manager::AgentManager,
+    scope: &PublicScope,
+    mut servers: std::collections::HashMap<String, server::Model>,
+) -> Result<Vec<PublicServerSummary>, AppError> {
     if scope.server_ids.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Load the actual `server` rows for in-scope ids in one query, then
-    // preserve the admin-configured ordering.
-    let mut servers: std::collections::HashMap<String, server::Model> = server::Entity::find()
-        .filter(server::Column::Id.is_in(scope.server_ids.iter().cloned()))
-        .all(db)
-        .await?
-        .into_iter()
-        .map(|s| (s.id.clone(), s))
-        .collect();
-
-    // Build group name lookup
-    let group_ids: HashSet<String> = servers
-        .values()
-        .filter_map(|s| s.group_id.clone())
+    let group_ids: HashSet<String> = scope
+        .server_ids
+        .iter()
+        .filter_map(|id| servers.get(id).and_then(|s| s.group_id.clone()))
         .collect();
     let group_lookup: std::collections::HashMap<String, String> = if group_ids.is_empty() {
         std::collections::HashMap::new()
@@ -517,16 +525,25 @@ pub async fn list_servers(
             .collect()
     };
 
+    let maintenance_set = crate::service::maintenance::MaintenanceService::get_in_maintenance_set(
+        db,
+        &scope.server_ids,
+        Utc::now(),
+    )
+    .await
+    .unwrap_or_default();
+
+    let mut uptime_map = UptimeService::get_daily_filled_batch(db, &scope.server_ids, 90)
+        .await
+        .unwrap_or_default();
+
     let mut out = Vec::with_capacity(scope.server_ids.len());
     for id in &scope.server_ids {
         let Some(srv) = servers.remove(id) else {
             continue;
         };
         let online = agent_manager.is_online(&srv.id);
-        let in_maintenance =
-            crate::service::maintenance::MaintenanceService::is_in_maintenance(db, &srv.id)
-                .await
-                .unwrap_or(false);
+        let in_maintenance = maintenance_set.contains(&srv.id);
         let group_name = srv
             .group_id
             .as_deref()
@@ -541,10 +558,7 @@ pub async fn list_servers(
             )
         });
 
-        // 90-day uptime band (canonical for the public surface).
-        let uptime_daily = UptimeService::get_daily_filled(db, &srv.id, 90)
-            .await
-            .unwrap_or_default();
+        let uptime_daily = uptime_map.remove(&srv.id).unwrap_or_default();
 
         out.push(build_summary(
             &srv,
@@ -559,24 +573,26 @@ pub async fn list_servers(
     Ok(out)
 }
 
-/// Fetch a single in-scope server's full detail. Out-of-scope IDs return
-/// `NotFound` — never `Forbidden` — to avoid confirming the existence of
-/// hidden or unselected servers (see spec §"Public server scope").
 pub async fn get_server_detail(
     db: &DatabaseConnection,
     agent_manager: &crate::service::agent_manager::AgentManager,
     id: &str,
 ) -> Result<PublicServerDetail, AppError> {
-    let scope = resolve_scope(db).await?;
+    let (scope, mut servers) = resolve_scope_with_servers(db).await?;
     if !scope.contains(id) {
         return Err(AppError::NotFound("server".into()));
     }
-
-    let srv = server::Entity::find_by_id(id)
-        .one(db)
-        .await?
+    let srv = servers
+        .remove(id)
         .ok_or_else(|| AppError::NotFound("server".into()))?;
+    get_server_detail_for_model(db, agent_manager, srv).await
+}
 
+pub(crate) async fn get_server_detail_for_model(
+    db: &DatabaseConnection,
+    agent_manager: &crate::service::agent_manager::AgentManager,
+    srv: server::Model,
+) -> Result<PublicServerDetail, AppError> {
     let online = agent_manager.is_online(&srv.id);
     let in_maintenance =
         crate::service::maintenance::MaintenanceService::is_in_maintenance(db, &srv.id)
@@ -631,8 +647,6 @@ pub async fn get_server_detail(
     })
 }
 
-/// Per-server time-series metrics. Reuses `RecordService::query_history` and
-/// normalizes both raw and hourly variants into `PublicMetricsPoint`.
 pub async fn get_server_metrics(
     db: &DatabaseConnection,
     id: &str,
@@ -642,12 +656,17 @@ pub async fn get_server_metrics(
     if !scope.contains(id) {
         return Err(AppError::NotFound("server".into()));
     }
+    get_server_metrics_unchecked(db, id, range).await
+}
 
+pub(crate) async fn get_server_metrics_unchecked(
+    db: &DatabaseConnection,
+    id: &str,
+    range: PublicMetricsRangeQuery,
+) -> Result<Vec<PublicMetricsPoint>, AppError> {
     let from = clamp_public_metrics_from(range.from, range.to, &range.interval)?;
     let result = RecordService::query_history(db, id, from, range.to, &range.interval).await?;
 
-    // Both resolutions share the raw-row shape, so one field mapping serves
-    // raw and hourly queries alike.
     Ok(result
         .into_rows()
         .into_iter()
@@ -672,7 +691,6 @@ pub async fn get_server_metrics(
         .collect())
 }
 
-/// 90-day uptime band for a scoped server.
 pub async fn get_server_uptime_daily(
     db: &DatabaseConnection,
     id: &str,
@@ -684,27 +702,33 @@ pub async fn get_server_uptime_daily(
     UptimeService::get_daily_filled(db, id, 90).await
 }
 
-/// Network overview: per-server probe averages scoped to the public set.
 pub async fn network_overview(
     db: &DatabaseConnection,
     agent_manager: &crate::service::agent_manager::AgentManager,
     config: &crate::config::NetworkProbeConfig,
 ) -> Result<PublicNetworkOverview, AppError> {
     let scope = resolve_scope(db).await?;
-    let scope_set: HashSet<String> = scope.server_ids.iter().cloned().collect();
+    network_overview_with_scope(db, agent_manager, config, &scope).await
+}
+
+pub(crate) async fn network_overview_with_scope(
+    db: &DatabaseConnection,
+    agent_manager: &crate::service::agent_manager::AgentManager,
+    config: &crate::config::NetworkProbeConfig,
+    scope: &PublicScope,
+) -> Result<PublicNetworkOverview, AppError> {
+    let scope_set: HashSet<&str> = scope.server_ids.iter().map(String::as_str).collect();
 
     let all =
         crate::service::network_probe::NetworkProbeService::get_overview(db, agent_manager, config)
             .await?;
     let servers = all
         .into_iter()
-        .filter(|s| scope_set.contains(&s.server_id))
+        .filter(|s| scope_set.contains(s.server_id.as_str()))
         .collect();
     Ok(PublicNetworkOverview { servers })
 }
 
-/// Per-server network detail (summary + recent anomalies). 24h window for
-/// anomalies matches the existing auth'd UI's default span.
 pub async fn network_server_detail(
     db: &DatabaseConnection,
     agent_manager: &crate::service::agent_manager::AgentManager,
@@ -715,7 +739,15 @@ pub async fn network_server_detail(
     if !scope.contains(id) {
         return Err(AppError::NotFound("server".into()));
     }
+    network_server_detail_unchecked(db, agent_manager, config, id).await
+}
 
+pub(crate) async fn network_server_detail_unchecked(
+    db: &DatabaseConnection,
+    agent_manager: &crate::service::agent_manager::AgentManager,
+    config: &crate::config::NetworkProbeConfig,
+    id: &str,
+) -> Result<PublicNetworkServerDetail, AppError> {
     let summary = crate::service::network_probe::NetworkProbeService::get_server_summary(
         db,
         agent_manager,
@@ -734,11 +766,17 @@ pub async fn network_server_detail(
     Ok(PublicNetworkServerDetail { summary, anomalies })
 }
 
-/// IP-quality overview, redacted per spec.
 pub async fn ip_quality_overview(
     db: &DatabaseConnection,
 ) -> Result<PublicIpQualityOverview, AppError> {
     let scope = resolve_scope(db).await?;
+    ip_quality_overview_with_scope(db, &scope).await
+}
+
+pub(crate) async fn ip_quality_overview_with_scope(
+    db: &DatabaseConnection,
+    scope: &PublicScope,
+) -> Result<PublicIpQualityOverview, AppError> {
     let raw = IpQualityService::get_summaries(db, &scope.server_ids).await?;
 
     let entries = raw
@@ -915,10 +953,7 @@ mod metrics_range_tests {
         // 30d hourly is the widest hourly window the dashboard requests.
         let from = t(0);
         let to = t(24 * 30);
-        assert_eq!(
-            clamp_public_metrics_from(from, to, "hourly").unwrap(),
-            from
-        );
+        assert_eq!(clamp_public_metrics_from(from, to, "hourly").unwrap(), from);
     }
 
     #[test]
@@ -951,7 +986,9 @@ mod metrics_range_tests {
 #[cfg(test)]
 mod db_tests {
     use super::*;
-    use crate::entity::{incident, incident_update, maintenance, server, server_group, unlock_service};
+    use crate::entity::{
+        incident, incident_update, maintenance, server, server_group, unlock_service,
+    };
     use crate::service::agent_manager::AgentManager;
     use crate::test_utils::setup_test_db;
     use chrono::Utc;
@@ -1513,7 +1550,10 @@ mod db_tests {
         assert_eq!(overview.entries.len(), 1);
         let e = &overview.entries[0];
         assert_eq!(e.server_id, "s1");
-        assert!(e.ip_quality.is_none(), "no snapshot => None (redacted shape)");
+        assert!(
+            e.ip_quality.is_none(),
+            "no snapshot => None (redacted shape)"
+        );
         assert!(e.unlock_results.is_empty());
 
         // Service catalog excludes the disabled service.

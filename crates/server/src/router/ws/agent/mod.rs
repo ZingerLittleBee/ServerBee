@@ -17,7 +17,6 @@ use crate::router::utils::extract_client_ip;
 use crate::service::agent_authority::{
     AdmissionError, NewConnection, PendingAdmission, PresentedRunToken,
 };
-use crate::service::record::RecordService;
 use crate::service::upgrade_tracker::UpgradeLookup;
 use crate::state::AppState;
 use serverbee_common::constants::MAX_WS_MESSAGE_SIZE;
@@ -288,6 +287,19 @@ enum CurrentConnectionFrame {
     Pong,
 }
 
+fn requires_lifecycle_lock(msg: &AgentMessage) -> bool {
+    matches!(
+        msg,
+        AgentMessage::SystemInfo { .. }
+            | AgentMessage::Report(_)
+            | AgentMessage::IpChanged { .. }
+            | AgentMessage::CapabilitiesChanged { .. }
+            | AgentMessage::SecurityEvent(_)
+            | AgentMessage::DockerUnavailable { .. }
+            | AgentMessage::FeaturesUpdate { .. }
+    )
+}
+
 async fn handle_current_connection_frame(
     state: &Arc<AppState>,
     server_id: &str,
@@ -295,7 +307,7 @@ async fn handle_current_connection_frame(
     frame: CurrentConnectionFrame,
 ) -> bool {
     let server_lock = state.agent_manager.server_lifecycle_lock(server_id);
-    let _guard = server_lock.lock().await;
+    let guard = server_lock.lock().await;
 
     if !state
         .agent_manager
@@ -309,6 +321,12 @@ async fn handle_current_connection_frame(
 
     match frame {
         CurrentConnectionFrame::AgentMessage(agent_msg) => {
+            if requires_lifecycle_lock(&agent_msg) {
+                let keep_open = handle_agent_message(state, server_id, *agent_msg).await;
+                drop(guard);
+                return keep_open;
+            }
+            drop(guard);
             return handle_agent_message(state, server_id, *agent_msg).await;
         }
         CurrentConnectionFrame::Pong => {
@@ -317,6 +335,43 @@ async fn handle_current_connection_frame(
     }
 
     true
+}
+
+fn try_send_terminal_event(
+    state: &Arc<AppState>,
+    server_id: &str,
+    session_id: &str,
+    event: crate::service::agent_manager::TerminalSessionEvent,
+) {
+    let Some(tx) = state
+        .agent_manager
+        .get_terminal_session(server_id, session_id)
+    else {
+        return;
+    };
+    match tx.try_send(event) {
+        Ok(()) => {}
+        Err(mpsc::error::TrySendError::Full(_)) => {
+            tracing::debug!(
+                server_id,
+                session_id,
+                "Dropping terminal event because browser consumer channel is full"
+            );
+        }
+        Err(mpsc::error::TrySendError::Closed(_)) => {
+            state
+                .agent_manager
+                .unregister_agent_terminal_session(server_id, session_id);
+        }
+    }
+}
+
+fn try_send_agent_ack(state: &Arc<AppState>, server_id: &str, msg_id: String) {
+    if let Some(tx) = state.agent_manager.get_sender(server_id)
+        && let Err(e) = tx.try_send(ServerMessage::Ack { msg_id })
+    {
+        tracing::debug!(server_id, error = %e, "Failed to enqueue agent Ack");
+    }
 }
 
 async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: AgentMessage) -> bool {
@@ -338,12 +393,6 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
             .await;
         }
         AgentMessage::Report(report) => {
-            // Save GPU records if present
-            if let Some(ref gpu) = report.gpu
-                && let Err(e) = RecordService::save_gpu_records(&state.db, server_id, gpu).await
-            {
-                tracing::error!("Failed to save GPU records for {server_id}: {e}");
-            }
             state.agent_manager.update_report(server_id, report);
         }
         AgentMessage::TaskResult { msg_id, result } => {
@@ -359,9 +408,7 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .upgrade_tracker
                 .update_stage(UpgradeLookup::new(server_id, job_id, target_version), stage);
 
-            if let Some(tx) = state.agent_manager.get_sender(server_id) {
-                let _ = tx.send(ServerMessage::Ack { msg_id }).await;
-            }
+            try_send_agent_ack(state, server_id, msg_id);
         }
         AgentMessage::UpgradeResult {
             msg_id,
@@ -378,46 +425,34 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 backup_path,
             );
 
-            if let Some(tx) = state.agent_manager.get_sender(server_id) {
-                let _ = tx.send(ServerMessage::Ack { msg_id }).await;
-            }
+            try_send_agent_ack(state, server_id, msg_id);
         }
         AgentMessage::PingResult(result) => {
             network::on_ping_result(state, server_id, result).await;
         }
         AgentMessage::TerminalOutput { session_id, data } => {
-            if let Some(tx) = state
-                .agent_manager
-                .get_terminal_session(server_id, &session_id)
-            {
-                let _ = tx
-                    .send(crate::service::agent_manager::TerminalSessionEvent::Output(
-                        data,
-                    ))
-                    .await;
-            }
+            try_send_terminal_event(
+                state,
+                server_id,
+                &session_id,
+                crate::service::agent_manager::TerminalSessionEvent::Output(data),
+            );
         }
         AgentMessage::TerminalStarted { session_id } => {
-            if let Some(tx) = state
-                .agent_manager
-                .get_terminal_session(server_id, &session_id)
-            {
-                let _ = tx
-                    .send(crate::service::agent_manager::TerminalSessionEvent::Started)
-                    .await;
-            }
+            try_send_terminal_event(
+                state,
+                server_id,
+                &session_id,
+                crate::service::agent_manager::TerminalSessionEvent::Started,
+            );
         }
         AgentMessage::TerminalError { session_id, error } => {
-            if let Some(tx) = state
-                .agent_manager
-                .get_terminal_session(server_id, &session_id)
-            {
-                let _ = tx
-                    .send(crate::service::agent_manager::TerminalSessionEvent::Error(
-                        error,
-                    ))
-                    .await;
-            }
+            try_send_terminal_event(
+                state,
+                server_id,
+                &session_id,
+                crate::service::agent_manager::TerminalSessionEvent::Error(error),
+            );
         }
         AgentMessage::CapabilityDenied {
             msg_id,
@@ -506,7 +541,21 @@ async fn handle_agent_message(state: &Arc<AppState>, server_id: &str, msg: Agent
                 .agent_manager
                 .get_docker_log_session(server_id, session_id)
             {
-                let _ = tx.send(entries).await;
+                match tx.try_send(entries) {
+                    Ok(()) => {}
+                    Err(mpsc::error::TrySendError::Full(_)) => {
+                        tracing::debug!(
+                            server_id,
+                            session_id,
+                            "Dropping docker log batch because browser consumer channel is full"
+                        );
+                    }
+                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                        state
+                            .agent_manager
+                            .remove_docker_log_session(server_id, session_id);
+                    }
+                }
             }
         }
         AgentMessage::DockerEvent { event } => {

@@ -1,3 +1,4 @@
+use std::sync::OnceLock;
 use std::time::Instant;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
@@ -181,12 +182,18 @@ fn unsupported_tld_error(target: &str) -> Option<String> {
     None
 }
 
-/// Query WHOIS using the `whois-rust` crate (runs blocking I/O on a spawn_blocking thread).
+static WHOIS_CLIENT: OnceLock<Result<whois_rust::WhoIs, String>> = OnceLock::new();
+
 async fn query_whois(target: &str) -> Result<String, String> {
     let target = target.to_string();
     tokio::task::spawn_blocking(move || {
-        let whois = whois_rust::WhoIs::from_string(include_str!("whois_servers.json"))
-            .map_err(|e| format!("Failed to initialize WHOIS client: {e}"))?;
+        let whois = WHOIS_CLIENT
+            .get_or_init(|| {
+                whois_rust::WhoIs::from_string(include_str!("whois_servers.json"))
+                    .map_err(|e| format!("Failed to initialize WHOIS client: {e}"))
+            })
+            .as_ref()
+            .map_err(Clone::clone)?;
         whois
             .lookup(
                 whois_rust::WhoIsLookupOptions::from_string(&target).map_err(|e| e.to_string())?,
@@ -483,10 +490,7 @@ mod tests {
     fn test_normalize_lookup_target_invalid_url() {
         // A string the URL parser rejects yields the domain/URL/host:port error.
         let err = normalize_lookup_target("http://").unwrap_err();
-        assert_eq!(
-            err,
-            "WHOIS target must be a domain, URL, or host:port."
-        );
+        assert_eq!(err, "WHOIS target must be a domain, URL, or host:port.");
     }
 
     #[test]
@@ -660,10 +664,7 @@ mod tests {
     fn test_parse_registrar_skips_empty_value() {
         // An empty value after the label must be skipped; the next line wins.
         let text = "Registrar:\nSponsoring Registrar: Real Registrar\n";
-        assert_eq!(
-            parse_registrar(text),
-            Some("Real Registrar".to_string())
-        );
+        assert_eq!(parse_registrar(text), Some("Real Registrar".to_string()));
     }
 
     // ---- truncate_whois boundary coverage ----
@@ -902,10 +903,7 @@ mod tests {
         // The first matching line in document order is returned even when a
         // later "Sponsoring Registrar:" line is also present.
         let text = "Registrar: First Registrar\nSponsoring Registrar: Second\n";
-        assert_eq!(
-            parse_registrar(text),
-            Some("First Registrar".to_string())
-        );
+        assert_eq!(parse_registrar(text), Some("First Registrar".to_string()));
     }
 
     #[test]
@@ -924,10 +922,7 @@ mod tests {
         // A label followed only by spaces trims to empty and is skipped, so the
         // later valid line is returned instead.
         let text = "Registrar:    \nSponsoring Registrar: Backup Registrar\n";
-        assert_eq!(
-            parse_registrar(text),
-            Some("Backup Registrar".to_string())
-        );
+        assert_eq!(parse_registrar(text), Some("Backup Registrar".to_string()));
     }
 
     // ---- parse_date_string: month-name and dotted date-only formats ----

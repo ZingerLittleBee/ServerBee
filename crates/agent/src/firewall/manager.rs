@@ -105,6 +105,7 @@ impl FirewallManager {
 
         let mut results = Vec::new();
         let own_ip = *self.external_ip.lock().await;
+        let mut valid_adds: Vec<&BlockEntry> = Vec::with_capacity(incoming.len());
 
         for e in incoming.values() {
             if let Err(r) = guardrail::check(&e.target, own_ip) {
@@ -114,45 +115,85 @@ impl FirewallManager {
                     state: BlocklistEntryState::Failed,
                     reason: Some(r),
                 });
-                continue;
+            } else {
+                valid_adds.push(e);
             }
-            match nft::add_element(&*self.executor, e).await {
-                Ok(()) => {
-                    self.desired.lock().await.insert(e.id.clone(), e.clone());
-                    results.push(BlocklistAckItem {
-                        id: e.id.clone(),
-                        state: BlocklistEntryState::Present,
-                        reason: None,
-                    });
-                }
-                Err(err) => {
-                    self.desired.lock().await.remove(&e.id);
-                    results.push(BlocklistAckItem {
-                        id: e.id.clone(),
-                        state: BlocklistEntryState::Failed,
-                        reason: Some(err.to_string()),
-                    });
+        }
+
+        let batch_add_ok = self.executor.supports_batch()
+            && valid_adds.len() > 1
+            && nft::add_elements_batch(&*self.executor, &valid_adds)
+                .await
+                .is_ok();
+
+        if batch_add_ok {
+            let mut desired = self.desired.lock().await;
+            for e in valid_adds {
+                desired.insert(e.id.clone(), e.clone());
+                results.push(BlocklistAckItem {
+                    id: e.id.clone(),
+                    state: BlocklistEntryState::Present,
+                    reason: None,
+                });
+            }
+        } else {
+            for e in valid_adds {
+                match nft::add_element(&*self.executor, e).await {
+                    Ok(()) => {
+                        self.desired.lock().await.insert(e.id.clone(), e.clone());
+                        results.push(BlocklistAckItem {
+                            id: e.id.clone(),
+                            state: BlocklistEntryState::Present,
+                            reason: None,
+                        });
+                    }
+                    Err(err) => {
+                        self.desired.lock().await.remove(&e.id);
+                        results.push(BlocklistAckItem {
+                            id: e.id.clone(),
+                            state: BlocklistEntryState::Failed,
+                            reason: Some(err.to_string()),
+                        });
+                    }
                 }
             }
         }
 
-        for e in &to_remove {
-            match nft::delete_element(&*self.executor, e).await {
-                Ok(()) => {
-                    self.desired.lock().await.remove(&e.id);
-                    results.push(BlocklistAckItem {
-                        id: e.id.clone(),
-                        state: BlocklistEntryState::Absent,
-                        reason: None,
-                    });
-                }
-                Err(err) => {
-                    // Kernel may still have it; keep desired so we retry later.
-                    results.push(BlocklistAckItem {
-                        id: e.id.clone(),
-                        state: BlocklistEntryState::Failed,
-                        reason: Some(err.to_string()),
-                    });
+        let remove_refs: Vec<&BlockEntry> = to_remove.iter().collect();
+        let batch_delete_ok = self.executor.supports_batch()
+            && remove_refs.len() > 1
+            && nft::delete_elements_batch(&*self.executor, &remove_refs)
+                .await
+                .is_ok();
+
+        if batch_delete_ok {
+            let mut desired = self.desired.lock().await;
+            for e in &to_remove {
+                desired.remove(&e.id);
+                results.push(BlocklistAckItem {
+                    id: e.id.clone(),
+                    state: BlocklistEntryState::Absent,
+                    reason: None,
+                });
+            }
+        } else {
+            for e in &to_remove {
+                match nft::delete_element(&*self.executor, e).await {
+                    Ok(()) => {
+                        self.desired.lock().await.remove(&e.id);
+                        results.push(BlocklistAckItem {
+                            id: e.id.clone(),
+                            state: BlocklistEntryState::Absent,
+                            reason: None,
+                        });
+                    }
+                    Err(err) => {
+                        results.push(BlocklistAckItem {
+                            id: e.id.clone(),
+                            state: BlocklistEntryState::Failed,
+                            reason: Some(err.to_string()),
+                        });
+                    }
                 }
             }
         }

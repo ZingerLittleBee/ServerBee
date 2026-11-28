@@ -58,6 +58,7 @@ mod m20261003_000085_security_event_admission;
 
 mod m20261005_000086_renewal_dates;
 mod m20261121_000087_tailscale_support;
+mod m20261128_000088_performance_indexes;
 
 pub struct Migrator;
 
@@ -120,6 +121,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20261003_000085_security_event_admission::Migration),
             Box::new(m20261005_000086_renewal_dates::Migration),
             Box::new(m20261121_000087_tailscale_support::Migration),
+            Box::new(m20261128_000088_performance_indexes::Migration),
         ]
     }
 }

@@ -374,11 +374,18 @@ impl NotificationService {
         n: &notification::Model,
         ctx: &NotifyContext,
     ) -> Result<(), AppError> {
+        static NOTIFICATION_HTTP_CLIENT: std::sync::OnceLock<Result<reqwest::Client, String>> =
+            std::sync::OnceLock::new();
         let channel_config = Self::parse_config(&n.notify_type, &n.config_json)?;
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(10))
-            .build()
-            .map_err(|e| AppError::Internal(format!("HTTP client error: {e}")))?;
+        let client = NOTIFICATION_HTTP_CLIENT
+            .get_or_init(|| {
+                reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(10))
+                    .build()
+                    .map_err(|e| format!("HTTP client error: {e}"))
+            })
+            .as_ref()
+            .map_err(|e| AppError::Internal(e.clone()))?;
 
         match channel_config {
             ChannelConfig::Webhook {
@@ -408,11 +415,10 @@ impl NotificationService {
                     req = req.header("Content-Type", "application/json");
                 }
 
-                let resp = req
-                    .body(body)
-                    .send()
-                    .await
-                    .map_err(|e| AppError::BadGateway(format!("Webhook request failed: {e}")))?;
+                let resp =
+                    req.body(body).send().await.map_err(|e| {
+                        AppError::BadGateway(format!("Webhook request failed: {e}"))
+                    })?;
 
                 if !resp.status().is_success() {
                     let status = resp.status();
@@ -1320,7 +1326,9 @@ mod tests {
         let parsed: Vec<String> = serde_json::from_str(&group.notification_ids_json).unwrap();
         assert_eq!(parsed, vec!["a".to_string(), "b".to_string()]);
 
-        let fetched = NotificationService::get_group(&db, &group.id).await.unwrap();
+        let fetched = NotificationService::get_group(&db, &group.id)
+            .await
+            .unwrap();
         assert_eq!(fetched.id, group.id);
     }
 
@@ -1328,7 +1336,12 @@ mod tests {
     #[tokio::test]
     async fn test_list_groups_returns_all() {
         let (db, _tmp) = crate::test_utils::setup_test_db().await;
-        assert!(NotificationService::list_groups(&db).await.unwrap().is_empty());
+        assert!(
+            NotificationService::list_groups(&db)
+                .await
+                .unwrap()
+                .is_empty()
+        );
 
         NotificationService::create_group(
             &db,
@@ -1349,7 +1362,10 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(NotificationService::list_groups(&db).await.unwrap().len(), 2);
+        assert_eq!(
+            NotificationService::list_groups(&db).await.unwrap().len(),
+            2
+        );
     }
 
     // get_group() should return NotFound for an unknown id.
@@ -1455,7 +1471,11 @@ mod tests {
         NotificationService::delete_group(&db, &group.id)
             .await
             .expect("delete_group should succeed");
-        assert!(NotificationService::get_group(&db, &group.id).await.is_err());
+        assert!(
+            NotificationService::get_group(&db, &group.id)
+                .await
+                .is_err()
+        );
     }
 
     // delete_group() on a missing id should return NotFound.
@@ -1704,12 +1724,16 @@ mod tests {
     // defaults are kept untouched.
     #[test]
     fn test_parse_config_webhook_with_headers() {
-        let cj = r#"{"url":"https://x.test","headers":{"X-Token":"abc","Content-Type":"text/plain"}}"#;
+        let cj =
+            r#"{"url":"https://x.test","headers":{"X-Token":"abc","Content-Type":"text/plain"}}"#;
         let config = NotificationService::parse_config("webhook", cj).expect("should parse");
         match config {
             ChannelConfig::Webhook { headers, .. } => {
                 assert_eq!(headers.get("X-Token").map(String::as_str), Some("abc"));
-                assert_eq!(headers.get("Content-Type").map(String::as_str), Some("text/plain"));
+                assert_eq!(
+                    headers.get("Content-Type").map(String::as_str),
+                    Some("text/plain")
+                );
             }
             _ => panic!("expected Webhook variant"),
         }
@@ -1801,7 +1825,9 @@ mod tests {
         };
         let html = render_html(&ctx);
         // Each populated field renders its label cell.
-        for label in ["Server", "Rule", "Event", "Time", "CPU", "Memory", "Message"] {
+        for label in [
+            "Server", "Rule", "Event", "Time", "CPU", "Memory", "Message",
+        ] {
             assert!(html.contains(label), "html should contain {label} row");
         }
         // The footer attribution is always present.

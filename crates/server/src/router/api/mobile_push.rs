@@ -468,5 +468,6 @@ pub async fn test_notification(
     .await?;
     let result = test_response(&job);
     txn.commit().await?;
+    crate::service::mobile_push_outbox::notify_outbox();
     ok(result)
 }

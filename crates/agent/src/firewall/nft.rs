@@ -46,37 +46,57 @@ pub fn is_idempotent_signal(stderr: &str, op: NftOp) -> bool {
 pub trait NftExecutor: Send + Sync {
     async fn run(&self, args: &[&str], op: NftOp) -> Result<(), NftError>;
     async fn list_json(&self, args: &[&str]) -> Result<String, NftError>;
+    fn supports_batch(&self) -> bool {
+        false
+    }
+    async fn run_batch(&self, _script: &str, _op: NftOp) -> Result<(), NftError> {
+        Err(NftError::Other("batch execution unsupported".to_string()))
+    }
 }
 
 pub struct CliNftExecutor;
 
+fn classify_nft_output(
+    status: std::process::ExitStatus,
+    stderr_bytes: &[u8],
+    op: NftOp,
+) -> Result<(), NftError> {
+    if status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(stderr_bytes).to_string();
+    if is_idempotent_signal(&stderr, op) {
+        return Ok(());
+    }
+    if stderr.contains("Operation not permitted") {
+        return Err(NftError::PermissionDenied);
+    }
+    if stderr.contains("No such file or directory") {
+        return Err(NftError::KernelMissing);
+    }
+    Err(NftError::Other(
+        stderr.lines().next().unwrap_or("nft failed").to_string(),
+    ))
+}
+
+fn map_spawn_err(e: std::io::Error) -> NftError {
+    if matches!(e.kind(), std::io::ErrorKind::NotFound) {
+        NftError::BinaryMissing
+    } else {
+        NftError::Other(e.to_string())
+    }
+}
+
 #[async_trait]
 impl NftExecutor for CliNftExecutor {
     async fn run(&self, args: &[&str], op: NftOp) -> Result<(), NftError> {
-        let out = Command::new("nft").args(args).output().await.map_err(|e| {
-            if matches!(e.kind(), std::io::ErrorKind::NotFound) {
-                NftError::BinaryMissing
-            } else {
-                NftError::Other(e.to_string())
-            }
-        })?;
-        if out.status.success() {
-            return Ok(());
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-        if is_idempotent_signal(&stderr, op) {
-            return Ok(());
-        }
-        if stderr.contains("Operation not permitted") {
-            return Err(NftError::PermissionDenied);
-        }
-        if stderr.contains("No such file or directory") {
-            // Resource op without an idempotence signal — kernel module probably missing.
-            return Err(NftError::KernelMissing);
-        }
-        Err(NftError::Other(
-            stderr.lines().next().unwrap_or("nft failed").to_string(),
-        ))
+        let out = Command::new("nft")
+            .args(args)
+            .kill_on_drop(true)
+            .output()
+            .await
+            .map_err(map_spawn_err)?;
+        classify_nft_output(out.status, &out.stderr, op)
     }
 
     async fn list_json(&self, args: &[&str]) -> Result<String, NftError> {
@@ -84,21 +104,63 @@ impl NftExecutor for CliNftExecutor {
         full.extend_from_slice(args);
         let out = Command::new("nft")
             .args(&full)
+            .kill_on_drop(true)
             .output()
             .await
-            .map_err(|e| {
-                if matches!(e.kind(), std::io::ErrorKind::NotFound) {
-                    NftError::BinaryMissing
-                } else {
-                    NftError::Other(e.to_string())
-                }
-            })?;
+            .map_err(map_spawn_err)?;
         if !out.status.success() {
             return Err(NftError::Other(
                 String::from_utf8_lossy(&out.stderr).to_string(),
             ));
         }
         Ok(String::from_utf8_lossy(&out.stdout).to_string())
+    }
+
+    fn supports_batch(&self) -> bool {
+        true
+    }
+
+    async fn run_batch(&self, script: &str, _op: NftOp) -> Result<(), NftError> {
+        use tokio::io::AsyncWriteExt;
+
+        let mut child = Command::new("nft")
+            .args(["-f", "-"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(map_spawn_err)?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(script.as_bytes())
+                .await
+                .map_err(|e| NftError::Other(e.to_string()))?;
+            stdin
+                .shutdown()
+                .await
+                .map_err(|e| NftError::Other(e.to_string()))?;
+        }
+
+        let out = child
+            .wait_with_output()
+            .await
+            .map_err(|e| NftError::Other(e.to_string()))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        if stderr.contains("Operation not permitted") {
+            return Err(NftError::PermissionDenied);
+        }
+        Err(NftError::Other(
+            stderr
+                .lines()
+                .next()
+                .unwrap_or("nft batch failed")
+                .to_string(),
+        ))
     }
 }
 
@@ -244,6 +306,54 @@ pub async fn delete_element(exec: &dyn NftExecutor, entry: &BlockEntry) -> Resul
         NftOp::DeleteElement,
     )
     .await
+}
+
+fn build_element_batch_script(verb: &str, entries: &[&BlockEntry]) -> String {
+    let mut v4 = Vec::new();
+    let mut v6 = Vec::new();
+    for entry in entries {
+        if entry.family == 4 {
+            v4.push(entry.target.as_str());
+        } else {
+            v6.push(entry.target.as_str());
+        }
+    }
+    let mut script = String::new();
+    if !v4.is_empty() {
+        script.push_str(verb);
+        script.push_str(" element inet serverbee block_v4 { ");
+        script.push_str(&v4.join(", "));
+        script.push_str(" }\n");
+    }
+    if !v6.is_empty() {
+        script.push_str(verb);
+        script.push_str(" element inet serverbee block_v6 { ");
+        script.push_str(&v6.join(", "));
+        script.push_str(" }\n");
+    }
+    script
+}
+
+pub async fn add_elements_batch(
+    exec: &dyn NftExecutor,
+    entries: &[&BlockEntry],
+) -> Result<(), NftError> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let script = build_element_batch_script("add", entries);
+    exec.run_batch(&script, NftOp::AddElement).await
+}
+
+pub async fn delete_elements_batch(
+    exec: &dyn NftExecutor,
+    entries: &[&BlockEntry],
+) -> Result<(), NftError> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let script = build_element_batch_script("delete", entries);
+    exec.run_batch(&script, NftOp::DeleteElement).await
 }
 
 pub async fn unconditional_wipe(exec: &dyn NftExecutor) -> Result<(), NftError> {

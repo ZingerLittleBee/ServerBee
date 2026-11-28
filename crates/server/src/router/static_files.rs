@@ -11,33 +11,31 @@ use rust_embed::Embed;
 
 #[derive(Embed)]
 #[folder = "../../apps/web/dist"]
+#[exclude = "builtin-widgets/*"]
 struct Assets;
 
 pub async fn spa_handler(uri: Uri) -> Response {
     let path = uri.path().trim_start_matches('/');
     if let Some(file) = Assets::get(path) {
-        return embedded_file_response(path, &file);
+        return embedded_file_response(path, file);
     }
     match Assets::get("index.html") {
-        Some(file) => embedded_file_response("index.html", &file),
+        Some(file) => embedded_file_response("index.html", file),
         None => (StatusCode::NOT_FOUND, "Frontend not embedded").into_response(),
     }
 }
 
-fn embedded_file_response(path: &str, file: &rust_embed::EmbeddedFile) -> Response {
+fn embedded_file_response(path: &str, file: rust_embed::EmbeddedFile) -> Response {
     let mime = mime_guess::from_path(path).first_or_octet_stream();
     let mut builder = Response::builder().header(header::CONTENT_TYPE, mime.as_ref());
     if path.starts_with("assets/") {
         builder = builder.header(header::CACHE_CONTROL, "public, max-age=31536000, immutable");
     } else if path.starts_with("runtime/") {
-        // The runtime shim files are unhashed and re-emitted on every SPA
-        // upgrade; a stale browser cache here breaks the import-map and the
-        // dynamically-imported widget modules. Disable all caching.
         builder = builder.header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate");
     } else {
         builder = builder.header(header::CACHE_CONTROL, "public, max-age=60");
     }
     builder
-        .body(Body::from(file.data.clone()))
+        .body(Body::from(file.data))
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }

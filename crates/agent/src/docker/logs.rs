@@ -52,10 +52,35 @@ async fn run_log_stream(
 
     let mut stream = docker.logs(container_id, Some(options));
     let mut batch: Vec<DockerLogEntry> = Vec::with_capacity(LOG_BATCH_SIZE);
-    let mut last_flush = Instant::now();
+    let mut batch_started = Instant::now();
 
     loop {
-        let timeout = tokio::time::sleep(LOG_FLUSH_INTERVAL);
+        if batch.is_empty() {
+            match stream.next().await {
+                Some(Ok(output)) => {
+                    let (stream_name, message) = parse_log_output(&output);
+                    let (timestamp, msg) = split_timestamp(&message);
+
+                    batch.push(DockerLogEntry {
+                        timestamp,
+                        stream: stream_name,
+                        message: msg,
+                    });
+
+                    if batch.len() >= LOG_BATCH_SIZE {
+                        flush_batch(session_id, &mut batch, agent_tx).await;
+                    } else {
+                        batch_started = Instant::now();
+                    }
+                }
+                Some(Err(e)) => return Err(e.into()),
+                None => return Ok(()),
+            }
+            continue;
+        }
+
+        let remaining = LOG_FLUSH_INTERVAL.saturating_sub(batch_started.elapsed());
+        let timeout = tokio::time::sleep(remaining);
         tokio::pin!(timeout);
 
         tokio::select! {
@@ -73,18 +98,15 @@ async fn run_log_stream(
 
                         if batch.len() >= LOG_BATCH_SIZE {
                             flush_batch(session_id, &mut batch, agent_tx).await;
-                            last_flush = Instant::now();
                         }
                     }
                     Some(Err(e)) => {
-                        // Flush remaining entries before returning error
                         if !batch.is_empty() {
                             flush_batch(session_id, &mut batch, agent_tx).await;
                         }
                         return Err(e.into());
                     }
                     None => {
-                        // Stream ended
                         if !batch.is_empty() {
                             flush_batch(session_id, &mut batch, agent_tx).await;
                         }
@@ -93,9 +115,8 @@ async fn run_log_stream(
                 }
             }
             _ = &mut timeout => {
-                if !batch.is_empty() && last_flush.elapsed() >= LOG_FLUSH_INTERVAL {
+                if !batch.is_empty() {
                     flush_batch(session_id, &mut batch, agent_tx).await;
-                    last_flush = Instant::now();
                 }
             }
         }

@@ -11,9 +11,9 @@ use std::time::Duration;
 use crate::capability_grants::CapabilityAuthority;
 use bollard::Docker;
 use serverbee_common::constants::CAP_DOCKER;
-use serverbee_common::docker_types::DockerAction;
+use serverbee_common::docker_types::{DockerAction, DockerContainer};
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::Interval;
 
@@ -24,12 +24,10 @@ pub struct DockerManager {
     stats_interval: Option<Interval>,
     log_sessions: HashMap<String, JoinHandle<()>>,
     event_stream_handle: Option<JoinHandle<()>>,
-    /// Container IDs from the most recent listing, used for stats polling.
-    running_container_ids: Vec<String>,
+    last_containers: Arc<Mutex<Option<Vec<DockerContainer>>>>,
 }
 
 impl DockerManager {
-    /// Attempt to connect to the local Docker daemon.
     pub fn try_new(
         agent_tx: mpsc::Sender<AgentMessage>,
         capabilities: Arc<CapabilityAuthority>,
@@ -42,7 +40,7 @@ impl DockerManager {
             stats_interval: None,
             log_sessions: HashMap::new(),
             event_stream_handle: None,
-            running_container_ids: Vec::new(),
+            last_containers: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -59,17 +57,15 @@ impl DockerManager {
             stats_interval: None,
             log_sessions: HashMap::new(),
             event_stream_handle: None,
-            running_container_ids: Vec::new(),
+            last_containers: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Verify the Docker connection by pinging the daemon.
     pub async fn verify_connection(&self) -> anyhow::Result<()> {
         self.docker.ping().await?;
         Ok(())
     }
 
-    /// Abort all background tasks (log sessions, event stream).
     pub fn cleanup(&mut self) {
         for (session_id, handle) in self.log_sessions.drain() {
             tracing::debug!("Aborting log session {session_id}");
@@ -80,6 +76,7 @@ impl DockerManager {
             handle.abort();
         }
         self.stats_interval = None;
+        self.last_containers = Arc::new(Mutex::new(None));
     }
 
     /// Get Docker system information.
@@ -166,48 +163,29 @@ impl DockerManager {
         Ok(())
     }
 
-    /// Called periodically when stats polling is active.
+    pub fn spawn_poll_stats(&self) -> JoinHandle<anyhow::Result<()>> {
+        let docker = self.docker.clone();
+        let agent_tx = self.agent_tx.clone();
+        let capabilities = Arc::clone(&self.capabilities);
+        let last_containers = Arc::clone(&self.last_containers);
+        tokio::spawn(async move {
+            poll_stats_inner(docker, agent_tx, capabilities, last_containers).await
+        })
+    }
+
+    #[cfg(test)]
     pub async fn poll_stats(&mut self) -> anyhow::Result<()> {
-        if !self.is_capable() {
-            return Ok(());
-        }
+        poll_stats_inner(
+            self.docker.clone(),
+            self.agent_tx.clone(),
+            Arc::clone(&self.capabilities),
+            Arc::clone(&self.last_containers),
+        )
+        .await
+    }
 
-        // Refresh the container list and send it to the server
-        let container_list = match containers::list_containers(&self.docker).await {
-            Ok(list) => list,
-            Err(e) => {
-                self.notify_unavailable(None).await;
-                tracing::warn!("Failed to list containers for stats: {e}");
-                return Err(e);
-            }
-        };
-
-        self.running_container_ids = container_list
-            .iter()
-            .filter(|c| c.state == "running")
-            .map(|c| c.id.clone())
-            .collect();
-
-        // Send container list so the server always has fresh data
-        let containers_msg = AgentMessage::DockerContainers {
-            msg_id: None,
-            containers: container_list,
-        };
-        let _ = self.agent_tx.send(containers_msg).await;
-
-        if self.running_container_ids.is_empty() {
-            let msg = AgentMessage::DockerStats { stats: vec![] };
-            let _ = self.agent_tx.send(msg).await;
-            return Ok(());
-        }
-
-        let stats =
-            containers::get_container_stats(&self.docker, &self.running_container_ids).await;
-        let msg = AgentMessage::DockerStats { stats };
-        if self.agent_tx.send(msg).await.is_err() {
-            tracing::debug!("Agent channel closed while sending stats");
-        }
-        Ok(())
+    pub fn reset_stats_cache(&mut self) {
+        self.last_containers = Arc::new(Mutex::new(None));
     }
 
     // --- Private handlers ---
@@ -241,6 +219,7 @@ impl DockerManager {
     fn handle_stop_stats(&mut self) {
         tracing::info!("Stopping Docker stats polling");
         self.stats_interval = None;
+        self.last_containers = Arc::new(Mutex::new(None));
     }
 
     fn handle_logs_start(
@@ -428,6 +407,65 @@ impl DockerManager {
     }
 }
 
+async fn poll_stats_inner(
+    docker: Docker,
+    agent_tx: mpsc::Sender<AgentMessage>,
+    capabilities: Arc<CapabilityAuthority>,
+    last_containers: Arc<Mutex<Option<Vec<DockerContainer>>>>,
+) -> anyhow::Result<()> {
+    if !capabilities.has(CAP_DOCKER) {
+        return Ok(());
+    }
+
+    let container_list = match containers::list_containers(&docker).await {
+        Ok(list) => list,
+        Err(e) => {
+            let _ = agent_tx
+                .send(AgentMessage::DockerUnavailable { msg_id: None })
+                .await;
+            tracing::warn!("Failed to list containers for stats: {e}");
+            return Err(e);
+        }
+    };
+
+    let running_ids: Vec<String> = container_list
+        .iter()
+        .filter(|c| c.state == "running")
+        .map(|c| c.id.clone())
+        .collect();
+
+    let changed = {
+        let mut last = last_containers.lock().await;
+        if last.as_ref() == Some(&container_list) {
+            false
+        } else {
+            *last = Some(container_list.clone());
+            true
+        }
+    };
+
+    if changed {
+        let containers_msg = AgentMessage::DockerContainers {
+            msg_id: None,
+            containers: container_list,
+        };
+        let _ = agent_tx.send(containers_msg).await;
+    }
+
+    if running_ids.is_empty() {
+        let msg = AgentMessage::DockerStats { stats: vec![] };
+        let _ = agent_tx.send(msg).await;
+        return Ok(());
+    }
+
+    let stats = containers::get_container_stats(&docker, &running_ids).await;
+    let msg = AgentMessage::DockerStats { stats };
+    if agent_tx.send(msg).await.is_err() {
+        tracing::debug!("Agent channel closed while sending stats");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -454,7 +492,7 @@ mod tests {
             stats_interval: None,
             log_sessions: HashMap::new(),
             event_stream_handle: None,
-            running_container_ids: Vec::new(),
+            last_containers: Arc::new(Mutex::new(None)),
         };
         (manager, rx)
     }

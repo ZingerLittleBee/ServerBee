@@ -12,10 +12,12 @@ use axum::extract::ConnectInfo;
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 
-use crate::middleware::auth::AuthenticatedConnection;
-use crate::middleware::auth::resolve_ws_connection_with_peer;
+use crate::middleware::auth::{
+    AuthenticatedConnection, ConnectionCredential, resolve_ws_connection_with_peer,
+};
 use crate::router::utils::extract_client_ip;
 use crate::service::audit::AuditService;
+use crate::service::auth::AuthInvalidationEvent;
 use crate::service::capability_gate::require_capability_audited;
 use crate::state::AppState;
 
@@ -76,17 +78,56 @@ pub(super) async fn admin_capability_gate(
 #[cfg(test)]
 const AUTH_LEASE_RECHECK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(25);
 #[cfg(not(test))]
-const AUTH_LEASE_RECHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+const AUTH_LEASE_RECHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Resolves when a WebSocket's persisted credential is revoked or its user
-/// policy changes. Temporary database failures are logged and retried so an
-/// availability incident does not disconnect every active client at once.
+fn invalidation_matches_auth(
+    event: &AuthInvalidationEvent,
+    auth: &AuthenticatedConnection,
+) -> bool {
+    match event {
+        AuthInvalidationEvent::SessionId(id) => {
+            matches!(&auth.credential, ConnectionCredential::Session { id: sid } if sid == id)
+        }
+        AuthInvalidationEvent::ApiKeyId(id) => {
+            matches!(&auth.credential, ConnectionCredential::ApiKey { id: kid } if kid == id)
+        }
+        AuthInvalidationEvent::UserId(uid) => auth.user.user_id == *uid,
+        AuthInvalidationEvent::All => true,
+    }
+}
+
 pub(super) async fn auth_lease_invalidated(state: &AppState, auth: &AuthenticatedConnection) {
+    let mut invalidation_rx = state.auth_invalidation_tx.subscribe();
+    let mut invalidation_open = true;
+    match auth.lease_is_valid(state).await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(error) => {
+            tracing::warn!(
+                user_id = %auth.user.user_id,
+                error = %error,
+                "Failed to refresh WebSocket authorization lease"
+            );
+        }
+    }
     let mut interval = tokio::time::interval(AUTH_LEASE_RECHECK_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     interval.tick().await;
     loop {
-        interval.tick().await;
+        let should_check = tokio::select! {
+            _ = interval.tick() => true,
+            event = invalidation_rx.recv(), if invalidation_open => match event {
+                Ok(event) => invalidation_matches_auth(&event, auth),
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => true,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    invalidation_open = false;
+                    false
+                }
+            },
+        };
+        if !should_check {
+            continue;
+        }
         match auth.lease_is_valid(state).await {
             Ok(true) => {}
             Ok(false) => return,

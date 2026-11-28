@@ -19,7 +19,7 @@ pub enum TerminalEvent {
 }
 
 struct PtySession {
-    writer: Box<dyn Write + Send>,
+    input_tx: mpsc::Sender<Vec<u8>>,
     master: Box<dyn portable_pty::MasterPty + Send>,
     reader_handle: tokio::task::JoinHandle<()>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
@@ -188,7 +188,18 @@ impl TerminalManager {
             }
         };
 
-        // Spawn blocking reader task
+        let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(256);
+        let write_sid = session_id.clone();
+        let mut pty_writer = writer;
+        tokio::task::spawn_blocking(move || {
+            while let Some(data) = input_rx.blocking_recv() {
+                if let Err(e) = pty_writer.write_all(&data) {
+                    tracing::error!("Failed to write to PTY {write_sid}: {e}");
+                    break;
+                }
+            }
+        });
+
         let tx = self.event_tx.clone();
         let sid = session_id.clone();
         let reader_handle = tokio::task::spawn_blocking(move || {
@@ -198,7 +209,7 @@ impl TerminalManager {
         self.sessions.insert(
             session_id.clone(),
             PtySession {
-                writer,
+                input_tx,
                 master: pair.master,
                 reader_handle,
                 child,
@@ -241,14 +252,18 @@ impl TerminalManager {
             }
         };
 
-        if let Err(e) = session.writer.write_all(&data) {
-            tracing::error!("Failed to write to PTY {session_id}: {e}");
-            // Session may be dead, clean up
-            self.close(session_id);
+        match session.input_tx.try_send(data) {
+            Ok(()) => {}
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                tracing::warn!("Terminal input buffer full for {session_id}; dropping chunk");
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => {
+                tracing::error!("PTY writer closed for {session_id}");
+                self.close(session_id);
+            }
         }
     }
 
-    /// Resize a terminal session.
     pub fn resize(&mut self, session_id: &str, rows: u16, cols: u16) {
         let session = match self.sessions.get_mut(session_id) {
             Some(s) => s,
@@ -268,34 +283,33 @@ impl TerminalManager {
         }
     }
 
-    /// Close a terminal session.
     pub fn close(&mut self, session_id: &str) {
         if let Some(mut session) = self.sessions.remove(session_id) {
-            // Kill the child process and reap it so closed sessions don't
-            // leave orphaned shells / zombie processes behind. Dropping the
-            // PTY master alone only sends EOF/SIGHUP and is not a reliable
-            // way to terminate or wait for the child.
+            session.reader_handle.abort();
+            drop(session.input_tx);
+            drop(session.master);
             if let Err(e) = session.child.kill() {
                 tracing::debug!("Failed to kill terminal child {session_id}: {e}");
             }
             if let Err(e) = session.child.wait() {
                 tracing::debug!("Failed to reap terminal child {session_id}: {e}");
             }
-            session.reader_handle.abort();
             tracing::debug!("Closed terminal session {session_id}");
         }
     }
 
-    /// Close all terminal sessions. Returns the ids that were open, so the
-    /// caller can notify the server/browser side that they ended (e.g. on
-    /// capability revocation, where the PTY is torn down locally rather than
-    /// exiting on its own).
     pub fn close_all(&mut self) -> Vec<String> {
         let ids: Vec<String> = self.sessions.keys().cloned().collect();
         for id in &ids {
             self.close(id);
         }
         ids
+    }
+}
+
+impl Drop for TerminalManager {
+    fn drop(&mut self) {
+        self.close_all();
     }
 }
 

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Duration, Timelike, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -771,8 +771,10 @@ impl NetworkProbeService {
                 HashMap::new()
             });
 
-        // Fetch ALL latest records across ALL servers in a single query using a window
-        // function, avoiding an N+1 query pattern (one query per server per target).
+        let anomaly_counts =
+            Self::count_anomalies_batch(db, &server_ids, anomaly_from, config.high_latency_ms)
+                .await?;
+
         let all_latest = Self::fetch_latest_records_all_servers(db).await?;
 
         // Group latest records by server_id for efficient lookup
@@ -859,8 +861,7 @@ impl NetworkProbeService {
                 }
             }
 
-            let anomaly_count =
-                Self::count_anomalies(db, server_id, anomaly_from, config.high_latency_ms).await?;
+            let anomaly_count = anomaly_counts.get(server_id).copied().unwrap_or(0);
             let sparkline_bundle = sparklines
                 .get(server_id)
                 .cloned()
@@ -987,37 +988,43 @@ impl NetworkProbeService {
         Ok(anomalies)
     }
 
-    /// Fetch the latest probe record per target for a single server using a
-    /// window function.  Returns one row per target_id with the most recent
-    /// record, executing a single SQL query instead of N queries.
     async fn fetch_latest_records_for_server(
         db: &DatabaseConnection,
         server_id: &str,
     ) -> Result<Vec<LatestRecordRow>, AppError> {
-        let sql = "SELECT server_id, target_id, avg_latency, min_latency, max_latency, \
-                          packet_loss, timestamp \
-                   FROM ( \
-                       SELECT *, ROW_NUMBER() OVER (PARTITION BY target_id ORDER BY timestamp DESC) AS rn \
-                       FROM network_probe_record \
-                       WHERE server_id = ? \
-                   ) WHERE rn = 1";
+        let sql = "SELECT r.server_id, r.target_id, r.avg_latency, r.min_latency, r.max_latency, \
+                          r.packet_loss, r.timestamp \
+                   FROM network_probe_config c \
+                   JOIN network_probe_record r \
+                     ON r.id = ( \
+                         SELECT r2.id \
+                         FROM network_probe_record r2 \
+                         WHERE r2.server_id = c.server_id \
+                           AND r2.target_id = c.target_id \
+                         ORDER BY r2.timestamp DESC, r2.id DESC \
+                         LIMIT 1 \
+                     ) \
+                   WHERE c.server_id = ?";
         let stmt =
             Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, vec![server_id.into()]);
         Ok(LatestRecordRow::find_by_statement(stmt).all(db).await?)
     }
 
-    /// Fetch the latest probe record per (server_id, target_id) across ALL
-    /// servers using a window function.  Returns one row per server+target
-    /// combination, executing a single SQL query instead of S*T queries.
     async fn fetch_latest_records_all_servers(
         db: &DatabaseConnection,
     ) -> Result<Vec<LatestRecordRow>, AppError> {
-        let sql = "SELECT server_id, target_id, avg_latency, min_latency, max_latency, \
-                          packet_loss, timestamp \
-                   FROM ( \
-                       SELECT *, ROW_NUMBER() OVER (PARTITION BY server_id, target_id ORDER BY timestamp DESC) AS rn \
-                       FROM network_probe_record \
-                   ) WHERE rn = 1";
+        let sql = "SELECT r.server_id, r.target_id, r.avg_latency, r.min_latency, r.max_latency, \
+                          r.packet_loss, r.timestamp \
+                   FROM network_probe_config c \
+                   JOIN network_probe_record r \
+                     ON r.id = ( \
+                         SELECT r2.id \
+                         FROM network_probe_record r2 \
+                         WHERE r2.server_id = c.server_id \
+                           AND r2.target_id = c.target_id \
+                         ORDER BY r2.timestamp DESC, r2.id DESC \
+                         LIMIT 1 \
+                     )";
         let stmt = Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, vec![]);
         Ok(LatestRecordRow::find_by_statement(stmt).all(db).await?)
     }
@@ -1034,51 +1041,80 @@ impl NetworkProbeService {
         let bucket_seconds = bucket_seconds.max(1);
         let now_bucket = Utc::now().timestamp().div_euclid(bucket_seconds) * bucket_seconds;
         let window_span = (SPARKLINE_LENGTH as i64 - 1) * bucket_seconds;
-        let placeholders = vec!["(?)"; server_ids.len()].join(", ");
-        let sql = format!(
-            "WITH input_servers(server_id) AS (VALUES {placeholders}), \
-             latest_buckets AS ( \
-                 SELECT s.server_id, \
-                        ((MAX(CAST(strftime('%s', r.timestamp) AS INTEGER)) / ?) * ?) AS latest_bucket \
-                 FROM input_servers s \
-                 LEFT JOIN network_probe_record r ON r.server_id = s.server_id \
-                 GROUP BY s.server_id \
-             ), \
-             bucketed AS ( \
+
+        let latest_placeholders = vec!["(?)"; server_ids.len()].join(", ");
+        let latest_sql = format!(
+            "WITH input_servers(server_id) AS (VALUES {latest_placeholders}) \
+             SELECT s.server_id, \
+                    (SELECT r.timestamp \
+                     FROM network_probe_record r \
+                     WHERE r.server_id = s.server_id \
+                     ORDER BY r.timestamp DESC \
+                     LIMIT 1) AS latest_ts \
+             FROM input_servers s"
+        );
+        let latest_values: Vec<Value> = server_ids.iter().cloned().map(Value::from).collect();
+        let latest_rows = db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                latest_sql,
+                latest_values,
+            ))
+            .await?;
+
+        let mut windows: Vec<(String, String, String)> = Vec::new();
+        for row in latest_rows {
+            let server_id: String = row.try_get_by_index(0)?;
+            let latest_ts: Option<DateTime<Utc>> = row.try_get_by_index(1)?;
+            if let Some(ts) = latest_ts {
+                let latest_bucket = ts.timestamp().div_euclid(bucket_seconds) * bucket_seconds;
+                let start_ts =
+                    DateTime::from_timestamp(latest_bucket - window_span, 0).unwrap_or(ts);
+                let end_ts =
+                    DateTime::from_timestamp(latest_bucket + bucket_seconds, 0).unwrap_or(ts);
+                windows.push((
+                    server_id,
+                    start_ts.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                    end_ts.format("%Y-%m-%dT%H:%M:%S").to_string(),
+                ));
+            }
+        }
+
+        let mut rows_by_server: HashMap<String, Vec<SparklineRow>> = HashMap::new();
+        if !windows.is_empty() {
+            let window_placeholders = vec!["(?, ?, ?)"; windows.len()].join(", ");
+            let sql = format!(
+                "WITH windows(server_id, start_ts, end_ts) AS (VALUES {window_placeholders}) \
                  SELECT r.server_id, \
                         ((CAST(strftime('%s', r.timestamp) AS INTEGER) / ?) * ?) AS bucket_ts, \
                         AVG(r.avg_latency) AS latency, \
                         AVG(r.packet_loss) AS loss \
-                  FROM network_probe_record r \
-                  JOIN latest_buckets lb ON lb.server_id = r.server_id \
-                  WHERE lb.latest_bucket IS NOT NULL \
-                   AND ((CAST(strftime('%s', r.timestamp) AS INTEGER) / ?) * ?) \
-                       BETWEEN lb.latest_bucket - ? AND lb.latest_bucket \
+                 FROM windows w \
+                 JOIN network_probe_record r \
+                   ON r.server_id = w.server_id \
+                  AND r.timestamp >= w.start_ts \
+                  AND r.timestamp < w.end_ts \
                  GROUP BY r.server_id, bucket_ts \
-             ) \
-             SELECT server_id, bucket_ts, latency, loss \
-             FROM bucketed \
-             ORDER BY server_id ASC, bucket_ts ASC"
-        );
+                 ORDER BY r.server_id ASC, bucket_ts ASC"
+            );
 
-        let mut values: Vec<Value> = server_ids.iter().cloned().map(Value::from).collect();
-        values.push(bucket_seconds.into());
-        values.push(bucket_seconds.into());
-        values.push(bucket_seconds.into());
-        values.push(bucket_seconds.into());
-        values.push(bucket_seconds.into());
-        values.push(bucket_seconds.into());
-        values.push(window_span.into());
+            let mut values: Vec<Value> = Vec::with_capacity(windows.len() * 3 + 2);
+            for (server_id, start_ts, end_ts) in windows {
+                values.push(server_id.into());
+                values.push(start_ts.into());
+                values.push(end_ts.into());
+            }
+            values.push(bucket_seconds.into());
+            values.push(bucket_seconds.into());
 
-        let stmt = Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, values);
-        let rows = SparklineRow::find_by_statement(stmt).all(db).await?;
-        let mut rows_by_server: HashMap<String, Vec<SparklineRow>> = HashMap::new();
-
-        for row in rows {
-            rows_by_server
-                .entry(row.server_id.clone())
-                .or_default()
-                .push(row);
+            let stmt = Statement::from_sql_and_values(DatabaseBackend::Sqlite, sql, values);
+            let rows = SparklineRow::find_by_statement(stmt).all(db).await?;
+            for row in rows {
+                rows_by_server
+                    .entry(row.server_id.clone())
+                    .or_default()
+                    .push(row);
+            }
         }
 
         let mut sparklines = HashMap::new();
@@ -1114,9 +1150,43 @@ impl NetworkProbeService {
         Ok(sparklines)
     }
 
-    /// Count anomalous records for a server since a given time.
-    /// Anomalies: unreachable (packet_loss == 1.0), high latency
-    /// (`avg_latency > high_latency_threshold`), high packet loss (>0.1).
+    async fn count_anomalies_batch(
+        db: &DatabaseConnection,
+        server_ids: &[String],
+        from: DateTime<Utc>,
+        high_latency_threshold: f64,
+    ) -> Result<HashMap<String, i64>, AppError> {
+        if server_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        let from_str = from.to_rfc3339();
+        let placeholders = vec!["?"; server_ids.len()].join(", ");
+        let sql = format!(
+            "SELECT server_id, COUNT(*) AS count \
+             FROM network_probe_record \
+             WHERE server_id IN ({placeholders}) AND timestamp >= ? AND \
+                   (packet_loss >= 1.0 OR (avg_latency IS NOT NULL AND avg_latency > ?) OR packet_loss > 0.1) \
+             GROUP BY server_id"
+        );
+        let mut values: Vec<Value> = server_ids.iter().cloned().map(Value::from).collect();
+        values.push(from_str.into());
+        values.push(high_latency_threshold.into());
+        let rows = db
+            .query_all(Statement::from_sql_and_values(
+                DatabaseBackend::Sqlite,
+                sql,
+                values,
+            ))
+            .await?;
+        let mut counts = HashMap::with_capacity(rows.len());
+        for row in rows {
+            let server_id: String = row.try_get_by_index(0).unwrap_or_default();
+            let count: i64 = row.try_get_by_index(1).unwrap_or(0);
+            counts.insert(server_id, count);
+        }
+        Ok(counts)
+    }
+
     async fn count_anomalies(
         db: &DatabaseConnection,
         server_id: &str,
@@ -1143,104 +1213,33 @@ impl NetworkProbeService {
         Ok(count)
     }
 
-    // -----------------------------------------------------------------------
-    // Background task methods
-    // -----------------------------------------------------------------------
-
-    /// Aggregate raw probe records from the last hour into hourly averages.
-    /// Groups by (server_id, target_id, hour) and upserts into the hourly table.
-    /// Uses INSERT OR REPLACE for idempotency on re-runs.
     pub async fn aggregate_hourly(db: &DatabaseConnection) -> Result<u64, AppError> {
         let now = Utc::now();
         let one_hour_ago = now - Duration::hours(1);
 
-        let records = network_probe_record::Entity::find()
-            .filter(network_probe_record::Column::Timestamp.gte(one_hour_ago))
-            .filter(network_probe_record::Column::Timestamp.lt(now))
-            .all(db)
-            .await?;
+        let sql = "INSERT INTO network_probe_record_hourly \
+                   (server_id, target_id, avg_latency, min_latency, max_latency, avg_packet_loss, sample_count, hour) \
+                   SELECT server_id, target_id, \
+                          AVG(avg_latency), MIN(min_latency), MAX(max_latency), \
+                          AVG(packet_loss), COUNT(*), \
+                          strftime('%Y-%m-%dT%H:00:00+00:00', timestamp) AS hour_bucket \
+                   FROM network_probe_record \
+                   WHERE timestamp >= ? AND timestamp < ? \
+                   GROUP BY server_id, target_id, hour_bucket \
+                   ON CONFLICT (server_id, target_id, hour) DO UPDATE SET \
+                   avg_latency = excluded.avg_latency, \
+                   min_latency = excluded.min_latency, \
+                   max_latency = excluded.max_latency, \
+                   avg_packet_loss = excluded.avg_packet_loss, \
+                   sample_count = excluded.sample_count";
 
-        if records.is_empty() {
-            return Ok(0);
-        }
-
-        // Group by (server_id, target_id, hour_str) so records spanning two clock hours
-        // get aggregated into the correct hour bucket rather than all sharing the same hour.
-        let mut grouped: HashMap<(String, String, String), Vec<&network_probe_record::Model>> =
-            HashMap::new();
-
-        for r in &records {
-            let hour = r
-                .timestamp
-                .with_minute(0)
-                .and_then(|t| t.with_second(0))
-                .and_then(|t| t.with_nanosecond(0))
-                .unwrap_or(r.timestamp);
-            let hour_str = hour.to_rfc3339();
-            grouped
-                .entry((r.server_id.clone(), r.target_id.clone(), hour_str))
-                .or_default()
-                .push(r);
-        }
-
-        let mut inserted = 0u64;
-
-        for ((server_id, target_id, hour_str), group) in &grouped {
-            let count = group.len() as f64;
-
-            let latencies: Vec<f64> = group.iter().filter_map(|r| r.avg_latency).collect();
-            let avg_latency = if latencies.is_empty() {
-                None
-            } else {
-                Some(latencies.iter().sum::<f64>() / latencies.len() as f64)
-            };
-
-            let min_latencies: Vec<f64> = group.iter().filter_map(|r| r.min_latency).collect();
-            let min_latency = min_latencies.iter().cloned().reduce(f64::min);
-
-            let max_latencies: Vec<f64> = group.iter().filter_map(|r| r.max_latency).collect();
-            let max_latency = max_latencies.iter().cloned().reduce(f64::max);
-
-            let avg_packet_loss = group.iter().map(|r| r.packet_loss).sum::<f64>() / count;
-
-            let sample_count = group.len() as i32;
-
-            // Use parameterized INSERT … ON CONFLICT to prevent SQL injection.
-            let sql = "INSERT INTO network_probe_record_hourly \
-                       (server_id, target_id, avg_latency, min_latency, max_latency, avg_packet_loss, sample_count, hour) \
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
-                       ON CONFLICT (server_id, target_id, hour) DO UPDATE SET \
-                       avg_latency = excluded.avg_latency, \
-                       min_latency = excluded.min_latency, \
-                       max_latency = excluded.max_latency, \
-                       avg_packet_loss = excluded.avg_packet_loss, \
-                       sample_count = excluded.sample_count";
-
-            let stmt = Statement::from_sql_and_values(
-                DatabaseBackend::Sqlite,
-                sql,
-                vec![
-                    Value::from(server_id.clone()),
-                    Value::from(target_id.clone()),
-                    avg_latency
-                        .map(|v| Value::Double(Some(v)))
-                        .unwrap_or(Value::Double(None)),
-                    min_latency
-                        .map(|v| Value::Double(Some(v)))
-                        .unwrap_or(Value::Double(None)),
-                    max_latency
-                        .map(|v| Value::Double(Some(v)))
-                        .unwrap_or(Value::Double(None)),
-                    Value::from(avg_packet_loss),
-                    Value::from(sample_count),
-                    Value::from(hour_str.clone()),
-                ],
-            );
-            db.execute(stmt).await?;
-            inserted += 1;
-        }
-
-        Ok(inserted)
+        let stmt = Statement::from_sql_and_values(
+            DatabaseBackend::Sqlite,
+            sql,
+            vec![one_hour_ago.into(), now.into()],
+        );
+        let result = db.execute(stmt).await?;
+        Ok(result.rows_affected())
     }
 
     /// Clean up old records based on retention configuration.
@@ -1272,7 +1271,7 @@ mod tests {
     use super::*;
     use crate::service::auth::AuthService;
     use crate::test_utils::setup_test_db;
-    use chrono::TimeZone;
+    use chrono::{TimeZone, Timelike};
     use sea_orm::{ActiveModelTrait, PaginatorTrait, Set};
     use serverbee_common::constants::CAP_DEFAULT;
     use tokio::sync::broadcast;
@@ -1568,7 +1567,9 @@ mod tests {
         let very_high_latency = 900.0_f64;
         let normal_latency = 50.0_f64;
 
-        assert!(high_latency > config.high_latency_ms && high_latency <= config.very_high_latency_ms);
+        assert!(
+            high_latency > config.high_latency_ms && high_latency <= config.very_high_latency_ms
+        );
         assert!(very_high_latency > config.very_high_latency_ms);
         assert!(normal_latency <= config.high_latency_ms);
 
@@ -1639,7 +1640,11 @@ mod tests {
         .await
         .expect("get_anomalies");
 
-        assert_eq!(anomalies.len(), 1, "should surface the single high-latency record");
+        assert_eq!(
+            anomalies.len(),
+            1,
+            "should surface the single high-latency record"
+        );
         assert_eq!(anomalies[0].anomaly_type, "high_latency");
         assert!((anomalies[0].value - 620.0).abs() < f64::EPSILON);
     }
@@ -2370,11 +2375,8 @@ mod tests {
         // Deleting a non-preset, non-existent id returns NotFound.
         let (db, _tmp) = setup_test_db().await;
 
-        let result = NetworkProbeService::delete_target(
-            &db,
-            "22222222-2222-2222-2222-222222222222",
-        )
-        .await;
+        let result =
+            NetworkProbeService::delete_target(&db, "22222222-2222-2222-2222-222222222222").await;
         match result {
             Err(AppError::NotFound(_)) => {}
             other => panic!("Expected NotFound, got {other:?}"),

@@ -10,30 +10,48 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use serverbee_common::constants::CAP_DOCKER;
 use serverbee_common::protocol::{AgentMessage, ServerMessage};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::capability_grants::CapabilityAuthority;
 use crate::docker::DockerManager;
 
-const DOCKER_RETRY_SECS: u64 = 30;
+const DOCKER_RETRY_BACKOFF_SECS: &[u64] = &[30, 60, 120, 300, 900];
 
-/// Which housekeeping event [`DockerSubsystem::tick`] resolved to: poll
-/// container stats, or retry the daemon connection.
 pub(super) enum DockerTick {
     PollStats,
     Retry,
 }
 
+pub(super) enum DockerBackgroundResult {
+    Stats(anyhow::Result<()>),
+    Retry(anyhow::Result<DockerManager>),
+}
+
+pub(super) enum DockerEvent {
+    Tick(DockerTick),
+    Background(DockerBackgroundResult),
+}
+
+fn delayed_interval(secs: u64) -> tokio::time::Interval {
+    let period = Duration::from_secs(secs);
+    let mut iv = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    iv.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    iv
+}
+
 pub(super) struct DockerSubsystem {
     capabilities: Arc<CapabilityAuthority>,
-    /// Sender cloned into every spawned `DockerManager` task; the matching
-    /// receiver is drained by the select! loop in `mod.rs`.
+    cap_rx: watch::Receiver<u32>,
     tx: mpsc::Sender<AgentMessage>,
     manager: Option<DockerManager>,
     available: bool,
+    retry_backoff_idx: usize,
     stats_interval: Option<tokio::time::Interval>,
     retry_interval: tokio::time::Interval,
+    pending_retry: Option<tokio::task::JoinHandle<anyhow::Result<DockerManager>>>,
+    pending_stats: Option<tokio::task::JoinHandle<anyhow::Result<()>>>,
     #[cfg(test)]
     mock_retry_ok: Option<bool>,
 }
@@ -43,24 +61,24 @@ impl DockerSubsystem {
         tx: mpsc::Sender<AgentMessage>,
         capabilities: Arc<CapabilityAuthority>,
     ) -> Self {
-        // First retry fires one full period out — connection start already
-        // probes explicitly, so there is no immediate tick to consume.
-        let retry_period = Duration::from_secs(DOCKER_RETRY_SECS);
-        let retry_interval =
-            tokio::time::interval_at(tokio::time::Instant::now() + retry_period, retry_period);
+        let cap_rx = capabilities.subscribe_state();
+        let retry_interval = delayed_interval(DOCKER_RETRY_BACKOFF_SECS[0]);
         Self {
             capabilities,
+            cap_rx,
             tx,
             manager: None,
             available: false,
+            retry_backoff_idx: 0,
             stats_interval: None,
             retry_interval,
+            pending_retry: None,
+            pending_stats: None,
             #[cfg(test)]
             mock_retry_ok: None,
         }
     }
 
-    /// Feature list advertised in `SystemInfo`, derived from what is live.
     pub(super) fn features(&self) -> Vec<String> {
         if self.available {
             vec!["docker".to_string()]
@@ -69,14 +87,16 @@ impl DockerSubsystem {
         }
     }
 
-    /// Initial daemon detection at connection start. Absence is informational
-    /// — the retry tick keeps looking.
     pub(super) async fn probe(&mut self) {
+        if !self.capabilities.has(CAP_DOCKER) {
+            return;
+        }
         match DockerManager::try_new(self.tx.clone(), Arc::clone(&self.capabilities)) {
             Ok(dm) => match dm.verify_connection().await {
                 Ok(()) => {
                     tracing::info!("Docker daemon connected");
                     self.available = true;
+                    self.retry_backoff_idx = 0;
                     self.manager = Some(dm);
                 }
                 Err(e) => {
@@ -89,26 +109,121 @@ impl DockerSubsystem {
         }
     }
 
-    /// Wait for the next housekeeping event: a stats-poll tick while the
-    /// daemon is connected, or a retry tick while it is absent. Pending when
-    /// connected with stats polling off.
-    pub(super) async fn tick(&mut self) -> DockerTick {
-        if self.manager.is_some() {
-            match self.stats_interval.as_mut() {
-                Some(iv) => {
-                    iv.tick().await;
-                    DockerTick::PollStats
+    pub(super) async fn next_event(&mut self) -> DockerEvent {
+        let has_manager = self.manager.is_some();
+        let has_cap = self.capabilities.has(CAP_DOCKER);
+        tokio::select! {
+            tick = async {
+                if has_manager {
+                    match self.stats_interval.as_mut() {
+                        Some(iv) => {
+                            iv.tick().await;
+                            DockerTick::PollStats
+                        }
+                        None => std::future::pending().await,
+                    }
+                } else if !has_cap {
+                    loop {
+                        if self.cap_rx.changed().await.is_err() {
+                            return std::future::pending().await;
+                        }
+                        if self.capabilities.has(CAP_DOCKER) {
+                            self.retry_backoff_idx = 0;
+                            self.retry_interval = delayed_interval(DOCKER_RETRY_BACKOFF_SECS[0]);
+                            return DockerTick::Retry;
+                        }
+                    }
+                } else {
+                    self.retry_interval.tick().await;
+                    DockerTick::Retry
                 }
-                None => std::future::pending().await,
+            } => DockerEvent::Tick(tick),
+            joined = async {
+                match self.pending_stats.as_mut() {
+                    Some(h) => h.await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                self.pending_stats = None;
+                let res = match joined {
+                    Ok(res) => DockerBackgroundResult::Stats(res),
+                    Err(e) => DockerBackgroundResult::Stats(Err(anyhow::anyhow!(
+                        "Docker stats task failed: {e}"
+                    ))),
+                };
+                DockerEvent::Background(res)
             }
-        } else {
-            self.retry_interval.tick().await;
-            DockerTick::Retry
+            joined = async {
+                match self.pending_retry.as_mut() {
+                    Some(h) => h.await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                self.pending_retry = None;
+                let res = match joined {
+                    Ok(res) => DockerBackgroundResult::Retry(res),
+                    Err(e) => DockerBackgroundResult::Retry(Err(anyhow::anyhow!(
+                        "Docker retry task failed: {e}"
+                    ))),
+                };
+                DockerEvent::Background(res)
+            }
         }
     }
 
-    /// Poll container stats once; a failing daemon demotes the subsystem.
-    /// Returns the `FeaturesUpdate` to send when availability changed.
+    pub(super) fn start_background_tick(&mut self, tick: DockerTick) {
+        match tick {
+            DockerTick::PollStats => {
+                if self.pending_stats.is_some() {
+                    return;
+                }
+                if let Some(dm) = self.manager.as_ref() {
+                    self.pending_stats = Some(dm.spawn_poll_stats());
+                }
+            }
+            DockerTick::Retry => {
+                if !self.capabilities.has(CAP_DOCKER) || self.pending_retry.is_some() {
+                    return;
+                }
+                let tx = self.tx.clone();
+                let caps = Arc::clone(&self.capabilities);
+                self.pending_retry = Some(tokio::spawn(async move {
+                    let dm = DockerManager::try_new(tx, caps)?;
+                    dm.verify_connection().await?;
+                    Ok(dm)
+                }));
+            }
+        }
+    }
+
+    pub(super) fn apply_background_result(
+        &mut self,
+        result: DockerBackgroundResult,
+    ) -> Option<AgentMessage> {
+        match result {
+            DockerBackgroundResult::Stats(Ok(())) => None,
+            DockerBackgroundResult::Stats(Err(e)) => {
+                tracing::warn!("Docker stats polling failed: {e}");
+                self.demote()
+            }
+            DockerBackgroundResult::Retry(Ok(dm)) => {
+                tracing::info!("Docker daemon now available");
+                self.manager = Some(dm);
+                self.available = true;
+                self.retry_backoff_idx = 0;
+                Some(AgentMessage::FeaturesUpdate {
+                    features: vec!["docker".to_string()],
+                })
+            }
+            DockerBackgroundResult::Retry(Err(e)) => {
+                tracing::debug!("Docker still not available: {e}");
+                self.advance_retry_backoff();
+                None
+            }
+        }
+    }
+
+    #[cfg(test)]
     pub(super) async fn poll_stats(&mut self) -> Option<AgentMessage> {
         if let Some(dm) = self.manager.as_mut()
             && let Err(e) = dm.poll_stats().await
@@ -119,17 +234,21 @@ impl DockerSubsystem {
         None
     }
 
-    /// Retry the daemon connection; success returns the `FeaturesUpdate`
-    /// re-advertising the feature.
+    #[cfg(test)]
     pub(super) async fn retry(&mut self) -> Option<AgentMessage> {
-        #[cfg(test)]
         if let Some(ok) = self.mock_retry_ok {
             if ok {
                 self.available = true;
+                self.retry_backoff_idx = 0;
                 return Some(AgentMessage::FeaturesUpdate {
                     features: vec!["docker".to_string()],
                 });
             }
+            self.advance_retry_backoff();
+            return None;
+        }
+
+        if !self.capabilities.has(CAP_DOCKER) {
             return None;
         }
 
@@ -140,6 +259,7 @@ impl DockerSubsystem {
                     tracing::info!("Docker daemon now available");
                     self.manager = Some(dm);
                     self.available = true;
+                    self.retry_backoff_idx = 0;
                     return Some(AgentMessage::FeaturesUpdate {
                         features: vec!["docker".to_string()],
                     });
@@ -152,15 +272,15 @@ impl DockerSubsystem {
                 tracing::debug!("Docker still not available: {e}");
             }
         }
+        self.advance_retry_backoff();
         None
     }
 
-    /// Handle one Docker-family server message (stats control or a request
-    /// forwarded to the daemon). Returns the reply to send, if any.
     pub(super) async fn handle(&mut self, msg: ServerMessage) -> Option<AgentMessage> {
         match msg {
             ServerMessage::DockerStartStats { interval_secs } => {
-                if self.manager.is_some() {
+                if let Some(dm) = self.manager.as_mut() {
+                    dm.reset_stats_cache();
                     let secs = interval_secs.max(1);
                     tracing::info!("Starting Docker stats polling every {secs}s");
                     let mut iv = tokio::time::interval(Duration::from_secs(secs as u64));
@@ -175,6 +295,12 @@ impl DockerSubsystem {
             ServerMessage::DockerStopStats => {
                 tracing::info!("Stopping Docker stats polling");
                 self.stats_interval = None;
+                if let Some(handle) = self.pending_stats.take() {
+                    handle.abort();
+                }
+                if let Some(dm) = self.manager.as_mut() {
+                    dm.reset_stats_cache();
+                }
                 None
             }
             msg => {
@@ -194,14 +320,23 @@ impl DockerSubsystem {
         }
     }
 
-    /// Drop the daemon connection and stop stats polling. Returns the empty
-    /// `FeaturesUpdate` when the feature was previously advertised.
+    fn advance_retry_backoff(&mut self) {
+        self.retry_backoff_idx =
+            (self.retry_backoff_idx + 1).min(DOCKER_RETRY_BACKOFF_SECS.len() - 1);
+        self.retry_interval = delayed_interval(DOCKER_RETRY_BACKOFF_SECS[self.retry_backoff_idx]);
+    }
+
     fn demote(&mut self) -> Option<AgentMessage> {
+        if let Some(handle) = self.pending_stats.take() {
+            handle.abort();
+        }
         if let Some(dm) = self.manager.as_mut() {
             dm.cleanup();
         }
         self.manager = None;
         self.stats_interval = None;
+        self.retry_backoff_idx = 0;
+        self.retry_interval = delayed_interval(DOCKER_RETRY_BACKOFF_SECS[0]);
 
         if self.available {
             self.available = false;
@@ -211,14 +346,11 @@ impl DockerSubsystem {
         }
     }
 
-    /// Whether a stats-poll interval is armed — observability for the
-    /// dispatch harness in `runtime::tests`.
     #[cfg(test)]
     pub(super) fn stats_polling_active(&self) -> bool {
         self.stats_interval.is_some()
     }
 
-    /// Pre-arm stats polling so tests can observe it being cleared.
     #[cfg(test)]
     pub(super) fn arm_stats_polling_for_test(&mut self) {
         self.stats_interval = Some(tokio::time::interval(Duration::from_secs(60)));
@@ -245,9 +377,13 @@ impl DockerSubsystem {
         self.available = true;
     }
 
-    /// Tear down the daemon connection without emitting anything; part of
-    /// connection shutdown where the socket is already gone.
     pub(super) fn cleanup(&mut self) {
+        if let Some(handle) = self.pending_retry.take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.pending_stats.take() {
+            handle.abort();
+        }
         if let Some(dm) = self.manager.as_mut() {
             dm.cleanup();
         }

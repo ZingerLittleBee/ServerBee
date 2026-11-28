@@ -22,6 +22,9 @@ use crate::security::ssh_parser::{AuthAttempt, AuthMethodHint, AuthOutcome};
 
 type Clock = Box<dyn Fn() -> Instant + Send + Sync>;
 
+const MAX_TRACKED_IPS: usize = 20_000;
+const SHRINK_MIN_CAPACITY: usize = 1024;
+
 pub struct SshDetector {
     window: Duration,
     threshold: u32,
@@ -71,11 +74,12 @@ impl SshDetector {
         }
     }
 
-    /// Evict IPs whose deques are empty or contain only entries older than the
-    /// window. Prevents unbounded growth under "spray" attacks where each
-    /// source IP attempts once and never returns.
     pub fn sweep(&mut self) {
         let now = (self.clock)();
+        self.sweep_at(now);
+    }
+
+    fn sweep_at(&mut self, now: Instant) {
         let cutoff = now.checked_sub(self.window).unwrap_or(now);
         self.per_ip.retain(|_, q| {
             while let Some((ts, _)) = q.front() {
@@ -87,6 +91,28 @@ impl SshDetector {
             }
             !q.is_empty()
         });
+        if self.per_ip.capacity() > SHRINK_MIN_CAPACITY
+            && self.per_ip.capacity() > self.per_ip.len().saturating_mul(4)
+        {
+            self.per_ip
+                .shrink_to(self.per_ip.len().saturating_mul(2).max(256));
+        }
+    }
+
+    fn ensure_capacity_for(&mut self, ip: &str, now: Instant) {
+        if self.per_ip.len() < MAX_TRACKED_IPS || self.per_ip.contains_key(ip) {
+            return;
+        }
+        self.sweep_at(now);
+        if self.per_ip.len() >= MAX_TRACKED_IPS
+            && let Some(oldest_ip) = self
+                .per_ip
+                .iter()
+                .min_by_key(|(_, q)| q.back().map(|(ts, _)| *ts))
+                .map(|(k, _)| k.clone())
+        {
+            self.per_ip.remove(&oldest_ip);
+        }
     }
 
     pub fn observe(&mut self, attempt: AuthAttempt) -> DetectorEmit {
@@ -105,6 +131,7 @@ impl SshDetector {
         let now = (self.clock)();
         let cutoff = now.checked_sub(self.window).unwrap_or(now);
         let ip = attempt.source_ip.clone();
+        self.ensure_capacity_for(&ip, now);
         let entry = self.per_ip.entry(ip.clone()).or_default();
         // Expire old entries.
         while let Some((ts, _)) = entry.front() {

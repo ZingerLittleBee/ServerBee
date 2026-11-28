@@ -38,11 +38,13 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
                 success: false,
                 latency: None,
                 detail: json!({ "connected": false }),
-                error: Some(format!("Invalid TCP target '{target}' (expected host:port)")),
+                error: Some(format!(
+                    "Invalid TCP target '{target}' (expected host:port)"
+                )),
             };
         }
     };
-    let addrs = match ssrf::resolve_and_check_monitor(&host, port) {
+    let addrs = match ssrf::resolve_and_check_monitor_async(&host, port).await {
         Ok(addrs) => addrs,
         Err(e) => {
             return CheckResult {
@@ -145,7 +147,12 @@ mod tests {
     async fn test_tcp_invalid_target() {
         let result = check("no-port-here", &json!({})).await;
         assert!(!result.success);
-        assert!(result.error.unwrap_or_default().contains("Invalid TCP target"));
+        assert!(
+            result
+                .error
+                .unwrap_or_default()
+                .contains("Invalid TCP target")
+        );
     }
 
     #[test]
@@ -187,10 +194,7 @@ mod tests {
     #[test]
     fn test_split_host_port_min_and_max_port() {
         // Boundary ports 0 and 65535 both parse successfully.
-        assert_eq!(
-            split_host_port("host:0"),
-            Some(("host".to_string(), 0))
-        );
+        assert_eq!(split_host_port("host:0"), Some(("host".to_string(), 0)));
         assert_eq!(
             split_host_port("host:65535"),
             Some(("host".to_string(), 65535))

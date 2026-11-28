@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use rustls::ClientConfig;
@@ -11,6 +11,25 @@ use tokio_rustls::TlsConnector;
 use x509_parser::prelude::*;
 
 use super::CheckResult;
+
+static TLS_CONNECTOR: OnceLock<Result<TlsConnector, String>> = OnceLock::new();
+
+fn shared_tls_connector() -> Result<&'static TlsConnector, String> {
+    TLS_CONNECTOR
+        .get_or_init(|| {
+            let mut root_store = rustls::RootCertStore::empty();
+            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            let provider = Arc::new(rustls::crypto::ring::default_provider());
+            let tls_config = ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .map_err(|e| format!("TLS configuration error: {e}"))?
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
+            Ok(TlsConnector::from(Arc::new(tls_config)))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
 
 /// Check SSL/TLS certificate for `target` (domain name, optionally with ":port").
 ///
@@ -37,33 +56,18 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 
     let timeout = Duration::from_secs(timeout_secs);
 
-    // Build a rustls config that captures the peer certificate
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-    // Use an explicit crypto provider: rustls 0.23 cannot auto-select one
-    // when both the aws_lc_rs and ring features are compiled in (via
-    // reqwest's rustls-tls + rustls' default), and ClientConfig::builder()
-    // would panic the worker. ring is always available through reqwest.
-    let provider = Arc::new(rustls::crypto::ring::default_provider());
-    let tls_config = match ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-    {
-        Ok(builder) => builder
-            .with_root_certificates(root_store)
-            .with_no_client_auth(),
+    let connector = match shared_tls_connector() {
+        Ok(c) => c,
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
             return CheckResult {
                 success: false,
                 latency: Some(latency),
                 detail: Value::Null,
-                error: Some(format!("TLS configuration error: {e}")),
+                error: Some(e),
             };
         }
     };
-
-    let connector = TlsConnector::from(Arc::new(tls_config));
 
     let server_name = match ServerName::try_from(host.clone()) {
         Ok(name) => name,
@@ -80,10 +84,7 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
 
     let addr = format!("{host}:{port}");
 
-    // SSRF guard: reject hosts resolving to blocked (loopback/link-local/
-    // metadata) addresses, and connect only to the validated addresses (the TLS
-    // handshake still uses `server_name` for SNI / certificate validation).
-    let validated_addrs = match ssrf::resolve_and_check_monitor(&host, port) {
+    let validated_addrs = match ssrf::resolve_and_check_monitor_async(&host, port).await {
         Ok(addrs) => addrs,
         Err(e) => {
             let latency = start.elapsed().as_secs_f64() * 1000.0;
@@ -97,28 +98,28 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
     };
 
     // Connect TCP
-    let tcp_stream = match tokio::time::timeout(timeout, TcpStream::connect(&validated_addrs[..])).await
-    {
-        Ok(Ok(s)) => s,
-        Ok(Err(e)) => {
-            let latency = start.elapsed().as_secs_f64() * 1000.0;
-            return CheckResult {
-                success: false,
-                latency: Some(latency),
-                detail: Value::Null,
-                error: Some(format!("TCP connection to {addr} failed: {e}")),
-            };
-        }
-        Err(_) => {
-            let latency = start.elapsed().as_secs_f64() * 1000.0;
-            return CheckResult {
-                success: false,
-                latency: Some(latency),
-                detail: Value::Null,
-                error: Some(format!("TCP connection to {addr} timed out")),
-            };
-        }
-    };
+    let tcp_stream =
+        match tokio::time::timeout(timeout, TcpStream::connect(&validated_addrs[..])).await {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => {
+                let latency = start.elapsed().as_secs_f64() * 1000.0;
+                return CheckResult {
+                    success: false,
+                    latency: Some(latency),
+                    detail: Value::Null,
+                    error: Some(format!("TCP connection to {addr} failed: {e}")),
+                };
+            }
+            Err(_) => {
+                let latency = start.elapsed().as_secs_f64() * 1000.0;
+                return CheckResult {
+                    success: false,
+                    latency: Some(latency),
+                    detail: Value::Null,
+                    error: Some(format!("TCP connection to {addr} timed out")),
+                };
+            }
+        };
 
     // TLS handshake
     let tls_stream =

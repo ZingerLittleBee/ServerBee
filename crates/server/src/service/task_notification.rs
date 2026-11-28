@@ -91,18 +91,18 @@ pub(crate) async fn record_completion(
         })?));
     update.update(&txn).await?;
     txn.commit().await?;
+    mobile_push_outbox::notify_task_recovery();
     Ok(())
 }
 
-/// The production push-worker owner retries only durable scheduler-drained runs.
-/// Intermediate result rows alone never constitute a completion proof.
-pub(crate) async fn recover_pending(state: &Arc<AppState>) -> Result<(), AppError> {
+pub(crate) async fn recover_pending(state: &Arc<AppState>) -> Result<usize, AppError> {
     let runs = task_run::Entity::find()
         .filter(task_run::Column::Status.eq("drained"))
         .order_by_asc(task_run::Column::CompletedAt)
         .limit(32)
         .all(&state.db)
         .await?;
+    let count = runs.len();
     let mut failure = None;
     for run in runs {
         if let Err(error) = finish_run(state, &run.run_id).await {
@@ -112,7 +112,7 @@ pub(crate) async fn recover_pending(state: &Arc<AppState>) -> Result<(), AppErro
     if let Some(error) = failure {
         return Err(error);
     }
-    Ok(())
+    Ok(count)
 }
 
 pub(crate) async fn finish_run(state: &Arc<AppState>, run_id: &str) -> Result<(), AppError> {
@@ -164,6 +164,7 @@ pub(crate) async fn finish_run(state: &Arc<AppState>, run_id: &str) -> Result<()
         .filter(preference.eq(true))
         .all(&txn)
         .await?;
+    let mut enqueued = false;
     for row in registrations {
         let job = outbox::Model {
             event_id: run_id.into(),
@@ -240,7 +241,11 @@ pub(crate) async fn finish_run(state: &Arc<AppState>, run_id: &str) -> Result<()
             .do_nothing()
             .exec(&txn)
             .await?;
+        enqueued = true;
     }
     txn.commit().await?;
+    if enqueued {
+        mobile_push_outbox::notify_outbox();
+    }
     Ok(())
 }

@@ -16,6 +16,9 @@ use serverbee_common::security::SecurityEvidence;
 
 type Clock = Box<dyn Fn() -> Instant + Send + Sync>;
 
+const MAX_TRACKED_IPS: usize = 20_000;
+const SHRINK_MIN_CAPACITY: usize = 1024;
+
 pub struct ScanDetector {
     window: Duration,
     threshold: u32,
@@ -28,7 +31,9 @@ struct ScanState {
     port_counts: HashMap<u16, u32>,
     total: u32,
     blocked: u32,
+    blocked_updated_at: Option<Instant>,
     window_started_at: Option<Instant>,
+    last_seen: Instant,
 }
 
 impl ScanState {
@@ -38,7 +43,9 @@ impl ScanState {
             port_counts: HashMap::new(),
             total: 0,
             blocked: 0,
+            blocked_updated_at: None,
             window_started_at: Some(now),
+            last_seen: now,
         }
     }
 }
@@ -78,9 +85,9 @@ impl ScanDetector {
         }
     }
 
-    /// Record an inbound connection attempt and possibly emit a PortScan event.
     pub fn observe(&mut self, source_ip: String, dst_port: u16) -> ScanEmit {
         let now = (self.clock)();
+        self.ensure_capacity_for(&source_ip, now);
         let cutoff = now.checked_sub(self.window).unwrap_or(now);
         let state = self
             .per_ip
@@ -90,12 +97,12 @@ impl ScanDetector {
         state.events.push_back((now, dst_port));
         *state.port_counts.entry(dst_port).or_insert(0) += 1;
         state.total += 1;
+        state.last_seen = now;
         if state.window_started_at.is_none() {
             state.window_started_at = Some(now);
         }
 
         if state.port_counts.len() as u32 >= self.threshold {
-            // Build evidence sample (up to 20 distinct ports).
             let mut sample_ports: Vec<u16> = Vec::with_capacity(20);
             let mut seen = std::collections::HashSet::new();
             for (_, p) in &state.events {
@@ -116,11 +123,11 @@ impl ScanDetector {
             };
             let started_at = state.window_started_at.unwrap_or(now);
             let ended_at = now;
-            // Reset state to debounce.
             state.events.clear();
             state.port_counts.clear();
             state.total = 0;
             state.blocked = 0;
+            state.blocked_updated_at = None;
             state.window_started_at = None;
             ScanEmit::PortScan {
                 source_ip,
@@ -133,27 +140,54 @@ impl ScanDetector {
         }
     }
 
-    /// Increment the blocked counter for an IP so it shows up in the next
-    /// emitted PortScan evidence. Called from the firewall log stream.
     pub fn record_blocked(&mut self, source_ip: &str) {
         let now = (self.clock)();
+        self.ensure_capacity_for(source_ip, now);
+        let cutoff = now.checked_sub(self.window).unwrap_or(now);
         let state = self
             .per_ip
             .entry(source_ip.to_string())
             .or_insert_with(|| ScanState::new(now));
+        Self::expire_head(state, cutoff);
         state.blocked = state.blocked.saturating_add(1);
+        state.blocked_updated_at = Some(now);
+        state.last_seen = now;
     }
 
-    /// Walk every IP and expire stale window entries. Cheap; can be called
-    /// periodically by the manager.
     pub fn sweep(&mut self) {
         let now = (self.clock)();
+        self.sweep_at(now);
+    }
+
+    fn sweep_at(&mut self, now: Instant) {
         let cutoff = now.checked_sub(self.window).unwrap_or(now);
         for state in self.per_ip.values_mut() {
             Self::expire_head(state, cutoff);
         }
         self.per_ip
             .retain(|_, s| !s.events.is_empty() || s.blocked > 0);
+        if self.per_ip.capacity() > SHRINK_MIN_CAPACITY
+            && self.per_ip.capacity() > self.per_ip.len().saturating_mul(4)
+        {
+            self.per_ip
+                .shrink_to(self.per_ip.len().saturating_mul(2).max(256));
+        }
+    }
+
+    fn ensure_capacity_for(&mut self, ip: &str, now: Instant) {
+        if self.per_ip.len() < MAX_TRACKED_IPS || self.per_ip.contains_key(ip) {
+            return;
+        }
+        self.sweep_at(now);
+        if self.per_ip.len() >= MAX_TRACKED_IPS
+            && let Some(oldest_ip) = self
+                .per_ip
+                .iter()
+                .min_by_key(|(_, state)| state.last_seen)
+                .map(|(k, _)| k.clone())
+        {
+            self.per_ip.remove(&oldest_ip);
+        }
     }
 
     fn expire_head(state: &mut ScanState, cutoff: Instant) {
@@ -170,6 +204,10 @@ impl ScanDetector {
             } else {
                 break;
             }
+        }
+        if state.blocked_updated_at.is_some_and(|ts| ts < cutoff) {
+            state.blocked = 0;
+            state.blocked_updated_at = None;
         }
         state.window_started_at = state.events.front().map(|(timestamp, _)| *timestamp);
     }
@@ -326,17 +364,14 @@ mod tests {
         let nowc = now.clone();
         let mut det =
             ScanDetector::with_clock(Duration::from_secs(30), 20, move || *nowc.lock().unwrap());
-        // IP "a" gets a couple of port events; IP "b" only a blocked counter.
         det.observe("a".into(), 1);
         det.observe("a".into(), 2);
         det.record_blocked("b");
         assert_eq!(det.per_ip.len(), 2);
-        // Age every event out of the window.
         *now.lock().unwrap() += Duration::from_secs(60);
         det.sweep();
-        // "a" drained empty with blocked==0 → evicted; "b" kept (blocked>0).
-        assert!(det.per_ip.contains_key("b"));
         assert!(!det.per_ip.contains_key("a"));
+        assert!(!det.per_ip.contains_key("b"));
     }
 
     #[test]
@@ -442,7 +477,6 @@ mod tests {
         let nowc = now.clone();
         let mut det =
             ScanDetector::with_clock(Duration::from_secs(30), 20, move || *nowc.lock().unwrap());
-        det.record_blocked("1.2.3.4"); // keeps the IP alive after sweep
         det.observe("1.2.3.4".into(), 1);
         assert!(
             det.per_ip
@@ -451,9 +485,10 @@ mod tests {
                 .window_started_at
                 .is_some()
         );
-        *now.lock().unwrap() += Duration::from_secs(60);
+        *now.lock().unwrap() += Duration::from_secs(20);
+        det.record_blocked("1.2.3.4");
+        *now.lock().unwrap() += Duration::from_secs(20);
         det.sweep();
-        // Events drained but IP retained via blocked>0; window_started_at reset.
         let st = det.per_ip.get("1.2.3.4").unwrap();
         assert!(st.events.is_empty());
         assert!(st.window_started_at.is_none());

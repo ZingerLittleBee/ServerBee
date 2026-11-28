@@ -68,7 +68,10 @@ impl AsnService {
         let record = self.reader.lookup(ip).ok()?;
         let decoded: Option<AsnRecord> = record.decode().ok()?;
         let decoded = decoded?;
-        match (decoded.autonomous_system_number, decoded.autonomous_system_organization) {
+        match (
+            decoded.autonomous_system_number,
+            decoded.autonomous_system_organization,
+        ) {
             (Some(num), Some(org)) => Some(format!("AS{num} {org}")),
             (Some(num), None) => Some(format!("AS{num}")),
             (None, Some(org)) => Some(org),
@@ -103,25 +106,31 @@ pub async fn download_dbip_asn(data_dir: &str) -> Result<AsnService, String> {
         .await
         .map_err(|e| format!("Failed to read response: {e}"))?;
 
-    // Decompress gzip
-    let mut decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(&compressed));
-    let mut decompressed = Vec::new();
-    decoder
-        .read_to_end(&mut decompressed)
-        .map_err(|e| format!("Failed to decompress: {e}"))?;
+    let data_dir = data_dir.to_string();
+    let (service, final_path) = tokio::task::spawn_blocking(move || {
+        let mut decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(&compressed));
+        let mut decompressed = Vec::new();
+        decoder
+            .read_to_end(&mut decompressed)
+            .map_err(|e| format!("Failed to decompress: {e}"))?;
 
-    // Validate it's a valid MMDB before writing to disk
-    let final_path = Path::new(data_dir).join(DBIP_ASN_FILENAME);
-    let service =
-        AsnService::load_from_bytes(decompressed.clone(), final_path.display().to_string())?;
+        Reader::from_source(decompressed.as_slice())
+            .map_err(|e| format!("Invalid MMDB data: {e}"))?;
 
-    // Atomic write: tmp file then rename
-    std::fs::create_dir_all(data_dir)
-        .map_err(|e| format!("Failed to create data directory: {e}"))?;
-    let tmp_path = Path::new(data_dir).join(format!("{DBIP_ASN_FILENAME}.tmp"));
-    std::fs::write(&tmp_path, &decompressed)
-        .map_err(|e| format!("Failed to write database: {e}"))?;
-    std::fs::rename(&tmp_path, &final_path).map_err(|e| format!("Failed to save database: {e}"))?;
+        let final_path = Path::new(&data_dir).join(DBIP_ASN_FILENAME);
+        std::fs::create_dir_all(&data_dir)
+            .map_err(|e| format!("Failed to create data directory: {e}"))?;
+        let tmp_path = Path::new(&data_dir).join(format!("{DBIP_ASN_FILENAME}.tmp"));
+        std::fs::write(&tmp_path, &decompressed)
+            .map_err(|e| format!("Failed to write database: {e}"))?;
+        std::fs::rename(&tmp_path, &final_path)
+            .map_err(|e| format!("Failed to save database: {e}"))?;
+
+        let service = AsnService::load_from_bytes(decompressed, final_path.display().to_string())?;
+        Ok::<_, String>((service, final_path))
+    })
+    .await
+    .map_err(|e| format!("Decompression task failed: {e}"))??;
 
     tracing::info!("ASN database saved to {}", final_path.display());
     Ok(service)

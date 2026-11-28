@@ -1,10 +1,60 @@
+use std::error::Error;
+use std::net::IpAddr;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
+use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 use serverbee_common::ssrf;
 
 use super::CheckResult;
+
+struct SsrfMonitorDnsResolver;
+
+impl Resolve for SsrfMonitorDnsResolver {
+    fn resolve(&self, name: Name) -> Resolving {
+        let host = name.as_str().to_string();
+        Box::pin(async move {
+            let addrs = ssrf::resolve_and_check_monitor_async(&host, 0)
+                .await
+                .map_err(|e| {
+                    Box::new(std::io::Error::other(e.to_string())) as Box<dyn Error + Send + Sync>
+                })?;
+            let iter: Addrs = Box::new(addrs.into_iter());
+            Ok(iter)
+        })
+    }
+}
+
+static MONITOR_HTTP_CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+
+fn shared_http_client() -> Result<&'static reqwest::Client, String> {
+    MONITOR_HTTP_CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .danger_accept_invalid_certs(false)
+                .redirect(reqwest::redirect::Policy::none())
+                .pool_idle_timeout(Duration::from_secs(30))
+                .dns_resolver(Arc::new(SsrfMonitorDnsResolver))
+                .build()
+                .map_err(|e| format!("Failed to build HTTP client: {e}"))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+fn find_ssrf_error(err: &(dyn Error + 'static)) -> Option<String> {
+    let mut current: Option<&(dyn Error + 'static)> = Some(err);
+    while let Some(e) = current {
+        let msg = e.to_string();
+        if msg.contains("SSRF guard") {
+            return Some(msg);
+        }
+        current = e.source();
+    }
+    None
+}
 
 fn keyword_label(keyword: Option<&str>) -> &str {
     keyword.unwrap_or("")
@@ -169,6 +219,12 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
         error: Some(msg),
     };
 
+    let client = match shared_http_client() {
+        Ok(c) => c,
+        Err(e) => return fail(e),
+    };
+    let req_timeout = Duration::from_secs(parsed.timeout_secs);
+
     let mut current_url = target.to_string();
     let mut hop = 0usize;
 
@@ -181,27 +237,15 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
             Some(h) => h.to_string(),
             None => return fail("URL has no host".to_string()),
         };
-        let port = url.port_or_known_default().unwrap_or(80);
-        let validated_addrs = match ssrf::resolve_and_check_monitor(&host, port) {
-            Ok(addrs) => addrs,
-            Err(e) => return fail(e.to_string()),
-        };
-
-        let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(parsed.timeout_secs))
-            .danger_accept_invalid_certs(false)
-            .redirect(reqwest::redirect::Policy::none())
-            .resolve_to_addrs(&host, &validated_addrs)
-            .build()
+        let clean_host = host.trim_start_matches('[').trim_end_matches(']');
+        if let Ok(ip) = clean_host.parse::<IpAddr>()
+            && !ssrf::is_monitor_safe_addr(ip)
         {
-            Ok(c) => c,
-            Err(e) => return fail(format!("Failed to build HTTP client: {e}")),
-        };
+            return fail(format!(
+                "SSRF guard: host '{host}' resolved to blocked address {ip} (loopback/link-local/metadata) — request blocked"
+            ));
+        }
 
-        // The configured method/body/custom headers apply to the first hop
-        // only; redirects are followed as GET without the body or custom
-        // headers, so a POST body and any secrets in those headers are never
-        // replayed to a redirected (possibly attacker-controlled) host.
         let request = if hop == 0 {
             let base = match parsed.method.as_str() {
                 "GET" => client.get(url.clone()),
@@ -214,15 +258,17 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
                 }
                 other => return fail(format!("Unsupported HTTP method: {other}")),
             };
-            base.headers(custom_headers.clone())
+            base.headers(custom_headers.clone()).timeout(req_timeout)
         } else {
-            client.get(url.clone())
+            client.get(url.clone()).timeout(req_timeout)
         };
 
-        // Execute the request
         let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
+                if let Some(ssrf_msg) = find_ssrf_error(&e) {
+                    return fail(ssrf_msg);
+                }
                 let latency = start.elapsed().as_secs_f64() * 1000.0;
                 return CheckResult {
                     success: false,
@@ -502,7 +548,11 @@ mod tests {
     async fn test_check_blocks_cloud_metadata() {
         // The cloud metadata endpoint (169.254.169.254) is link-local and must
         // be blocked.
-        let result = check("http://169.254.169.254/latest/meta-data", &json!({ "timeout": 2 })).await;
+        let result = check(
+            "http://169.254.169.254/latest/meta-data",
+            &json!({ "timeout": 2 }),
+        )
+        .await;
         assert!(!result.success);
         assert!(result.error.unwrap_or_default().contains("SSRF guard"));
         assert_eq!(result.detail, Value::Null);
@@ -926,7 +976,10 @@ mod tests {
             }
         });
         let result = build_headers(&config);
-        assert!(result.is_err(), "any invalid header entry makes the whole build fail");
+        assert!(
+            result.is_err(),
+            "any invalid header entry makes the whole build fail"
+        );
     }
 
     // ── method / body config parsing branches ─────────────────────────────────

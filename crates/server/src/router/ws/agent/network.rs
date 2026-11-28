@@ -24,11 +24,12 @@ pub(super) async fn on_network_probe_results(
     server_id: &str,
     results: Vec<NetworkProbeResultData>,
 ) {
-    // Broadcast to browsers before saving (clone needed for save)
-    let _ = state.browser_tx.send(BrowserMessage::NetworkProbeUpdate {
-        server_id: server_id.to_string(),
-        results: results.clone(),
-    });
+    if state.browser_frame_tx.receiver_count() > 0 || state.browser_tx.receiver_count() > 1 {
+        let _ = state.browser_tx.send(BrowserMessage::NetworkProbeUpdate {
+            server_id: server_id.to_string(),
+            results: results.clone(),
+        });
+    }
     if let Err(e) = NetworkProbeService::save_results(&state.db, server_id, results).await {
         tracing::error!("Failed to save network probe results for {server_id}: {e}");
     }

@@ -75,23 +75,26 @@ pub async fn list_containers(docker: &Docker) -> anyhow::Result<Vec<DockerContai
     Ok(result)
 }
 
-/// Get stats for a set of containers (single snapshot per container).
+const STATS_MAX_CONCURRENCY: usize = 8;
+
 pub async fn get_container_stats(
     docker: &Docker,
     container_ids: &[String],
 ) -> Vec<DockerContainerStats> {
-    let mut results = Vec::with_capacity(container_ids.len());
-
-    for id in container_ids {
-        match get_single_container_stats(docker, id).await {
-            Ok(stats) => results.push(stats),
-            Err(e) => {
-                tracing::debug!("Failed to get stats for container {id}: {e}");
+    futures_util::stream::iter(container_ids.iter().cloned())
+        .map(|id| async move {
+            match get_single_container_stats(docker, &id).await {
+                Ok(stats) => Some(stats),
+                Err(e) => {
+                    tracing::debug!("Failed to get stats for container {id}: {e}");
+                    None
+                }
             }
-        }
-    }
-
-    results
+        })
+        .buffer_unordered(STATS_MAX_CONCURRENCY)
+        .filter_map(|opt| async move { opt })
+        .collect()
+        .await
 }
 
 async fn get_single_container_stats(

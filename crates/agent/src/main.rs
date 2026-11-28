@@ -57,8 +57,15 @@ fn flag_value(argv: &[String], flag: &str) -> Option<String> {
         .and_then(|i| argv.get(i + 1).cloned())
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()?;
+    runtime.block_on(async_main())
+}
+
+async fn async_main() -> anyhow::Result<()> {
     let argv: Vec<String> = std::env::args().collect();
     if crate::upgrade::is_upgrade_probe(&argv) {
         println!("{}", serverbee_common::constants::VERSION);

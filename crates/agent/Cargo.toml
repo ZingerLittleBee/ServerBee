@@ -17,7 +17,7 @@ tracing-subscriber.workspace = true
 uuid.workspace = true
 anyhow.workspace = true
 
-sysinfo = "0.33"
+sysinfo = { version = "0.33", default-features = false, features = ["system", "network", "disk", "component"] }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 figment = { version = "0.10", features = ["toml", "env"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }

@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
-use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+use axum::extract::ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade};
 use axum::extract::{ConnectInfo, State};
 use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
@@ -20,6 +21,9 @@ use serverbee_common::protocol::{BrowserClientMessage, BrowserMessage, ServerMes
 use serverbee_common::types::{
     AgentAuthorityStateSummary, AgentAuthorityStatus, OutstandingEnrollmentSummary, ServerStatus,
 };
+
+const WS_WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const WS_PING_INTERVAL: Duration = Duration::from_secs(30);
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new().route("/ws/servers", get(browser_ws_handler))
@@ -51,35 +55,31 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>, auth: Authen
 
     let connection_id = uuid::Uuid::new_v4().to_string();
 
-    // Build FullSync message from DB servers + agent_manager online/report data
     let full_sync = build_full_sync(&state, is_admin).await;
     if let Err(e) = send_browser_message(&mut ws_sink, &full_sync).await {
         tracing::error!("Failed to send FullSync to browser: {e}");
         return;
     }
 
-    // Subscribe to browser_tx broadcast channel
-    let mut browser_rx = state.browser_tx.subscribe();
+    let mut browser_rx = state.browser_frame_tx.subscribe();
+    let mut ping_interval = tokio::time::interval(WS_PING_INTERVAL);
+    ping_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ping_interval.tick().await;
 
     tracing::debug!("Browser WS client connected (connection_id={connection_id})");
 
     loop {
         tokio::select! {
-            // Forward broadcast messages to WebSocket
             msg = browser_rx.recv() => {
                 match msg {
-                    Ok(browser_msg) => {
-                        let filtered = filter_browser_message(browser_msg, is_admin);
-                        if let Some(filtered) = filtered
-                            && let Err(e) = send_browser_message(&mut ws_sink, &filtered).await
-                        {
+                    Ok(frame) => {
+                        if let Err(e) = send_browser_frame(&mut ws_sink, frame).await {
                             tracing::debug!("Failed to send to browser WS: {e}");
                             break;
                         }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         tracing::warn!("Browser WS lagged by {n} messages, sending full resync");
-                        // On lag, send a full resync
                         let resync = build_full_sync(&state, is_admin).await;
                         if let Err(e) = send_browser_message(&mut ws_sink, &resync).await {
                             tracing::debug!("Failed to send resync to browser WS: {e}");
@@ -91,7 +91,12 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>, auth: Authen
                     }
                 }
             }
-            // Handle incoming messages from browser
+            _ = ping_interval.tick() => {
+                if let Err(e) = send_ws_frame(&mut ws_sink, Message::Ping(vec![].into())).await {
+                    tracing::debug!("Failed to ping browser WS: {e}");
+                    break;
+                }
+            }
             msg = ws_stream.next() => {
                 match msg {
                     Some(Ok(Message::Text(text))) => {
@@ -103,10 +108,8 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>, auth: Authen
                         break;
                     }
                     Some(Ok(Message::Ping(_))) => {
-                        // axum auto-responds with Pong
                     }
                     Some(Ok(_)) => {
-                        // Ignore other messages from browser
                     }
                     Some(Err(e)) => {
                         tracing::debug!("Browser WS error: {e}");
@@ -116,18 +119,26 @@ async fn handle_browser_ws(socket: WebSocket, state: Arc<AppState>, auth: Authen
             }
             () = super::session::mobile_token_expired(mobile_expires) => {
                 tracing::debug!("Mobile WS token expired, closing connection");
-                let _ = ws_sink.send(Message::Close(Some(axum::extract::ws::CloseFrame {
-                    code: 4001,
-                    reason: "token expired".into(),
-                }))).await;
+                let _ = send_ws_frame(
+                    &mut ws_sink,
+                    Message::Close(Some(axum::extract::ws::CloseFrame {
+                        code: 4001,
+                        reason: "token expired".into(),
+                    })),
+                )
+                .await;
                 break;
             }
             () = &mut auth_lease => {
                 tracing::debug!(user_id = %auth.user.user_id, "Browser WS authorization revoked");
-                let _ = ws_sink.send(Message::Close(Some(axum::extract::ws::CloseFrame {
-                    code: 4003,
-                    reason: "authorization revoked".into(),
-                }))).await;
+                let _ = send_ws_frame(
+                    &mut ws_sink,
+                    Message::Close(Some(axum::extract::ws::CloseFrame {
+                        code: 4003,
+                        reason: "authorization revoked".into(),
+                    })),
+                )
+                .await;
                 break;
             }
         }
@@ -215,23 +226,8 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
             .push(row.tag);
     }
 
-    let server_ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
-    let authority_ids = match server_ids
-        .into_iter()
-        .map(crate::service::agent_authority::ServerId::parse)
-        .collect::<Result<Vec<_>, _>>()
-    {
-        Ok(ids) => ids,
-        Err(error) => {
-            tracing::error!("Failed to parse stored Server ID for FullSync: {error}");
-            return BrowserMessage::FullSync {
-                servers: Vec::new(),
-                upgrades: state.upgrade_tracker.snapshot(),
-            };
-        }
-    };
     let mut authority_by_server: HashMap<String, AgentAuthorityStateSummary> =
-        match state.agent_authority.states(&authority_ids).await {
+        match state.agent_authority.states_for_servers(&servers).await {
             Ok(states) => states
                 .into_iter()
                 .map(|authority| {
@@ -270,15 +266,6 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
                 };
             }
         };
-    if authority_by_server.len() != servers.len() {
-        tracing::warn!(
-            "Server set changed while building FullSync; retrying on the next connection"
-        );
-        return BrowserMessage::FullSync {
-            servers: Vec::new(),
-            upgrades: state.upgrade_tracker.snapshot(),
-        };
-    }
 
     let statuses: Vec<ServerStatus> = servers
         .into_iter()
@@ -391,8 +378,25 @@ async fn build_full_sync(state: &Arc<AppState>, _is_admin: bool) -> BrowserMessa
     }
 }
 
-fn filter_browser_message(msg: BrowserMessage, _is_admin: bool) -> Option<BrowserMessage> {
-    Some(msg)
+async fn send_ws_frame(
+    sink: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    msg: Message,
+) -> Result<(), axum::Error> {
+    tokio::time::timeout(WS_WRITE_TIMEOUT, sink.send(msg))
+        .await
+        .map_err(|_| {
+            axum::Error::new(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "ws send timeout",
+            ))
+        })?
+}
+
+async fn send_browser_frame(
+    sink: &mut futures_util::stream::SplitSink<WebSocket, Message>,
+    frame: Utf8Bytes,
+) -> Result<(), axum::Error> {
+    send_ws_frame(sink, Message::Text(frame)).await
 }
 
 async fn send_browser_message(
@@ -400,5 +404,5 @@ async fn send_browser_message(
     msg: &BrowserMessage,
 ) -> Result<(), axum::Error> {
     let text = serde_json::to_string(msg).map_err(axum::Error::new)?;
-    sink.send(Message::Text(text.into())).await
+    send_browser_frame(sink, Utf8Bytes::from(text)).await
 }

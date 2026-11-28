@@ -10,9 +10,8 @@ use crate::error::AppError;
 pub struct TrafficService;
 
 impl TrafficService {
-    /// Upsert a traffic_hourly row, accumulating bytes_in/bytes_out on conflict.
-    pub async fn upsert_hourly(
-        db: &DatabaseConnection,
+    pub async fn upsert_hourly<C: ConnectionTrait>(
+        db: &C,
         server_id: &str,
         hour: chrono::DateTime<Utc>,
         delta_in: i64,
@@ -37,9 +36,8 @@ impl TrafficService {
         Ok(())
     }
 
-    /// Upsert a traffic_state row.
-    pub async fn upsert_state(
-        db: &DatabaseConnection,
+    pub async fn upsert_state<C: ConnectionTrait>(
+        db: &C,
         server_id: &str,
         last_in: i64,
         last_out: i64,
@@ -219,20 +217,19 @@ impl TrafficService {
             None => (0, 0),
         };
 
-        // Also get today's hourly data that may not yet be aggregated
         let today = Utc::now().naive_utc().date();
         let today_str = today.format("%Y-%m-%d").to_string();
+        let tomorrow_str = (today + Duration::days(1)).format("%Y-%m-%d").to_string();
 
-        // Check if today is within the cycle and get any hourly data not yet in daily
         let hourly_result = db
             .query_one(Statement::from_sql_and_values(
                 db.get_database_backend(),
                 "SELECT COALESCE(SUM(h.bytes_in), 0), COALESCE(SUM(h.bytes_out), 0) \
                  FROM traffic_hourly h \
                  WHERE h.server_id = $1 \
-                 AND date(h.hour) = $2 \
+                 AND h.hour >= $2 AND h.hour < $3 \
                  AND NOT EXISTS (SELECT 1 FROM traffic_daily d WHERE d.server_id = h.server_id AND d.date = $2)",
-                [server_id.into(), today_str.into()],
+                [server_id.into(), today_str.into(), tomorrow_str.into()],
             ))
             .await?;
 
@@ -317,23 +314,100 @@ impl TrafficService {
         Ok(result)
     }
 
-    /// Traffic overview for all servers that have a billing cycle configured.
     pub async fn overview(db: &DatabaseConnection) -> Result<Vec<ServerTrafficOverview>, AppError> {
         let servers = server::Entity::find().all(db).await?;
         let today = Utc::now().date_naive();
-        let mut result = Vec::new();
 
+        let mut billed: Vec<(server::Model, NaiveDate, NaiveDate)> = Vec::new();
         for s in servers {
             let billing_cycle = match s.billing_cycle.as_deref() {
                 Some(bc) if !bc.is_empty() => bc,
                 _ => continue,
             };
-
             let (cycle_start, cycle_end) =
                 get_cycle_range(billing_cycle, s.billing_start_day, today);
-            let (cycle_in, cycle_out) =
-                Self::query_cycle_traffic(db, &s.id, cycle_start, cycle_end).await?;
+            billed.push((s, cycle_start, cycle_end));
+        }
 
+        if billed.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let range_placeholders = vec!["(?, ?, ?)"; billed.len()].join(", ");
+        let mut range_values: Vec<sea_orm::Value> = Vec::with_capacity(billed.len() * 3);
+        for (s, start, end) in &billed {
+            range_values.push(s.id.clone().into());
+            range_values.push(start.format("%Y-%m-%d").to_string().into());
+            range_values.push(end.format("%Y-%m-%d").to_string().into());
+        }
+        let daily_sql = format!(
+            "WITH ranges(server_id, start_date, end_date) AS (VALUES {range_placeholders}) \
+             SELECT r.server_id, COALESCE(SUM(d.bytes_in), 0), COALESCE(SUM(d.bytes_out), 0) \
+             FROM ranges r \
+             LEFT JOIN traffic_daily d \
+               ON d.server_id = r.server_id \
+              AND d.date >= r.start_date \
+              AND d.date <= r.end_date \
+             GROUP BY r.server_id"
+        );
+        let daily_rows = db
+            .query_all(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                daily_sql,
+                range_values,
+            ))
+            .await?;
+
+        let mut totals: HashMap<String, (i64, i64)> = HashMap::with_capacity(billed.len());
+        for row in daily_rows {
+            let server_id: String = row.try_get_by_index(0).unwrap_or_default();
+            let bytes_in: i64 = row.try_get_by_index(1).unwrap_or(0);
+            let bytes_out: i64 = row.try_get_by_index(2).unwrap_or(0);
+            totals.insert(server_id, (bytes_in, bytes_out));
+        }
+
+        let today_utc = Utc::now().naive_utc().date();
+        let today_str = today_utc.format("%Y-%m-%d").to_string();
+        let tomorrow_str = (today_utc + Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string();
+        let in_placeholders = vec!["?"; billed.len()].join(", ");
+        let mut hourly_values: Vec<sea_orm::Value> = Vec::with_capacity(billed.len() + 3);
+        for (s, _, _) in &billed {
+            hourly_values.push(s.id.clone().into());
+        }
+        hourly_values.push(today_str.clone().into());
+        hourly_values.push(tomorrow_str.into());
+        hourly_values.push(today_str.into());
+
+        let hourly_sql = format!(
+            "SELECT h.server_id, COALESCE(SUM(h.bytes_in), 0), COALESCE(SUM(h.bytes_out), 0) \
+             FROM traffic_hourly h \
+             WHERE h.server_id IN ({in_placeholders}) \
+               AND h.hour >= ? AND h.hour < ? \
+               AND NOT EXISTS (SELECT 1 FROM traffic_daily d WHERE d.server_id = h.server_id AND d.date = ?) \
+             GROUP BY h.server_id"
+        );
+        let hourly_rows = db
+            .query_all(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                hourly_sql,
+                hourly_values,
+            ))
+            .await?;
+
+        for row in hourly_rows {
+            let server_id: String = row.try_get_by_index(0).unwrap_or_default();
+            let bytes_in: i64 = row.try_get_by_index(1).unwrap_or(0);
+            let bytes_out: i64 = row.try_get_by_index(2).unwrap_or(0);
+            let entry = totals.entry(server_id).or_insert((0, 0));
+            entry.0 += bytes_in;
+            entry.1 += bytes_out;
+        }
+
+        let mut result = Vec::with_capacity(billed.len());
+        for (s, _, cycle_end) in billed {
+            let (cycle_in, cycle_out) = totals.get(&s.id).copied().unwrap_or((0, 0));
             let percent_used = s.traffic_limit.and_then(|limit| {
                 if limit > 0 {
                     Some((cycle_in + cycle_out) as f64 / limit as f64 * 100.0)
@@ -341,7 +415,6 @@ impl TrafficService {
                     None
                 }
             });
-
             let days_remaining = (cycle_end - today).num_days();
 
             result.push(ServerTrafficOverview {
@@ -1306,8 +1379,14 @@ mod tests {
 
         // Only the last 7 days are returned; the 40-day-old row is excluded
         let rows = TrafficService::overview_daily(&db, 7).await.unwrap();
-        assert!(rows.iter().all(|r| r.date != old.format("%Y-%m-%d").to_string()));
-        assert!(rows.iter().any(|r| r.date == recent.format("%Y-%m-%d").to_string()));
+        assert!(
+            rows.iter()
+                .all(|r| r.date != old.format("%Y-%m-%d").to_string())
+        );
+        assert!(
+            rows.iter()
+                .any(|r| r.date == recent.format("%Y-%m-%d").to_string())
+        );
     }
 
     #[tokio::test]
@@ -1372,8 +1451,12 @@ mod tests {
         let (db, _tmp) = crate::test_utils::setup_test_db().await;
         insert_test_server(&db, "srv-1").await;
         insert_server_with_billing(&db, "srv-2", None, None, None).await;
-        TrafficService::upsert_state(&db, "srv-1", 10, 20).await.unwrap();
-        TrafficService::upsert_state(&db, "srv-2", 30, 40).await.unwrap();
+        TrafficService::upsert_state(&db, "srv-1", 10, 20)
+            .await
+            .unwrap();
+        TrafficService::upsert_state(&db, "srv-2", 30, 40)
+            .await
+            .unwrap();
 
         let cache = TrafficService::load_transfer_cache(&db).await.unwrap();
         assert_eq!(cache.len(), 2);
@@ -1394,8 +1477,12 @@ mod tests {
         let (db, _tmp) = crate::test_utils::setup_test_db().await;
         insert_test_server(&db, "srv-1").await;
         // Second upsert on the same server_id replaces (not accumulates) values
-        TrafficService::upsert_state(&db, "srv-1", 100, 200).await.unwrap();
-        TrafficService::upsert_state(&db, "srv-1", 500, 600).await.unwrap();
+        TrafficService::upsert_state(&db, "srv-1", 100, 200)
+            .await
+            .unwrap();
+        TrafficService::upsert_state(&db, "srv-1", 500, 600)
+            .await
+            .unwrap();
         let cache = TrafficService::load_transfer_cache(&db).await.unwrap();
         assert_eq!(cache.get("srv-1"), Some(&(500i64, 600i64)));
     }
@@ -1487,9 +1574,17 @@ mod tests {
             .and_hms_opt(0, 0, 0)
             .unwrap()
             .and_utc();
-        let recent = Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc();
-        TrafficService::upsert_hourly(&db, "srv-1", old, 1, 1).await.unwrap();
-        TrafficService::upsert_hourly(&db, "srv-1", recent, 2, 2).await.unwrap();
+        let recent = Utc::now()
+            .date_naive()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc();
+        TrafficService::upsert_hourly(&db, "srv-1", old, 1, 1)
+            .await
+            .unwrap();
+        TrafficService::upsert_hourly(&db, "srv-1", recent, 2, 2)
+            .await
+            .unwrap();
 
         // Cleanup older than 30 days -> only the 40-day-old row is deleted
         let deleted = TrafficService::cleanup_hourly(&db, 30).await.unwrap();

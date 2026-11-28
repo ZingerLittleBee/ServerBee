@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use axum::body::Bytes;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -5,10 +8,8 @@ use utoipa::ToSchema;
 use super::{WidgetModuleError, package::UnpackedPackage};
 use crate::entity::widget_module::{self, Entity as WidgetModuleEntity, SourceType};
 
-/// Asset bytes plus the per-row metadata callers need to set caching headers
-/// without re-querying the database.
 pub struct ServedAsset {
-    pub bytes: Vec<u8>,
+    pub bytes: Bytes,
     pub mime: String,
     pub version: String,
     pub code_sha256: String,
@@ -105,8 +106,12 @@ impl WidgetModuleService {
             } else {
                 format!("{folder}/{requested}")
             };
-            let bytes = crate::service::widget_module::builtin::builtin_asset_bytes(&full)
-                .ok_or_else(|| WidgetModuleError::AssetNotFound(requested.to_string()))?;
+            let bytes = match crate::service::widget_module::builtin::builtin_asset_bytes(&full)
+                .ok_or_else(|| WidgetModuleError::AssetNotFound(requested.to_string()))?
+            {
+                Cow::Borrowed(slice) => Bytes::from_static(slice),
+                Cow::Owned(vec) => Bytes::from(vec),
+            };
             return Ok(ServedAsset {
                 bytes,
                 mime: mime_for(&full),
@@ -150,7 +155,7 @@ impl WidgetModuleService {
             .to_vec();
         let mime = mime_for(&lookup_path);
         Ok(ServedAsset {
-            bytes,
+            bytes: Bytes::from(bytes),
             mime,
             version,
             code_sha256,
@@ -172,9 +177,8 @@ impl WidgetModuleService {
 
         use crate::entity::widget_module::{self, SourceType};
 
-        let source = std::str::from_utf8(&code).map_err(|e| {
-            WidgetModuleError::ManifestValidation(format!("not utf-8: {e}"))
-        })?;
+        let source = std::str::from_utf8(&code)
+            .map_err(|e| WidgetModuleError::ManifestValidation(format!("not utf-8: {e}")))?;
         let manifest = super::extractor::extract_manifest(source)?;
 
         let sha = {
@@ -191,8 +195,9 @@ impl WidgetModuleService {
         // Reject if an existing row owns this id under a different source_type.
         // Spec §3.5: a user-uploaded module must never silently overwrite a
         // builtin (or vice versa) — those are separate trust domains.
-        if let Some(existing) =
-            widget_module::Entity::find_by_id(manifest.id.clone()).one(db).await?
+        if let Some(existing) = widget_module::Entity::find_by_id(manifest.id.clone())
+            .one(db)
+            .await?
             && existing.source_type != source_type
         {
             return Err(WidgetModuleError::IdConflict(format!(
@@ -281,10 +286,9 @@ impl WidgetModuleService {
             widgets: Vec<CollectionEntry>,
         }
 
-        let collection: CollectionManifest = serde_json::from_str(manifest_str)
-            .map_err(|e| {
-                WidgetModuleError::ManifestExtraction(format!("collection.json invalid: {e}"))
-            })?;
+        let collection: CollectionManifest = serde_json::from_str(manifest_str).map_err(|e| {
+            WidgetModuleError::ManifestExtraction(format!("collection.json invalid: {e}"))
+        })?;
 
         if collection.widgets.is_empty() {
             return Err(WidgetModuleError::ManifestValidation(
@@ -302,10 +306,7 @@ impl WidgetModuleService {
 
         for entry in collection.widgets.iter() {
             let entry_path = entry.entry.trim_start_matches('/').to_string();
-            if entry_path.is_empty()
-                || entry_path.contains("..")
-                || entry_path.starts_with('/')
-            {
+            if entry_path.is_empty() || entry_path.contains("..") || entry_path.starts_with('/') {
                 return Err(WidgetModuleError::ManifestValidation(format!(
                     "invalid entry path: {entry_path}"
                 )));
@@ -323,9 +324,7 @@ impl WidgetModuleService {
                 ))
             })?;
             let source = std::str::from_utf8(bytes).map_err(|e| {
-                WidgetModuleError::ManifestExtraction(format!(
-                    "entry {entry_path} not utf-8: {e}"
-                ))
+                WidgetModuleError::ManifestExtraction(format!("entry {entry_path} not utf-8: {e}"))
             })?;
             let manifest = super::extractor::extract_manifest(source)?;
 
@@ -353,8 +352,9 @@ impl WidgetModuleService {
         // Reject the whole collection up front if any id collides with an
         // existing row owned by a different source_type (e.g. Builtin).
         for (manifest, _, _) in prepared.iter() {
-            if let Some(existing) =
-                widget_module::Entity::find_by_id(manifest.id.clone()).one(db).await?
+            if let Some(existing) = widget_module::Entity::find_by_id(manifest.id.clone())
+                .one(db)
+                .await?
                 && existing.source_type != source_type
             {
                 return Err(WidgetModuleError::IdConflict(format!(
@@ -537,8 +537,8 @@ export default {{ id: "{id}" }};
         {
             let cursor = std::io::Cursor::new(&mut buf);
             let mut zw = zip::ZipWriter::new(cursor);
-            let opts = SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
+            let opts =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
             for (name, bytes) in files {
                 zw.start_file(*name, opts).unwrap();
                 zw.write_all(bytes).unwrap();
@@ -575,7 +575,16 @@ export default {{ id: "{id}" }};
     #[tokio::test]
     async fn list_returns_enabled_rows_sorted() {
         let (db, _tmp) = setup_test_db().await;
-        seed_row(&db, "b.id", SourceType::Upload, "index.js", "{}", None, true).await;
+        seed_row(
+            &db,
+            "b.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            None,
+            true,
+        )
+        .await;
         seed_row(&db, "a.id", SourceType::Url, "index.js", "{}", None, true).await;
 
         let entries = WidgetModuleService::list(&db).await.unwrap();
@@ -593,8 +602,26 @@ export default {{ id: "{id}" }};
     #[tokio::test]
     async fn list_excludes_disabled_rows() {
         let (db, _tmp) = setup_test_db().await;
-        seed_row(&db, "on.id", SourceType::Upload, "index.js", "{}", None, true).await;
-        seed_row(&db, "off.id", SourceType::Upload, "index.js", "{}", None, false).await;
+        seed_row(
+            &db,
+            "on.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            None,
+            true,
+        )
+        .await;
+        seed_row(
+            &db,
+            "off.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            None,
+            false,
+        )
+        .await;
 
         let entries = WidgetModuleService::list(&db).await.unwrap();
         assert_eq!(entries.len(), 1);
@@ -614,7 +641,16 @@ export default {{ id: "{id}" }};
     async fn list_rejects_invalid_stored_manifest() {
         let (db, _tmp) = setup_test_db().await;
         // "{" is not valid JSON, so serde_json::from_str fails inside list().
-        seed_row(&db, "bad.id", SourceType::Upload, "index.js", "{", None, true).await;
+        seed_row(
+            &db,
+            "bad.id",
+            SourceType::Upload,
+            "index.js",
+            "{",
+            None,
+            true,
+        )
+        .await;
 
         let err = WidgetModuleService::list(&db)
             .await
@@ -629,7 +665,16 @@ export default {{ id: "{id}" }};
     #[tokio::test]
     async fn get_returns_existing_row() {
         let (db, _tmp) = setup_test_db().await;
-        seed_row(&db, "x.id", SourceType::Upload, "index.js", "{}", None, true).await;
+        seed_row(
+            &db,
+            "x.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            None,
+            true,
+        )
+        .await;
 
         let row = WidgetModuleService::get(&db, "x.id").await.unwrap();
         assert_eq!(row.id, "x.id");
@@ -664,7 +709,16 @@ export default {{ id: "{id}" }};
     async fn serve_asset_rejects_dotdot_path() {
         let (db, _tmp) = setup_test_db().await;
         let blob = widget_js("z.id").into_bytes();
-        seed_row(&db, "z.id", SourceType::Upload, "index.js", "{}", Some(blob), true).await;
+        seed_row(
+            &db,
+            "z.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            Some(blob),
+            true,
+        )
+        .await;
 
         let err = WidgetModuleService::serve_asset(&db, "z.id", "../secret")
             .await
@@ -680,7 +734,16 @@ export default {{ id: "{id}" }};
         let (db, _tmp) = setup_test_db().await;
         let code = widget_js("single.id");
         let blob = code.clone().into_bytes();
-        seed_row(&db, "single.id", SourceType::Upload, "index.js", "{}", Some(blob), true).await;
+        seed_row(
+            &db,
+            "single.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            Some(blob),
+            true,
+        )
+        .await;
 
         let served = WidgetModuleService::serve_asset(&db, "single.id", "index.js")
             .await
@@ -696,7 +759,16 @@ export default {{ id: "{id}" }};
     async fn serve_asset_single_file_unknown_path_is_asset_not_found() {
         let (db, _tmp) = setup_test_db().await;
         let blob = widget_js("single2.id").into_bytes();
-        seed_row(&db, "single2.id", SourceType::Upload, "index.js", "{}", Some(blob), true).await;
+        seed_row(
+            &db,
+            "single2.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            Some(blob),
+            true,
+        )
+        .await;
 
         // Single-file lookup is verbatim; "other.js" != entry_path "index.js".
         let err = WidgetModuleService::serve_asset(&db, "single2.id", "other.js")
@@ -710,7 +782,16 @@ export default {{ id: "{id}" }};
     #[tokio::test]
     async fn serve_asset_no_blob_is_not_found() {
         let (db, _tmp) = setup_test_db().await;
-        seed_row(&db, "noblob.id", SourceType::Url, "index.js", "{}", None, true).await;
+        seed_row(
+            &db,
+            "noblob.id",
+            SourceType::Url,
+            "index.js",
+            "{}",
+            None,
+            true,
+        )
+        .await;
 
         let err = WidgetModuleService::serve_asset(&db, "noblob.id", "index.js")
             .await
@@ -729,12 +810,21 @@ export default {{ id: "{id}" }};
             ("weather/style.css", b".a{color:red}"),
         ]);
         // entry_path "weather/index.js" means requests resolve under "weather/".
-        seed_row(&db, "zip.id", SourceType::Upload, "weather/index.js", "{}", Some(zip), true).await;
+        seed_row(
+            &db,
+            "zip.id",
+            SourceType::Upload,
+            "weather/index.js",
+            "{}",
+            Some(zip),
+            true,
+        )
+        .await;
 
         let served = WidgetModuleService::serve_asset(&db, "zip.id", "style.css")
             .await
             .unwrap();
-        assert_eq!(served.bytes, b".a{color:red}");
+        assert_eq!(served.bytes.as_ref(), b".a{color:red}");
         assert_eq!(served.mime, "text/css");
     }
 
@@ -743,7 +833,16 @@ export default {{ id: "{id}" }};
     async fn serve_asset_zip_missing_asset_is_asset_not_found() {
         let (db, _tmp) = setup_test_db().await;
         let zip = build_zip(&[("weather/index.js", widget_js("zip2.id").as_bytes())]);
-        seed_row(&db, "zip2.id", SourceType::Upload, "weather/index.js", "{}", Some(zip), true).await;
+        seed_row(
+            &db,
+            "zip2.id",
+            SourceType::Upload,
+            "weather/index.js",
+            "{}",
+            Some(zip),
+            true,
+        )
+        .await;
 
         let err = WidgetModuleService::serve_asset(&db, "zip2.id", "missing.css")
             .await
@@ -762,12 +861,21 @@ export default {{ id: "{id}" }};
             ("logo.svg", b"<svg/>"),
         ]);
         // entry_path "index.js" has no folder, so lookup is verbatim.
-        seed_row(&db, "ziproot.id", SourceType::Upload, "index.js", "{}", Some(zip), true).await;
+        seed_row(
+            &db,
+            "ziproot.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            Some(zip),
+            true,
+        )
+        .await;
 
         let served = WidgetModuleService::serve_asset(&db, "ziproot.id", "logo.svg")
             .await
             .unwrap();
-        assert_eq!(served.bytes, b"<svg/>");
+        assert_eq!(served.bytes.as_ref(), b"<svg/>");
         assert_eq!(served.mime, "image/svg+xml");
     }
 
@@ -839,7 +947,10 @@ export default {{ id: "{id}" }};
         .await
         .unwrap();
         assert!(matches!(model.source_type, SourceType::Url));
-        assert_eq!(model.source_url.as_deref(), Some("https://example.com/w.js"));
+        assert_eq!(
+            model.source_url.as_deref(),
+            Some("https://example.com/w.js")
+        );
         assert_eq!(model.installed_by, None);
     }
 
@@ -856,7 +967,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("non-utf8 should fail");
-        assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("not utf-8")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("not utf-8"))
+        );
     }
 
     /// install_single_file propagates extractor errors when no manifest block.
@@ -889,7 +1002,9 @@ export default {{ id: "{id}" }};
         .unwrap();
 
         // Same id, bumped version.
-        let v2 = widget_js("com.test.upg").replace("1.0.0", "2.0.0").into_bytes();
+        let v2 = widget_js("com.test.upg")
+            .replace("1.0.0", "2.0.0")
+            .into_bytes();
         let model = WidgetModuleService::install_single_file(
             &db,
             v2,
@@ -974,7 +1089,10 @@ export default {{ id: "{id}" }};
         .await
         .unwrap();
         assert!(matches!(models[0].source_type, SourceType::Url));
-        assert_eq!(models[0].source_url.as_deref(), Some("https://example.com/p.zip"));
+        assert_eq!(
+            models[0].source_url.as_deref(),
+            Some("https://example.com/p.zip")
+        );
     }
 
     /// install_collection_from_zip rejects a non-zip blob (invalid archive).
@@ -989,7 +1107,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("non-zip should fail");
-        assert!(matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("invalid zip")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("invalid zip"))
+        );
     }
 
     /// install_collection_from_zip rejects a zip missing collection.json.
@@ -1005,7 +1125,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("missing collection.json should fail");
-        assert!(matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("missing collection.json")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("missing collection.json"))
+        );
     }
 
     /// install_collection_from_zip rejects a syntactically invalid collection.json.
@@ -1021,7 +1143,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("invalid collection.json should fail");
-        assert!(matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("collection.json invalid")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("collection.json invalid"))
+        );
     }
 
     /// install_collection_from_zip rejects an empty widgets array.
@@ -1038,7 +1162,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("empty widgets must fail");
-        assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("must not be empty")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("must not be empty"))
+        );
     }
 
     /// install_collection_from_zip rejects an entry path containing `..`.
@@ -1058,7 +1184,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("dotdot entry must fail");
-        assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("invalid entry path")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("invalid entry path"))
+        );
     }
 
     /// install_collection_from_zip rejects an empty entry path.
@@ -1076,7 +1204,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("empty entry must fail");
-        assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("invalid entry path")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("invalid entry path"))
+        );
     }
 
     /// install_collection_from_zip rejects an entry that is not .js/.mjs.
@@ -1096,7 +1226,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("non-js entry must fail");
-        assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("must be .js or .mjs")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("must be .js or .mjs"))
+        );
     }
 
     /// install_collection_from_zip rejects an entry that is missing from the zip.
@@ -1114,7 +1246,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("entry missing from zip must fail");
-        assert!(matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("entry not found in zip")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestExtraction(ref m) if m.contains("entry not found in zip"))
+        );
     }
 
     /// install_collection_from_zip propagates an extractor failure for an entry
@@ -1151,7 +1285,9 @@ export default {{ id: "{id}" }};
         )
         .await
         .expect_err("duplicate ids must fail");
-        assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("duplicate widget id")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("duplicate widget id"))
+        );
     }
 
     /// install_collection_from_zip refuses ids that collide with a different
@@ -1189,14 +1325,25 @@ export default {{ id: "{id}" }};
     #[tokio::test]
     async fn uninstall_deletes_row() {
         let (db, _tmp) = setup_test_db().await;
-        seed_row(&db, "del.id", SourceType::Upload, "index.js", "{}", None, true).await;
+        seed_row(
+            &db,
+            "del.id",
+            SourceType::Upload,
+            "index.js",
+            "{}",
+            None,
+            true,
+        )
+        .await;
 
         WidgetModuleService::uninstall(&db, "del.id").await.unwrap();
-        assert!(WidgetModuleEntity::find_by_id("del.id".to_string())
-            .one(&db)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            WidgetModuleEntity::find_by_id("del.id".to_string())
+                .one(&db)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     /// uninstall maps a missing id to NotFound.
@@ -1213,18 +1360,31 @@ export default {{ id: "{id}" }};
     #[tokio::test]
     async fn uninstall_refuses_builtin() {
         let (db, _tmp) = setup_test_db().await;
-        seed_row(&db, "bi.id", SourceType::Builtin, "bi.id/index.js", "{}", None, true).await;
+        seed_row(
+            &db,
+            "bi.id",
+            SourceType::Builtin,
+            "bi.id/index.js",
+            "{}",
+            None,
+            true,
+        )
+        .await;
 
         let err = WidgetModuleService::uninstall(&db, "bi.id")
             .await
             .expect_err("builtin uninstall should fail");
-        assert!(matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("builtin")));
+        assert!(
+            matches!(err, WidgetModuleError::ManifestValidation(ref m) if m.contains("builtin"))
+        );
         // The row is still present.
-        assert!(WidgetModuleEntity::find_by_id("bi.id".to_string())
-            .one(&db)
-            .await
-            .unwrap()
-            .is_some());
+        assert!(
+            WidgetModuleEntity::find_by_id("bi.id".to_string())
+                .one(&db)
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 
     // ---------- mime_for ----------

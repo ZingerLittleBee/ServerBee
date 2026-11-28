@@ -129,6 +129,9 @@ pub async fn evaluate(
             recovered.push(row);
         }
         tx.commit().await?;
+        if !recovered.is_empty() {
+            crate::service::mobile_push_outbox::notify_outbox();
+        }
         for row in &recovered {
             manager.publish_state(row);
         }
@@ -192,6 +195,9 @@ pub async fn evaluate(
     }
     if !matched || MaintenanceService::is_in_maintenance_at(&tx, server_id, now).await? {
         tx.commit().await?;
+        if recovered {
+            crate::service::mobile_push_outbox::notify_outbox();
+        }
         for row in &archived {
             manager.publish_state(row);
         }
@@ -256,6 +262,7 @@ pub async fn evaluate(
     };
     mobile_alert_push::enqueue(&tx, &rule, &row, &model.name).await?;
     tx.commit().await?;
+    crate::service::mobile_push_outbox::notify_outbox();
     for row in &archived {
         manager.publish_state(row);
     }

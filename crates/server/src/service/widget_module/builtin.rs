@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use chrono::Utc;
 use rust_embed::Embed;
 use sea_orm::sea_query::OnConflict;
@@ -89,6 +91,6 @@ pub async fn register_all(db: &DatabaseConnection) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn builtin_asset_bytes(entry_path: &str) -> Option<Vec<u8>> {
-    BuiltinAssets::get(entry_path).map(|f| f.data.into_owned())
+pub fn builtin_asset_bytes(entry_path: &str) -> Option<Cow<'static, [u8]>> {
+    BuiltinAssets::get(entry_path).map(|f| f.data)
 }

@@ -5,6 +5,7 @@ use chrono::Utc;
 use sea_orm::*;
 
 use crate::entity::session;
+use crate::service::auth::{AuthInvalidationEvent, notify_auth_invalidated};
 use crate::state::AppState;
 
 /// Deletes all sessions whose `expires_at` is strictly before `now`.
@@ -20,6 +21,7 @@ pub(crate) async fn cleanup_once(db: &DatabaseConnection, now: chrono::DateTime<
     {
         Ok(result) if result.rows_affected > 0 => {
             tracing::info!("Cleaned up {} expired sessions", result.rows_affected);
+            notify_auth_invalidated(AuthInvalidationEvent::All);
             result.rows_affected
         }
         Ok(result) => result.rows_affected,

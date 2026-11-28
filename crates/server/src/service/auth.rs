@@ -1,17 +1,88 @@
+use std::sync::{Arc, OnceLock};
+use std::time::{Duration, Instant};
+
 use argon2::password_hash::SaltString;
 use argon2::password_hash::rand_core::OsRng;
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
+use dashmap::DashMap;
 use rand::RngCore;
 use sea_orm::*;
+use sha2::{Digest, Sha256};
+use tokio::sync::{Semaphore, broadcast};
 use uuid::Uuid;
 
 use sea_orm::sea_query::Expr;
 
 use crate::entity::{api_key, device_token, mobile_session, server, session, user};
 use crate::error::AppError;
+
+const API_KEY_CACHE_TTL: Duration = Duration::from_secs(60);
+const API_KEY_CACHE_MAX_ENTRIES: usize = 1024;
+const API_KEY_LAST_USED_DEBOUNCE_SECS: i64 = 60;
+const WEB_SESSION_EXTEND_MIN_ELAPSED_SECS: i64 = 300;
+const MOBILE_LAST_USED_DEBOUNCE_SECS: i64 = 60;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AuthInvalidationEvent {
+    SessionId(String),
+    ApiKeyId(String),
+    UserId(String),
+    All,
+}
+
+fn auth_invalidation_channel() -> &'static broadcast::Sender<AuthInvalidationEvent> {
+    static TX: OnceLock<broadcast::Sender<AuthInvalidationEvent>> = OnceLock::new();
+    TX.get_or_init(|| {
+        let (tx, _) = broadcast::channel(256);
+        tx
+    })
+}
+
+pub fn auth_invalidation_sender() -> broadcast::Sender<AuthInvalidationEvent> {
+    auth_invalidation_channel().clone()
+}
+
+pub fn notify_auth_invalidated(event: AuthInvalidationEvent) {
+    let _ = auth_invalidation_channel().send(event);
+}
+
+fn argon2_semaphore() -> &'static Arc<Semaphore> {
+    static SEM: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SEM.get_or_init(|| {
+        let permits = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(2)
+            .clamp(2, 8);
+        Arc::new(Semaphore::new(permits))
+    })
+}
+
+pub(crate) async fn run_argon2_blocking<T, F>(f: F) -> Result<T, AppError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, AppError> + Send + 'static,
+{
+    let permit = Arc::clone(argon2_semaphore())
+        .acquire_owned()
+        .await
+        .map_err(|e| AppError::Internal(format!("Argon2 semaphore closed: {e}")))?;
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        f()
+    })
+    .await
+    .map_err(|e| AppError::Internal(format!("Argon2 worker failed: {e}")))?
+}
+
+type ApiKeyCacheKey = (String, String, [u8; 32]);
+
+fn api_key_verify_cache() -> &'static DashMap<ApiKeyCacheKey, (bool, Instant)> {
+    static CACHE: OnceLock<DashMap<ApiKeyCacheKey, (bool, Instant)>> = OnceLock::new();
+    CACHE.get_or_init(DashMap::new)
+}
 
 /// Parameters for creating an authenticated session.
 pub struct LoginParams<'a> {
@@ -52,7 +123,6 @@ impl AuthService {
         Ok(())
     }
 
-    /// Hash a password using argon2 with a random salt.
     pub fn hash_password(password: &str) -> Result<String, AppError> {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -62,7 +132,6 @@ impl AuthService {
         Ok(hash.to_string())
     }
 
-    /// Verify a password against an argon2 hash.
     pub fn verify_password(password: &str, hash: &str) -> Result<bool, AppError> {
         let parsed_hash = PasswordHash::new(hash)
             .map_err(|e| AppError::Internal(format!("Invalid password hash: {e}")))?;
@@ -71,14 +140,57 @@ impl AuthService {
             .is_ok())
     }
 
-    /// Create a new user with the given username, password, and role.
+    pub async fn hash_password_async(password: &str) -> Result<String, AppError> {
+        let password = password.to_string();
+        run_argon2_blocking(move || Self::hash_password(&password)).await
+    }
+
+    pub async fn verify_password_async(password: &str, hash: &str) -> Result<bool, AppError> {
+        let password = password.to_string();
+        let hash = hash.to_string();
+        run_argon2_blocking(move || Self::verify_password(&password, &hash)).await
+    }
+
+    async fn verify_api_key_cached(
+        key_id: &str,
+        key_hash: &str,
+        raw_key: &str,
+    ) -> Result<bool, AppError> {
+        let secret_digest: [u8; 32] = Sha256::digest(raw_key.as_bytes()).into();
+        let cache_key = (key_id.to_string(), key_hash.to_string(), secret_digest);
+        let cache = api_key_verify_cache();
+        let now = Instant::now();
+
+        if let Some(entry) = cache.get(&cache_key) {
+            let (verified, expires_at) = *entry.value();
+            if now < expires_at {
+                return Ok(verified);
+            }
+            drop(entry);
+            cache.remove(&cache_key);
+        }
+
+        let verified = Self::verify_password_async(raw_key, key_hash).await?;
+        let now = Instant::now();
+        if cache.len() >= API_KEY_CACHE_MAX_ENTRIES {
+            cache.retain(|_, (_, exp)| *exp > now);
+            if cache.len() >= API_KEY_CACHE_MAX_ENTRIES {
+                cache.retain(|_, (ok, _)| *ok);
+            }
+            if cache.len() >= API_KEY_CACHE_MAX_ENTRIES {
+                cache.clear();
+            }
+        }
+        cache.insert(cache_key, (verified, now + API_KEY_CACHE_TTL));
+        Ok(verified)
+    }
+
     pub async fn create_user(
         db: &DatabaseConnection,
         username: &str,
         password: &str,
         role: &str,
     ) -> Result<user::Model, AppError> {
-        // Check if username already exists
         let existing = user::Entity::find()
             .filter(user::Column::Username.eq(username))
             .one(db)
@@ -90,7 +202,7 @@ impl AuthService {
             )));
         }
 
-        let password_hash = Self::hash_password(password)?;
+        let password_hash = Self::hash_password_async(password).await?;
         let now = Utc::now();
 
         let new_user = user::ActiveModel {
@@ -109,9 +221,6 @@ impl AuthService {
         Ok(result)
     }
 
-    /// Authenticate a user by username and password, creating a new session.
-    /// If the user has 2FA enabled, `totp_code` must be provided.
-    /// Returns the session and user models on success.
     pub async fn login(
         db: &DatabaseConnection,
         params: LoginParams<'_>,
@@ -122,12 +231,11 @@ impl AuthService {
             .await?
             .ok_or(AppError::Unauthorized)?;
 
-        let valid = Self::verify_password(params.password, &user.password_hash)?;
+        let valid = Self::verify_password_async(params.password, &user.password_hash).await?;
         if !valid {
             return Err(AppError::Unauthorized);
         }
 
-        // Check 2FA
         if let Some(ref secret) = user.totp_secret {
             match params.totp_code {
                 Some(code) => {
@@ -136,7 +244,6 @@ impl AuthService {
                     }
                 }
                 None => {
-                    // 2FA enabled but no code provided — signal requires_2fa
                     return Err(AppError::Validation("2fa_required".to_string()));
                 }
             }
@@ -184,46 +291,56 @@ impl AuthService {
         Ok(session_model)
     }
 
-    /// Validate a session token. If valid and not expired, returns the
-    /// associated user and session. Only performs sliding expiry for
-    /// `source == "web"` sessions; mobile sessions keep their original TTL.
     pub async fn validate_session(
         db: &DatabaseConnection,
         token: &str,
         web_session_ttl: i64,
     ) -> Result<Option<(user::Model, session::Model)>, AppError> {
-        let session = session::Entity::find()
+        let Some((session, user)) = session::Entity::find()
             .filter(session::Column::Token.eq(Self::hash_session_token(token)))
+            .find_also_related(user::Entity)
             .one(db)
-            .await?;
-
-        let session = match session {
-            Some(s) => s,
-            None => return Ok(None),
+            .await?
+        else {
+            return Ok(None);
         };
 
-        // Check expiration
-        if session.expires_at < Utc::now() {
-            // Clean up expired session
+        let now = Utc::now();
+        if session.expires_at < now {
             session::Entity::delete_by_id(&session.id).exec(db).await?;
+            notify_auth_invalidated(AuthInvalidationEvent::SessionId(session.id));
             return Ok(None);
         }
 
-        // Sliding expiry: only extend for web sessions
+        let Some(user) = user else {
+            return Ok(None);
+        };
+
         let session = if session.source == "web" {
-            let new_expires = Utc::now() + chrono::Duration::seconds(web_session_ttl);
-            let mut active: session::ActiveModel = session.into();
-            active.expires_at = Set(new_expires);
-            active.update(db).await?
+            let remaining_secs = (session.expires_at - now).num_seconds();
+            let half_ttl = web_session_ttl / 2;
+            let elapsed_secs = web_session_ttl - remaining_secs;
+            let should_extend = web_session_ttl > 0
+                && (remaining_secs < half_ttl
+                    || elapsed_secs >= WEB_SESSION_EXTEND_MIN_ELAPSED_SECS);
+            if should_extend {
+                let new_expires = now + chrono::Duration::seconds(web_session_ttl);
+                let mut active: session::ActiveModel = session.into();
+                active.expires_at = Set(new_expires);
+                active.update(db).await?
+            } else {
+                session
+            }
         } else {
-            // Update mobile_session.last_used_at (fire-and-forget for latency)
             if let Some(ref ms_id) = session.mobile_session_id {
                 let ms_id = ms_id.clone();
                 let db = db.clone();
+                let cutoff = now - chrono::Duration::seconds(MOBILE_LAST_USED_DEBOUNCE_SECS);
                 tokio::spawn(async move {
                     let _ = mobile_session::Entity::update_many()
-                        .col_expr(mobile_session::Column::LastUsedAt, Expr::value(Utc::now()))
+                        .col_expr(mobile_session::Column::LastUsedAt, Expr::value(now))
                         .filter(mobile_session::Column::Id.eq(&ms_id))
+                        .filter(mobile_session::Column::LastUsedAt.lt(cutoff))
                         .exec(&db)
                         .await;
                 });
@@ -231,36 +348,35 @@ impl AuthService {
             session
         };
 
-        // Fetch the user
-        let user = user::Entity::find_by_id(&session.user_id).one(db).await?;
-
-        match user {
-            Some(u) => Ok(Some((u, session))),
-            None => Ok(None),
-        }
+        Ok(Some((user, session)))
     }
 
-    /// Delete a session by its token (logout).
     pub async fn logout(db: &DatabaseConnection, token: &str) -> Result<(), AppError> {
-        session::Entity::delete_many()
-            .filter(session::Column::Token.eq(Self::hash_session_token(token)))
-            .exec(db)
+        let token_hash = Self::hash_session_token(token);
+        let session_id = session::Entity::find()
+            .select_only()
+            .column(session::Column::Id)
+            .filter(session::Column::Token.eq(&token_hash))
+            .into_tuple::<String>()
+            .one(db)
             .await?;
+
+        if let Some(session_id) = session_id {
+            session::Entity::delete_by_id(&session_id).exec(db).await?;
+            notify_auth_invalidated(AuthInvalidationEvent::SessionId(session_id));
+        }
         Ok(())
     }
 
-    /// Create a new API key for a user. Returns the model and the plaintext key.
-    /// The key has the format "serverbee_" + random base64url bytes.
-    /// Only the argon2 hash and a prefix (first 8 chars after "serverbee_") are stored.
     pub async fn create_api_key(
         db: &DatabaseConnection,
         user_id: &str,
         name: &str,
     ) -> Result<(api_key::Model, String), AppError> {
         let raw_key = Self::generate_api_key_raw();
-        let after_prefix = &raw_key[10..]; // strip "serverbee_"
+        let after_prefix = &raw_key[10..];
         let key_prefix = &after_prefix[..8.min(after_prefix.len())];
-        let key_hash = Self::hash_password(&raw_key)?;
+        let key_hash = Self::hash_password_async(&raw_key).await?;
         let now = Utc::now();
 
         let new_key = api_key::ActiveModel {
@@ -277,7 +393,6 @@ impl AuthService {
         Ok((model, raw_key))
     }
 
-    /// List all API keys for a user.
     pub async fn list_api_keys(
         db: &DatabaseConnection,
         user_id: &str,
@@ -289,7 +404,6 @@ impl AuthService {
         Ok(keys)
     }
 
-    /// Delete an API key by ID, ensuring it belongs to the given user.
     pub async fn delete_api_key(
         db: &DatabaseConnection,
         id: &str,
@@ -305,11 +419,11 @@ impl AuthService {
             return Err(AppError::NotFound("API key not found".to_string()));
         }
 
+        api_key_verify_cache().retain(|(cached_id, _, _), _| cached_id != id);
+        notify_auth_invalidated(AuthInvalidationEvent::ApiKeyId(id.to_string()));
         Ok(())
     }
 
-    /// Validate an API key. Extracts the prefix, searches by key_prefix,
-    /// then verifies with argon2. Updates last_used_at on success.
     pub async fn validate_api_key(
         db: &DatabaseConnection,
         key: &str,
@@ -319,9 +433,6 @@ impl AuthService {
             .map(|(user, _)| user))
     }
 
-    /// Validate an API key and return both its user and persisted key row.
-    /// Long-lived transports retain the row ID so deletion can revoke an
-    /// already-established connection without keeping the secret in memory.
     pub async fn validate_api_key_with_model(
         db: &DatabaseConnection,
         key: &str,
@@ -335,19 +446,24 @@ impl AuthService {
 
         let candidates = api_key::Entity::find()
             .filter(api_key::Column::KeyPrefix.eq(key_prefix))
+            .find_also_related(user::Entity)
             .all(db)
             .await?;
 
-        for candidate in candidates {
-            if Self::verify_password(key, &candidate.key_hash)? {
-                // Update last_used_at
-                let candidate_user_id = candidate.user_id.clone();
-                let mut active: api_key::ActiveModel = candidate.into();
-                active.last_used_at = Set(Some(Utc::now()));
-                let api_key = active.update(db).await?;
+        for (candidate, user) in candidates {
+            if Self::verify_api_key_cached(&candidate.id, &candidate.key_hash, key).await? {
+                let now = Utc::now();
+                let should_update = candidate
+                    .last_used_at
+                    .is_none_or(|ts| (now - ts).num_seconds() >= API_KEY_LAST_USED_DEBOUNCE_SECS);
+                let api_key = if should_update {
+                    let mut active: api_key::ActiveModel = candidate.into();
+                    active.last_used_at = Set(Some(now));
+                    active.update(db).await?
+                } else {
+                    candidate
+                };
 
-                // Fetch user
-                let user = user::Entity::find_by_id(&candidate_user_id).one(db).await?;
                 return Ok(user.map(|user| (user, api_key)));
             }
         }
@@ -355,8 +471,6 @@ impl AuthService {
         Ok(None)
     }
 
-    /// Validate an agent token by searching servers by token_prefix,
-    /// then verifying with argon2.
     pub async fn validate_agent_token(
         db: &DatabaseConnection,
         token: &str,
@@ -374,12 +488,10 @@ impl AuthService {
             .await?;
 
         for candidate in candidates {
-            // Defense-in-depth: the query already filters NULL token_hash rows,
-            // but keep this guard in case a row slips through (e.g., schema drift).
             let Some(hash) = candidate.token_hash.as_deref() else {
                 continue;
             };
-            if Self::verify_password(token, hash)? {
+            if Self::verify_password_async(token, hash).await? {
                 return Ok(Some(candidate));
             }
         }
@@ -533,7 +645,6 @@ impl AuthService {
         Ok(user.totp_secret.is_some())
     }
 
-    /// Change a user's password after verifying the old password.
     pub async fn change_password(
         db: &DatabaseConnection,
         user_id: &str,
@@ -546,7 +657,7 @@ impl AuthService {
             .await?
             .ok_or(AppError::NotFound("User not found".to_string()))?;
 
-        let valid = Self::verify_password(old_password, &user.password_hash)?;
+        let valid = Self::verify_password_async(old_password, &user.password_hash).await?;
         if !valid {
             return Err(AppError::BadRequest(
                 "Current password is incorrect".to_string(),
@@ -555,13 +666,9 @@ impl AuthService {
 
         Self::validate_password_strength(new_password)?;
 
-        let new_hash = Self::hash_password(new_password)?;
+        let new_hash = Self::hash_password_async(new_password).await?;
         let now = Utc::now();
 
-        // Resolve the caller's own mobile session to preserve (when the kept
-        // session is itself a mobile one, so the active device isn't logged out
-        // by its own password change). Read-only lookup, done before the txn.
-        // Sessions store the token hash, so hash the caller's token to match.
         let keep_token_hash = keep_session_token.map(Self::hash_session_token);
         let keep_mobile_session_id = match keep_token_hash {
             Some(ref token_hash) => session::Entity::find()
@@ -572,37 +679,22 @@ impl AuthService {
             None => None,
         };
 
-        // Apply the password change and every revocation atomically, so a
-        // failure can't leave the password rotated while sessions stay live
-        // (and a concurrent push_register can't wedge a half-applied state).
         let txn = db.begin().await?;
 
         let mut active: user::ActiveModel = user.into();
         active.password_hash = Set(new_hash);
-        // Stamp the change so mobile refresh rejects refresh tokens whose
-        // session was issued earlier — the authoritative guard against a stolen
-        // refresh token surviving the change (see MobileAuthService::refresh).
         active.password_changed_at = Set(Some(now));
         active.updated_at = Set(now);
         active.update(&txn).await?;
 
-        // Revoke the user's other web sessions. Keep the caller's current one
-        // when its token is known (web cookie / bearer flow), else revoke all.
         let mut revoke = session::Entity::delete_many().filter(session::Column::UserId.eq(user_id));
         if let Some(ref token_hash) = keep_token_hash {
             revoke = revoke.filter(session::Column::Token.ne(token_hash));
         }
         revoke.exec(&txn).await?;
 
-        // The mobile refresh secret lives in `mobile_session` (a separate
-        // table), so the revocation above does NOT cover the mobile auth path.
         Self::revoke_user_mobile_sessions(&txn, user_id, keep_mobile_session_id.as_deref()).await?;
 
-        // The caller's own mobile session is intentionally preserved (above).
-        // Bump its issuance time to the change instant so token versioning keeps
-        // accepting its refresh token — it predates the change, but it IS the
-        // caller's current, deliberately-kept session (the caller proved the old
-        // password and holds this session's token).
         if let Some(keep) = keep_mobile_session_id.as_deref()
             && let Some(ms) = mobile_session::Entity::find_by_id(keep).one(&txn).await?
         {
@@ -612,6 +704,7 @@ impl AuthService {
         }
 
         txn.commit().await?;
+        notify_auth_invalidated(AuthInvalidationEvent::UserId(user_id.to_string()));
         Ok(())
     }
 
@@ -684,7 +777,7 @@ impl AuthService {
             return Err(AppError::Validation("New password is required".to_string()));
         }
         Self::validate_password_strength(new_password)?;
-        if Self::verify_password(new_password, &user.password_hash)? {
+        if Self::verify_password_async(new_password, &user.password_hash).await? {
             return Err(AppError::Validation(
                 "New password must be different from the current password".to_string(),
             ));
@@ -706,7 +799,7 @@ impl AuthService {
             }
         }
 
-        let new_hash = Self::hash_password(new_password)?;
+        let new_hash = Self::hash_password_async(new_password).await?;
         let mut active: user::ActiveModel = user.into();
         active.password_hash = Set(new_hash);
         if let Some(uname) = trimmed_username {
@@ -715,6 +808,7 @@ impl AuthService {
         active.must_change_password = Set(false);
         active.updated_at = Set(Utc::now());
         active.update(db).await?;
+        notify_auth_invalidated(AuthInvalidationEvent::UserId(user_id.to_string()));
 
         Ok(())
     }

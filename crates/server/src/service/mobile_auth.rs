@@ -12,11 +12,13 @@ use uuid::Uuid;
 
 use crate::config::MobileConfig;
 use crate::entity::{
-    device_token, mobile_push_registration, mobile_session,
-    mobile_session_revocation_proof, session, user,
+    device_token, mobile_push_registration, mobile_session, mobile_session_revocation_proof,
+    session, user,
 };
 use crate::error::AppError;
-use crate::service::auth::AuthService;
+use crate::service::auth::{
+    AuthInvalidationEvent, AuthService, notify_auth_invalidated, run_argon2_blocking,
+};
 
 /// Parameters for mobile login.
 pub struct MobileLoginParams<'a> {
@@ -75,7 +77,6 @@ impl MobileAuthService {
         URL_SAFE_NO_PAD.encode(bytes)
     }
 
-    /// Hash a refresh token using argon2 with a random salt.
     pub fn hash_refresh_token(token: &str) -> Result<String, AppError> {
         let salt = SaltString::generate(&mut OsRng);
         let argon2 = Argon2::default();
@@ -85,13 +86,23 @@ impl MobileAuthService {
         Ok(hash.to_string())
     }
 
-    /// Verify a refresh token against its argon2 hash.
     pub fn verify_refresh_token(token: &str, hash: &str) -> Result<bool, AppError> {
         let parsed_hash = PasswordHash::new(hash)
             .map_err(|e| AppError::Internal(format!("Invalid refresh token hash: {e}")))?;
         Ok(Argon2::default()
             .verify_password(token.as_bytes(), &parsed_hash)
             .is_ok())
+    }
+
+    pub async fn hash_refresh_token_async(token: &str) -> Result<String, AppError> {
+        let token = token.to_string();
+        run_argon2_blocking(move || Self::hash_refresh_token(&token)).await
+    }
+
+    pub async fn verify_refresh_token_async(token: &str, hash: &str) -> Result<bool, AppError> {
+        let token = token.to_string();
+        let hash = hash.to_string();
+        run_argon2_blocking(move || Self::verify_refresh_token(&token, &hash)).await
     }
 
     /// Client proposals use a disjoint namespace from access/refresh secrets.
@@ -157,10 +168,9 @@ impl MobileAuthService {
     ) -> Result<MobileTokenResponse, AppError> {
         let now = Utc::now();
 
-        // Generate token pair
         let access_token = AuthService::generate_session_token();
         let refresh_token = Self::generate_refresh_token();
-        let refresh_token_hash = Self::hash_refresh_token(&refresh_token)?;
+        let refresh_token_hash = Self::hash_refresh_token_async(&refresh_token).await?;
 
         let revocation_token = Self::generate_refresh_token();
         let mobile_session_id = Uuid::new_v4().to_string();
@@ -227,7 +237,13 @@ impl MobileAuthService {
         user_agent: &str,
     ) -> Result<MobileTokenResponse, AppError> {
         Self::refresh_with_revocation_proof(
-            db, config, refresh_token, installation_id, ip, user_agent, None,
+            db,
+            config,
+            refresh_token,
+            installation_id,
+            ip,
+            user_agent,
+            None,
         )
         .await
     }
@@ -253,10 +269,11 @@ impl MobileAuthService {
             .all(db)
             .await?;
 
-        // Find the matching session by verifying the refresh token hash
         let mut matched_session: Option<mobile_session::Model> = None;
         for candidate in candidates {
-            if Self::verify_refresh_token(refresh_token, &candidate.refresh_token_hash)? {
+            if Self::verify_refresh_token_async(refresh_token, &candidate.refresh_token_hash)
+                .await?
+            {
                 matched_session = Some(candidate);
                 break;
             }
@@ -265,7 +282,7 @@ impl MobileAuthService {
         let old_session = matched_session.ok_or(AppError::Unauthorized)?;
         let access_token = AuthService::generate_session_token();
         let new_refresh_token = Self::generate_refresh_token();
-        let new_refresh_hash = Self::hash_refresh_token(&new_refresh_token)?;
+        let new_refresh_hash = Self::hash_refresh_token_async(&new_refresh_token).await?;
         let now = Utc::now();
         let txn = db.begin().await?;
 
@@ -336,7 +353,8 @@ impl MobileAuthService {
             let history_owner = mobile_session_revocation_proof::Entity::find()
                 .filter(mobile_session_revocation_proof::Column::TokenHash.eq(&hash))
                 .filter(
-                    mobile_session_revocation_proof::Column::MobileSessionId.ne(&current_session.id),
+                    mobile_session_revocation_proof::Column::MobileSessionId
+                        .ne(&current_session.id),
                 )
                 .one(&txn)
                 .await?;
@@ -345,7 +363,8 @@ impl MobileAuthService {
             }
             let already_bound = mobile_session_revocation_proof::Entity::find()
                 .filter(
-                    mobile_session_revocation_proof::Column::MobileSessionId.eq(&current_session.id),
+                    mobile_session_revocation_proof::Column::MobileSessionId
+                        .eq(&current_session.id),
                 )
                 .filter(mobile_session_revocation_proof::Column::TokenHash.eq(&hash))
                 .one(&txn)
@@ -395,6 +414,7 @@ impl MobileAuthService {
         .insert(&txn)
         .await?;
         txn.commit().await?;
+        notify_auth_invalidated(AuthInvalidationEvent::UserId(user_model.id.clone()));
 
         Ok(MobileTokenResponse {
             mobile_session_id: current_session.id,
@@ -515,10 +535,12 @@ impl MobileAuthService {
                     }
                     let candidates = candidates_query.all(db).await?;
                     for candidate in candidates {
-                        if Self::verify_refresh_token(
+                        if Self::verify_refresh_token_async(
                             revocation_token,
                             &candidate.refresh_token_hash,
-                        )? {
+                        )
+                        .await?
+                        {
                             verified_current = Some(candidate);
                             break;
                         }
@@ -530,7 +552,8 @@ impl MobileAuthService {
                     target = mobile_session::Entity::find_by_id(&verified.id)
                         .filter(mobile_session::Column::InstallationId.eq(installation_id))
                         .filter(
-                            mobile_session::Column::RefreshTokenHash.eq(verified.refresh_token_hash),
+                            mobile_session::Column::RefreshTokenHash
+                                .eq(verified.refresh_token_hash),
                         )
                         .one(&txn)
                         .await?;
@@ -558,6 +581,7 @@ impl MobileAuthService {
                 return Err(AppError::Unauthorized);
             }
             txn.commit().await?;
+            notify_auth_invalidated(AuthInvalidationEvent::UserId(target.user_id));
             return Ok("ok");
         }
     }
@@ -585,7 +609,9 @@ impl MobileAuthService {
                 .await?
                 .is_some()
             || mobile_session_revocation_proof::Entity::find()
-                .filter(mobile_session_revocation_proof::Column::MobileSessionId.eq(mobile_session_id))
+                .filter(
+                    mobile_session_revocation_proof::Column::MobileSessionId.eq(mobile_session_id),
+                )
                 .one(txn)
                 .await?
                 .is_some())
@@ -655,7 +681,7 @@ impl MobileAuthService {
             .await?
             .ok_or(AppError::Unauthorized)?;
 
-        let valid = AuthService::verify_password(password, &user_model.password_hash)?;
+        let valid = AuthService::verify_password_async(password, &user_model.password_hash).await?;
         if !valid {
             return Err(AppError::Unauthorized);
         }
@@ -677,30 +703,36 @@ impl MobileAuthService {
         Ok(user_model)
     }
 
-    /// Delete a mobile session and cascade-delete its linked sessions and device tokens.
     async fn delete_mobile_session_cascade(
         db: &DatabaseConnection,
         mobile_session_id: &str,
     ) -> Result<(), AppError> {
         let txn = db.begin().await?;
-        // Delete associated sessions
+
         session::Entity::delete_many()
             .filter(session::Column::MobileSessionId.eq(mobile_session_id))
             .exec(&txn)
             .await?;
 
-        // Delete associated device tokens
         device_token::Entity::delete_many()
             .filter(device_token::Column::MobileSessionId.eq(mobile_session_id))
             .exec(&txn)
             .await?;
 
-        // Delete the mobile session itself
+        let user_id = mobile_session::Entity::find_by_id(mobile_session_id)
+            .one(&txn)
+            .await?
+            .map(|ms| ms.user_id);
+
         mobile_session::Entity::delete_by_id(mobile_session_id)
             .exec(&txn)
             .await?;
 
         txn.commit().await?;
+
+        if let Some(user_id) = user_id {
+            notify_auth_invalidated(AuthInvalidationEvent::UserId(user_id));
+        }
 
         Ok(())
     }

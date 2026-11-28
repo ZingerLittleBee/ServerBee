@@ -1,9 +1,13 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 
+use axum::extract::ws::Utf8Bytes;
 use dashmap::DashMap;
 use sea_orm::DatabaseConnection;
 use serverbee_common::protocol::BrowserMessage;
+use serverbee_common::types::LiveMetrics;
 use tokio::sync::broadcast;
 
 use crate::config::AppConfig;
@@ -13,6 +17,7 @@ use crate::service::agent_manager::AgentManager;
 use crate::service::agent_reconcile::AgentDesiredStateReconciler;
 use crate::service::alert::AlertStateManager;
 use crate::service::asn::AsnService;
+use crate::service::auth::{AuthInvalidationEvent, auth_invalidation_sender};
 use crate::service::docker_viewer::DockerViewerTracker;
 use crate::service::file_transfer::FileTransferManager;
 use crate::service::firewall::FirewallService;
@@ -81,6 +86,8 @@ pub struct AppState {
     pub agent_authority: Arc<AgentAuthority>,
     pub server_onboarding: Arc<ServerOnboarding>,
     pub browser_tx: broadcast::Sender<BrowserMessage>,
+    pub browser_frame_tx: broadcast::Sender<Utf8Bytes>,
+    pub auth_invalidation_tx: broadcast::Sender<AuthInvalidationEvent>,
     pub config: AppConfig,
     pub upgrade_tracker: UpgradeJobTracker,
     pub upgrade_release_service: UpgradeReleaseService,
@@ -144,7 +151,72 @@ fn cleanup_expired_entries(map: &DashMap<String, RateLimitEntry>, window_minutes
     map.retain(|_, entry| entry.window_start > cutoff);
 }
 
+const BROWSER_BROADCAST_CAPACITY: usize = 1024;
+const BROWSER_UPDATE_COALESCE_INTERVAL: Duration = Duration::from_millis(500);
+
+fn spawn_browser_frame_coalescer(
+    mut raw_rx: broadcast::Receiver<BrowserMessage>,
+    frame_tx: broadcast::Sender<Utf8Bytes>,
+) {
+    tokio::spawn(async move {
+        let mut pending_updates: HashMap<String, LiveMetrics> = HashMap::new();
+        let mut flush_interval = tokio::time::interval(BROWSER_UPDATE_COALESCE_INTERVAL);
+        flush_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        loop {
+            tokio::select! {
+                msg = raw_rx.recv() => {
+                    match msg {
+                        Ok(BrowserMessage::Update { servers }) => {
+                            if frame_tx.receiver_count() == 0 {
+                                pending_updates.clear();
+                                continue;
+                            }
+                            for metrics in servers {
+                                pending_updates.insert(metrics.id.clone(), metrics);
+                            }
+                        }
+                        Ok(msg) => {
+                            if let BrowserMessage::ServerOffline { ref server_id } = msg {
+                                pending_updates.remove(server_id);
+                            }
+                            if frame_tx.receiver_count() > 0
+                                && let Ok(text) = serde_json::to_string(&msg)
+                            {
+                                let _ = frame_tx.send(Utf8Bytes::from(text));
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::warn!("Browser frame coalescer lagged by {n} messages");
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            break;
+                        }
+                    }
+                }
+                _ = flush_interval.tick() => {
+                    if pending_updates.is_empty() {
+                        continue;
+                    }
+                    if frame_tx.receiver_count() == 0 {
+                        pending_updates.clear();
+                        continue;
+                    }
+                    let servers: Vec<LiveMetrics> = pending_updates.drain().map(|(_, m)| m).collect();
+                    let batch = BrowserMessage::Update { servers };
+                    if let Ok(text) = serde_json::to_string(&batch) {
+                        let _ = frame_tx.send(Utf8Bytes::from(text));
+                    }
+                }
+            }
+        }
+    });
+}
+
 impl AppState {
+    pub fn notify_auth_invalidated(&self, event: AuthInvalidationEvent) {
+        let _ = self.auth_invalidation_tx.send(event);
+    }
     /// Check rate limit against a given DashMap. Returns true if allowed.
     fn check_rate(map: &DashMap<String, RateLimitEntry>, ip: &str, max: u32) -> bool {
         let count = RATE_CHECK_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -207,7 +279,10 @@ impl AppState {
         renewal_clock: Arc<dyn crate::service::renewal_clock::RenewalClock>,
     ) -> Result<Arc<Self>, AppError> {
         crate::service::renewal::advance_all(&db, renewal_clock.now()).await?;
-        let (browser_tx, _) = broadcast::channel(256);
+        let (browser_tx, _) = broadcast::channel(BROWSER_BROADCAST_CAPACITY);
+        let (browser_frame_tx, _) = broadcast::channel(BROWSER_BROADCAST_CAPACITY);
+        spawn_browser_frame_coalescer(browser_tx.subscribe(), browser_frame_tx.clone());
+        let auth_invalidation_tx = auth_invalidation_sender();
         let agent_manager = Arc::new(AgentManager::new(browser_tx.clone()));
         let agent_authority = Arc::new(AgentAuthority::new(db.clone(), agent_manager.clone()));
         let server_onboarding = Arc::new(ServerOnboarding::new_with_renewal_clock(
@@ -291,6 +366,8 @@ impl AppState {
             agent_authority,
             server_onboarding,
             browser_tx,
+            browser_frame_tx,
+            auth_invalidation_tx,
             config,
             upgrade_tracker,
             upgrade_release_service,

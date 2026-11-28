@@ -19,7 +19,9 @@ use serverbee_common::types::{NetworkProbeResultData, PingResult};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
-use super::docker_subsystem::{DockerSubsystem, DockerTick};
+#[cfg(test)]
+use super::docker_subsystem::DockerTick;
+use super::docker_subsystem::{DockerBackgroundResult, DockerSubsystem};
 use super::tailscale_subsystem::{TailscaleStep, TailscaleSubsystem, TailscaleTick};
 use super::wire::send_msg;
 use super::{emit_upgrade_failure, file_ops, perform_upgrade};
@@ -139,6 +141,7 @@ impl ConnectionRuntime {
         self.unlock_checker.stop();
         self.file_manager.cancel_all_transfers();
         self.docker.cleanup();
+        self.tailscale.cleanup();
     }
 
     /// Probe all optional host subsystems concurrently before `SystemInfo` is sent.
@@ -186,6 +189,24 @@ impl ConnectionRuntime {
         out
     }
 
+    pub(super) fn on_docker_background_result(
+        &mut self,
+        result: DockerBackgroundResult,
+    ) -> Option<AgentMessage> {
+        let reply = self.docker.apply_background_result(result);
+        reply.map(|msg| self.with_combined_features(msg))
+    }
+
+    pub(super) fn on_tailscale_probe_result(
+        &mut self,
+        tick: TailscaleTick,
+        result: anyhow::Result<serverbee_common::tailscale_types::TailscaleStatusReport>,
+    ) -> Vec<AgentMessage> {
+        let step = self.tailscale.apply_probe_result(tick, result);
+        self.materialize_tailscale_step(step)
+    }
+
+    #[cfg(test)]
     pub(super) async fn on_docker_tick(&mut self, tick: DockerTick) -> Option<AgentMessage> {
         let reply = match tick {
             DockerTick::PollStats => self.docker.poll_stats().await,
@@ -194,6 +215,7 @@ impl ConnectionRuntime {
         reply.map(|msg| self.with_combined_features(msg))
     }
 
+    #[cfg(test)]
     pub(super) async fn on_tailscale_tick(&mut self, tick: TailscaleTick) -> Vec<AgentMessage> {
         let step = match tick {
             TailscaleTick::Refresh => self.tailscale.refresh().await,
@@ -202,9 +224,7 @@ impl ConnectionRuntime {
         self.materialize_tailscale_step(step)
     }
 
-    /// Parse and execute one server text frame against this connection's
-    /// state. Unparseable frames are logged and swallowed — a protocol
-    /// mismatch must never tear the connection down.
+    #[cfg(test)]
     pub(super) async fn handle_server_message<S>(
         &mut self,
         text: &str,
@@ -213,8 +233,6 @@ impl ConnectionRuntime {
     where
         S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
     {
-        use serverbee_common::constants::*;
-
         let msg: ServerMessage = match serde_json::from_str(text) {
             Ok(m) => m,
             Err(e) => {
@@ -222,6 +240,18 @@ impl ConnectionRuntime {
                 return Ok(());
             }
         };
+        self.handle_parsed_server_message(msg, write).await
+    }
+
+    pub(super) async fn handle_parsed_server_message<S>(
+        &mut self,
+        msg: ServerMessage,
+        write: &mut S,
+    ) -> anyhow::Result<()>
+    where
+        S: SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+    {
+        use serverbee_common::constants::*;
 
         match msg {
             ServerMessage::Ping => {

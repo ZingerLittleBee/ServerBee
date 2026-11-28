@@ -18,6 +18,7 @@ use url::Url;
 use crate::config::TailscaleConfig;
 use crate::entity::server;
 use crate::error::AppError;
+use crate::service::auth::{AuthInvalidationEvent, notify_auth_invalidated};
 use crate::service::config::ConfigService;
 use crate::service::server::ServerService;
 use serverbee_common::ssrf;
@@ -329,13 +330,9 @@ impl TailscaleUpstreamTransport for ReqwestTailscaleTransport {
             .to_string();
         let port = query.base_url.port_or_known_default().unwrap_or(443);
 
-        let resolve_host = clean_host.clone();
-        let validated_addrs = tokio::task::spawn_blocking(move || {
-            ssrf::resolve_and_check_monitor(&resolve_host, port)
-        })
-        .await
-        .map_err(|e| format!("DNS resolution task failed: {e}"))?
-        .map_err(|e| e.to_string())?;
+        let validated_addrs = ssrf::resolve_and_check_monitor_async(&clean_host, port)
+            .await
+            .map_err(|e| e.to_string())?;
 
         let mut builder = reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
@@ -543,6 +540,7 @@ impl TailscaleControlService {
 
         ConfigService::set_typed(db, CONFIG_KEY_TAILSCALE, &updated_stored).await?;
         self.invalidate_cache().await;
+        notify_auth_invalidated(AuthInvalidationEvent::All);
 
         let effective =
             EffectiveTailscaleConfig::from_layers(&self.base_config, Some(&updated_stored));

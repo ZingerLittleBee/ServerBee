@@ -1,14 +1,35 @@
 use std::net::IpAddr;
+use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use std::time::Instant;
 
+use hickory_resolver::TokioResolver;
 use hickory_resolver::config::{NameServerConfig, ResolverConfig};
 use hickory_resolver::proto::rr::{RData, RecordType};
-use hickory_resolver::TokioResolver;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use serverbee_common::ssrf;
 
 use super::CheckResult;
+
+static DEFAULT_RESOLVER: OnceLock<Result<TokioResolver, String>> = OnceLock::new();
+
+#[derive(Debug)]
+enum ResolverHandle {
+    Default(&'static TokioResolver),
+    Custom(Box<TokioResolver>),
+}
+
+impl Deref for ResolverHandle {
+    type Target = TokioResolver;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ResolverHandle::Default(r) => r,
+            ResolverHandle::Custom(r) => r.as_ref(),
+        }
+    }
+}
 
 /// Check DNS resolution for `target` (a domain name).
 ///
@@ -110,12 +131,9 @@ pub async fn check(target: &str, config: &Value) -> CheckResult {
     }
 }
 
-fn build_resolver(nameserver: Option<&str>) -> Result<TokioResolver, String> {
+fn build_resolver(nameserver: Option<&str>) -> Result<ResolverHandle, String> {
     if let Some(ns) = nameserver {
         let ip = IpAddr::from_str(ns).map_err(|e| format!("Invalid nameserver IP '{ns}': {e}"))?;
-        // SSRF guard: an attacker-supplied nameserver must not point the server
-        // at loopback/link-local/metadata resolvers (private resolvers are
-        // allowed for internal monitoring).
         if !ssrf::is_monitor_safe_addr(ip) {
             return Err(format!(
                 "nameserver '{ns}' is a blocked address (loopback/link-local/metadata)"
@@ -125,11 +143,18 @@ fn build_resolver(nameserver: Option<&str>) -> Result<TokioResolver, String> {
             ResolverConfig::from_parts(None, vec![], vec![NameServerConfig::udp(ip)]);
         TokioResolver::builder_with_config(resolver_config, Default::default())
             .build()
+            .map(|r| ResolverHandle::Custom(Box::new(r)))
             .map_err(|e| format!("Failed to create custom resolver: {e}"))
     } else {
-        TokioResolver::builder_tokio()
-            .and_then(|builder| builder.build())
-            .map_err(|e| format!("Failed to create system resolver: {e}"))
+        DEFAULT_RESOLVER
+            .get_or_init(|| {
+                TokioResolver::builder_tokio()
+                    .and_then(|builder| builder.build())
+                    .map_err(|e| format!("Failed to create system resolver: {e}"))
+            })
+            .as_ref()
+            .map(ResolverHandle::Default)
+            .map_err(Clone::clone)
     }
 }
 
@@ -357,11 +382,13 @@ mod tests {
         let result = check("example.com", &config).await;
         assert!(!result.success);
         assert_eq!(result.detail, Value::Null);
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("Failed to build DNS resolver"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("Failed to build DNS resolver")
+        );
     }
 
     #[tokio::test]
@@ -436,11 +463,13 @@ mod tests {
         let result = check("example.com", &config).await;
         assert!(!result.success);
         assert_eq!(result.detail["record_type"], json!("soa"));
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("DNS resolution failed"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("DNS resolution failed")
+        );
     }
 
     #[test]
@@ -579,11 +608,13 @@ mod tests {
         assert!(!result.success);
         // The detail mirror preserves the requested (whitespace) record type.
         assert_eq!(result.detail["record_type"], json!(" "));
-        assert!(result
-            .error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("DNS resolution failed"));
+        assert!(
+            result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("DNS resolution failed")
+        );
     }
 
     #[tokio::test]

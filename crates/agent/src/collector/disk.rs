@@ -17,8 +17,7 @@ impl DiskEntry {
     }
 }
 
-fn collect_disks() -> Vec<DiskEntry> {
-    let disks = Disks::new_with_refreshed_list();
+fn collect_disks_from(disks: &Disks) -> Vec<DiskEntry> {
     let entries = disks
         .iter()
         .map(|d| DiskEntry {
@@ -33,9 +32,14 @@ fn collect_disks() -> Vec<DiskEntry> {
     } else if cfg!(target_os = "linux") {
         dedup_linux_mounts(entries)
     } else {
-        // Windows reports volume labels, which distinct drives can share.
         entries
     }
+}
+
+#[cfg(test)]
+fn collect_disks() -> Vec<DiskEntry> {
+    let disks = Disks::new_with_refreshed_list();
+    collect_disks_from(&disks)
 }
 
 /// On macOS, APFS exposes the same disk (e.g. "Macintosh HD") at both
@@ -81,12 +85,28 @@ fn same_filesystem_stats(a: &DiskEntry, b: &DiskEntry) -> bool {
     a.total > 0 && a.total == b.total && a.available.abs_diff(b.available) <= a.total / 1000
 }
 
-pub fn used() -> i64 {
-    collect_disks().iter().map(|e| e.used() as i64).sum()
+pub fn used_from_disks(disks: &Disks) -> i64 {
+    collect_disks_from(disks)
+        .iter()
+        .map(|e| e.used() as i64)
+        .sum()
 }
 
+pub fn total_from_disks(disks: &Disks) -> i64 {
+    collect_disks_from(disks)
+        .iter()
+        .map(|e| e.total as i64)
+        .sum()
+}
+
+#[cfg(test)]
+pub fn used() -> i64 {
+    used_from_disks(&Disks::new_with_refreshed_list())
+}
+
+#[cfg(test)]
 pub fn total() -> i64 {
-    collect_disks().iter().map(|e| e.total as i64).sum()
+    total_from_disks(&Disks::new_with_refreshed_list())
 }
 
 #[cfg(test)]

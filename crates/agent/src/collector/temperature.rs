@@ -1,23 +1,28 @@
 use sysinfo::Components;
 
-pub fn get_temperature() -> Option<f64> {
-    let components = Components::new_with_refreshed_list();
-    let temps: Vec<f64> = components
-        .iter()
-        .filter_map(|c| {
-            let t = c.temperature()?;
-            if t > 0.0 && !t.is_nan() {
-                Some(t as f64)
-            } else {
-                None
-            }
-        })
-        .collect();
-    if temps.is_empty() {
+pub fn get_temperature_from_components(components: &Components) -> Option<f64> {
+    let mut sum = 0.0f64;
+    let mut count = 0usize;
+    for component in components.iter() {
+        if let Some(t) = component.temperature()
+            && t > 0.0
+            && !t.is_nan()
+        {
+            sum += t as f64;
+            count += 1;
+        }
+    }
+    if count == 0 {
         None
     } else {
-        Some(temps.iter().sum::<f64>() / temps.len() as f64)
+        Some(sum / count as f64)
     }
+}
+
+#[cfg(test)]
+pub fn get_temperature() -> Option<f64> {
+    let components = Components::new_with_refreshed_list();
+    get_temperature_from_components(&components)
 }
 
 #[cfg(test)]
