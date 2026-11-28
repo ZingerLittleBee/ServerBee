@@ -5,7 +5,7 @@ mod tailscale_subsystem;
 mod wire;
 
 use std::net::IpAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
@@ -31,12 +31,15 @@ use crate::terminal::TerminalEvent;
 
 const MAX_BACKOFF_SECS: u64 = 30;
 const JITTER_FACTOR: f64 = 0.2;
+const CLEAN_DISCONNECT_MIN_JITTER_SECS: f64 = 1.0;
+const CLEAN_DISCONNECT_MAX_JITTER_SECS: f64 = 8.0;
 const MAX_REREGISTER_ATTEMPTS: u32 = 3;
 
 pub struct Reporter {
     config: AgentConfig,
     capabilities: Arc<CapabilityAuthority>,
     firewall_manager: Arc<FirewallManager>,
+    collector: Arc<Mutex<Collector>>,
     #[cfg(test)]
     test_terminal_shell: Option<crate::terminal::TerminalTestShell>,
 }
@@ -44,17 +47,21 @@ pub struct Reporter {
 impl Reporter {
     pub fn new(config: AgentConfig, capabilities: Arc<CapabilityAuthority>) -> Self {
         let firewall_manager = Arc::new(FirewallManager::new(Arc::new(CliNftExecutor)));
+        let collector = Arc::new(Mutex::new(Collector::new(
+            config.collector.enable_temperature,
+            config.collector.enable_gpu,
+            config.collector.exclude_tailscale_traffic,
+        )));
         Self {
             config,
             capabilities,
             firewall_manager,
+            collector,
             #[cfg(test)]
             test_terminal_shell: None,
         }
     }
 
-    /// Run with an optional external agent-message stream attached
-    /// (currently sourced from [`crate::security::SecurityManager`]).
     pub async fn run_with_external(
         &mut self,
         mut external_rx: Option<mpsc::Receiver<AgentMessage>>,
@@ -63,11 +70,12 @@ impl Reporter {
         let mut reregister_attempts: u32 = 0;
 
         loop {
-            match self.connect_and_report(&mut external_rx).await {
+            let clean_disconnect = match self.connect_and_report(&mut external_rx).await {
                 Ok(()) => {
                     tracing::info!("Connection closed normally, reconnecting...");
                     backoff_secs = 1;
                     reregister_attempts = 0;
+                    true
                 }
                 Err(e) => {
                     if should_refresh_registration(&self.config, &e) {
@@ -89,7 +97,6 @@ impl Reporter {
                                     tracing::info!(
                                         "Re-registration successful for server {server_id}"
                                     );
-                                    // Do NOT skip backoff — prevents tight re-registration loop
                                 }
                                 Ok(register::RegistrationOutcome::Ambiguous) => tracing::warn!(
                                     "Re-registration response was ambiguous; the next WebSocket \
@@ -105,14 +112,21 @@ impl Reporter {
                     }
 
                     tracing::error!("Connection error: {e}");
+                    false
                 }
-            }
+            };
 
-            let jitter = apply_jitter(backoff_secs);
+            let jitter = if clean_disconnect {
+                clean_disconnect_jitter()
+            } else {
+                apply_jitter(backoff_secs)
+            };
             tracing::info!("Reconnecting in {jitter:.1}s...");
             tokio::time::sleep(Duration::from_secs_f64(jitter)).await;
 
-            backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
+            if !clean_disconnect {
+                backoff_secs = (backoff_secs * 2).min(MAX_BACKOFF_SECS);
+            }
         }
     }
 
@@ -198,13 +212,16 @@ impl Reporter {
         runtime.probe_subsystems().await;
         let features = runtime.features();
 
-        // Send SystemInfo
-        let mut collector = Collector::new(
-            self.config.collector.enable_temperature,
-            self.config.collector.enable_gpu,
-            self.config.collector.exclude_tailscale_traffic,
-        );
-        let info = collector.system_info();
+        let collector = Arc::clone(&self.collector);
+        let info = {
+            let c = Arc::clone(&collector);
+            tokio::task::spawn_blocking(move || {
+                c.lock()
+                    .map(|guard| guard.system_info())
+                    .map_err(|_| anyhow::anyhow!("collector lock poisoned"))
+            })
+            .await??
+        };
         let initial_ips = collect_interface_ips();
         // Synchronous interface-only scan — never blocks the startup path.
         // The background `spawn_external_ip_refresh` (after cmd_result_tx
@@ -328,6 +345,9 @@ impl Reporter {
 
         let mut capability_retry = interval(Duration::from_secs(3));
         let mut capability_event_inflight = None;
+        let mut collect_task: Option<
+            tokio::task::JoinHandle<Option<serverbee_common::types::SystemReport>>,
+        > = None;
         loop {
             tokio::select! {
                 _ = capability_retry.tick() => {
@@ -360,10 +380,33 @@ impl Reporter {
                     }
                 }
                 _ = report_interval.tick() => {
-                    let report = collector.collect();
-                    let msg = AgentMessage::Report(report);
-                    send_msg(&mut write, &msg).await?;
-                    tracing::debug!("Sent report");
+                    if collect_task.is_none() {
+                        let c = Arc::clone(&collector);
+                        collect_task = Some(tokio::task::spawn_blocking(move || {
+                            c.lock().ok().map(|mut guard| guard.collect())
+                        }));
+                    }
+                }
+                joined = async {
+                    match collect_task.as_mut() {
+                        Some(handle) => handle.await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    collect_task = None;
+                    match joined {
+                        Ok(Some(report)) => {
+                            let msg = AgentMessage::Report(report);
+                            send_msg(&mut write, &msg).await?;
+                            tracing::debug!("Sent report");
+                        }
+                        Ok(None) => {
+                            tracing::warn!("Collector lock poisoned; skipping report");
+                        }
+                        Err(e) => {
+                            tracing::warn!("Collector blocking task failed: {e}");
+                        }
+                    }
                 }
                 Some(ping_result) = events.ping_rx.recv() => {
                     let msg = AgentMessage::PingResult(ping_result);
@@ -493,33 +536,36 @@ impl Reporter {
                     send_msg(&mut write, &docker_msg).await?;
                     tracing::debug!("Sent Docker message");
                 }
-                // Docker housekeeping: stats polling while the daemon is
-                // connected, reconnect retry while it is absent.
-                tick = runtime.docker.tick() => {
-                    if let Some(msg) = runtime.on_docker_tick(tick).await {
-                        send_msg(&mut write, &msg).await?;
+                docker_event = runtime.docker.next_event() => {
+                    match docker_event {
+                        docker_subsystem::DockerEvent::Tick(tick) => {
+                            runtime.docker.start_background_tick(tick);
+                        }
+                        docker_subsystem::DockerEvent::Background(docker_bg) => {
+                            if let Some(msg) = runtime.on_docker_background_result(docker_bg) {
+                                send_msg(&mut write, &msg).await?;
+                            }
+                        }
                     }
                 }
-                // Tailscale housekeeping: 60s status refresh while available,
-                // 30s reconnect retry while absent.
-                tick = runtime.tailscale.tick() => {
-                    for msg in runtime.on_tailscale_tick(tick).await {
-                        send_msg(&mut write, &msg).await?;
+                ts_event = runtime.tailscale.next_event() => {
+                    match ts_event {
+                        tailscale_subsystem::TailscaleEvent::Tick(tick) => {
+                            runtime.tailscale.start_background_tick(tick);
+                        }
+                        tailscale_subsystem::TailscaleEvent::ProbeResult(tick, ts_res) => {
+                            for msg in runtime.on_tailscale_probe_result(tick, *ts_res) {
+                                send_msg(&mut write, &msg).await?;
+                            }
+                        }
                     }
                 }
-                // IP change detection — spawned off the WS hot path so a
-                // slow external-IP service can never block report/ping/
-                // terminal traffic.
                 _ = ip_check_interval.tick(), if ip_change_enabled => {
                     let new_ips = collect_interface_ips();
                     if new_ips != cached_ips {
                         tracing::info!("IP change detected (interface delta)");
                         let (old_v4, old_v6) = derive_interface_ips(&cached_ips);
                         cached_ips = new_ips.clone();
-                        // Pass the previously-reported IPs as baseline so
-                        // the spawned task emits exactly one IpChanged
-                        // covering both the interface delta and any
-                        // external override discovered.
                         spawn_external_ip_refresh(
                             ip_external_urls.clone(),
                             new_ips,
@@ -533,18 +579,26 @@ impl Reporter {
                 server_msg = read.next() => {
                     match server_msg {
                         Some(Ok(Message::Text(text))) => {
+                            let msg: ServerMessage = match serde_json::from_str(&text) {
+                                Ok(m) => m,
+                                Err(e) => {
+                                    tracing::warn!("Failed to parse server message: {e}");
+                                    continue;
+                                }
+                            };
                             if capability_event_ack
-                                && let Ok(ServerMessage::Ack { msg_id }) = serde_json::from_str::<ServerMessage>(&text)
-                                && capability_event_inflight.as_deref() == Some(msg_id.as_str()) {
-                                // A failed durable deletion leaves the original
-                                // event queued. Resending gets another safe receipt.
-                                match capabilities.acknowledge_event(&msg_id) {
+                                && let ServerMessage::Ack { ref msg_id } = msg
+                                && capability_event_inflight.as_deref() == Some(msg_id.as_str())
+                            {
+                                match capabilities.acknowledge_event(msg_id) {
                                     Ok(()) => capability_event_inflight = None,
-                                    Err(error) => tracing::warn!(error = %error,
-                                        "Capability Ack persistence remains pending; retrying"),
+                                    Err(error) => tracing::warn!(
+                                        error = %error,
+                                        "Capability Ack persistence remains pending; retrying"
+                                    ),
                                 }
                             }
-                            runtime.handle_server_message(&text, &mut write).await?;
+                            runtime.handle_parsed_server_message(msg, &mut write).await?;
                         }
                         Some(Ok(Message::Close(_))) => {
                             tracing::info!("Server closed connection");
@@ -608,6 +662,11 @@ fn apply_jitter(base_secs: u64) -> f64 {
     let mut rng = rand::thread_rng();
     let jitter: f64 = rng.gen_range(-jitter_range..=jitter_range);
     (base + jitter).max(0.5)
+}
+
+fn clean_disconnect_jitter() -> f64 {
+    let mut rng = rand::thread_rng();
+    rng.gen_range(CLEAN_DISCONNECT_MIN_JITTER_SECS..=CLEAN_DISCONNECT_MAX_JITTER_SECS)
 }
 
 /// Collect IP addresses from all network interfaces using sysinfo.
@@ -4319,12 +4378,23 @@ mod tests {
 /// Fetch external IP address from a single remote service.
 /// Limits response to 256 bytes via streaming to prevent memory exhaustion
 /// even when the server omits Content-Length.
+fn external_ip_client() -> anyhow::Result<&'static reqwest::Client> {
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .map_err(|e| e.to_string())
+        })
+        .as_ref()
+        .map_err(|e| anyhow::anyhow!("{e}"))
+}
+
 async fn fetch_external_ip_once(url: &str) -> anyhow::Result<String> {
     const MAX_IP_RESPONSE: usize = 256;
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()?;
+    let client = external_ip_client()?;
     let mut resp = client.get(url).send().await?;
 
     // Early reject if Content-Length declares a large body
@@ -4425,7 +4495,7 @@ async fn perform_upgrade(
         normalize_spki_pin,
     };
     use sha2::{Digest, Sha256};
-    use std::io::Write;
+    use tokio::io::AsyncWriteExt;
 
     macro_rules! fail {
         ($stage:expr, $msg:expr) => {{
@@ -4489,12 +4559,11 @@ async fn perform_upgrade(
         Err(e) => fail!(UpgradeStage::Verifying, format!("parse checksums: {e}")),
     };
 
-    // 6. 下载二进制
-    let bytes = match client.get(&binary_url).send().await {
-        Ok(r) if r.status().is_success() => match r.bytes().await {
-            Ok(b) => b,
-            Err(e) => fail!(UpgradeStage::Downloading, format!("read binary: {e}")),
-        },
+    let current_exe = std::env::current_exe()?;
+    let tmp_path = current_exe.with_extension("new");
+
+    let mut resp = match client.get(&binary_url).send().await {
+        Ok(r) if r.status().is_success() => r,
         Ok(r) => fail!(
             UpgradeStage::Downloading,
             format!("binary HTTP {}", r.status())
@@ -4502,11 +4571,60 @@ async fn perform_upgrade(
         Err(e) => fail!(UpgradeStage::Downloading, format!("fetch binary: {e}")),
     };
 
+    match tokio::fs::remove_file(&tmp_path).await {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => fail!(
+            UpgradeStage::Downloading,
+            format!("stage candidate: {error}")
+        ),
+    }
+
+    let mut file = match tokio::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp_path)
+        .await
+    {
+        Ok(f) => f,
+        Err(error) => fail!(
+            UpgradeStage::Downloading,
+            format!("stage candidate: {error}")
+        ),
+    };
+
+    let mut hasher = Sha256::new();
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                hasher.update(&chunk);
+                if let Err(error) = file.write_all(&chunk).await {
+                    drop(file);
+                    let _ = tokio::fs::remove_file(&tmp_path).await;
+                    fail!(UpgradeStage::Downloading, format!("write binary: {error}"));
+                }
+            }
+            Ok(None) => break,
+            Err(e) => {
+                drop(file);
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                fail!(UpgradeStage::Downloading, format!("read binary: {e}"));
+            }
+        }
+    }
+
+    if let Err(error) = file.sync_all().await {
+        drop(file);
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        fail!(UpgradeStage::Downloading, format!("sync binary: {error}"));
+    }
+    drop(file);
+
     emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::Verifying).await;
 
-    // 7. 校验哈希(对照已从 pinned 源取得的 checksums)
-    let actual = format!("{:x}", Sha256::digest(&bytes));
+    let actual = format!("{:x}", hasher.finalize());
     if actual != want_hash {
+        let _ = tokio::fs::remove_file(&tmp_path).await;
         fail!(
             UpgradeStage::Verifying,
             format!("checksum mismatch: expected {want_hash}, got {actual}")
@@ -4514,34 +4632,16 @@ async fn perform_upgrade(
     }
     tracing::info!("Checksum verified against pinned sha256sums.txt");
 
-    // 8. Stage and execute the verified candidate before replacing the
-    // installed binary. The hidden probe returns the candidate's embedded
-    // version without loading configuration or opening network connections.
-    let current_exe = std::env::current_exe()?;
-    let tmp_path = current_exe.with_extension("new");
-
     emit_upgrade_progress(&tx, job_id.clone(), version, UpgradeStage::PreFlight).await;
-    let stage_candidate = || -> anyhow::Result<()> {
-        match std::fs::remove_file(&tmp_path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&tmp_path)?;
-        file.write_all(&bytes)?;
-        file.sync_all()?;
-        #[cfg(unix)]
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Err(error) =
+            tokio::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755)).await
         {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))?;
+            let _ = tokio::fs::remove_file(&tmp_path).await;
+            fail!(UpgradeStage::PreFlight, format!("stage candidate: {error}"));
         }
-        Ok(())
-    };
-    if let Err(error) = stage_candidate() {
-        fail!(UpgradeStage::PreFlight, format!("stage candidate: {error}"));
     }
     if let Err(error) = crate::upgrade::verify_candidate_version(&tmp_path, version).await {
         let _ = std::fs::remove_file(&tmp_path);
