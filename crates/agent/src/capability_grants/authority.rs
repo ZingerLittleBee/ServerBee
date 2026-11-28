@@ -8,10 +8,10 @@
 //! [`CapabilityAuthority::effective`] and never learn where the bits come
 //! from or when they change.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use tokio::sync::{broadcast, watch};
 
@@ -32,8 +32,32 @@ pub struct CapabilityTransition {
     pub changes: Vec<CapabilityChangeEvent>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileSignature {
+    modified: Option<SystemTime>,
+    len: u64,
+    #[cfg(unix)]
+    ino: u64,
+}
+
+fn file_signature(path: &Path) -> Option<FileSignature> {
+    let meta = std::fs::metadata(path).ok()?;
+    #[cfg(unix)]
+    let ino = {
+        use std::os::unix::fs::MetadataExt;
+        meta.ino()
+    };
+    Some(FileSignature {
+        modified: meta.modified().ok(),
+        len: meta.len(),
+        #[cfg(unix)]
+        ino,
+    })
+}
+
 pub struct CapabilityAuthority {
     journal: Mutex<super::journal::Journal>,
+    grants_cache: Mutex<(Option<FileSignature>, CapabilityGrantStore)>,
     base: u32,
     grants_path: PathBuf,
     effective: AtomicU32,
@@ -42,10 +66,8 @@ pub struct CapabilityAuthority {
 }
 
 impl CapabilityAuthority {
-    /// Build the authority, seeding the effective state from `base` plus any
-    /// still-active grants in the grants file (so grants survive a restart).
-    /// Call [`Self::run`] once to start the transition loop.
     pub fn try_new(base: u32, grants_path: PathBuf) -> anyhow::Result<Arc<Self>> {
+        let initial_sig = file_signature(&grants_path);
         let store = CapabilityGrantStore::load(&grants_path);
         let effective = (base | store.active_bits(now_unix(), base)) & CAP_VALID_MASK;
         let (state_tx, _) = watch::channel(effective);
@@ -54,12 +76,27 @@ impl CapabilityAuthority {
             super::journal::Journal::open(&grants_path, store.active_bits(now_unix(), base))?;
         Ok(Arc::new(Self {
             journal: Mutex::new(journal),
+            grants_cache: Mutex::new((initial_sig, store)),
             base,
             grants_path,
             effective: AtomicU32::new(effective),
             state_tx,
             transition_tx,
         }))
+    }
+
+    fn load_store_cached(&self) -> CapabilityGrantStore {
+        let sig = file_signature(&self.grants_path);
+        let mut cache = self
+            .grants_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache.0 == sig {
+            return cache.1.clone();
+        }
+        let store = CapabilityGrantStore::load(&self.grants_path);
+        *cache = (sig, store.clone());
+        store
     }
 
     #[cfg(test)]
@@ -142,7 +179,7 @@ impl CapabilityAuthority {
     /// Apply local authority immediately, including revocations. Advance the
     /// durable observation cursor only after the original transition is saved.
     fn observe(&self, now: i64) -> anyhow::Result<Option<CapabilityTransition>> {
-        let store = CapabilityGrantStore::load(&self.grants_path);
+        let store = self.load_store_cached();
         let mut journal = self
             .journal
             .lock()
@@ -226,7 +263,8 @@ impl CapabilityAuthority {
     /// Currently-active temporary grants (fresh read of the grants file),
     /// for reporting in `SystemInfo`.
     pub fn active_grants(&self) -> Vec<TemporaryGrant> {
-        CapabilityGrantStore::load(&self.grants_path).active_grants(now_unix(), self.base)
+        self.load_store_cached()
+            .active_grants(now_unix(), self.base)
     }
 
     /// Watch the effective bitmask. Long-running subsystems use this to

@@ -1,7 +1,26 @@
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
 use regex::Regex;
 use serverbee_common::protocol::{UnlockMatch, UnlockRule, UnlockStatus};
 
-/// The outcome of an HTTP fetch, consumed by the rule engine and detectors.
+const MAX_CACHED_REGEXES: usize = 512;
+
+fn cached_regex(pattern: &str) -> Option<Regex> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<Regex>>>> = OnceLock::new();
+    let map = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = map.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(entry) = guard.get(pattern) {
+        return entry.clone();
+    }
+    if guard.len() >= MAX_CACHED_REGEXES {
+        guard.clear();
+    }
+    let compiled = Regex::new(pattern).ok();
+    guard.insert(pattern.to_string(), compiled.clone());
+    compiled
+}
+
 #[derive(Debug, Clone)]
 pub struct HttpOutcome {
     pub status: u16,
@@ -10,8 +29,6 @@ pub struct HttpOutcome {
     pub redirects: Vec<String>,
 }
 
-/// Evaluate `rules` against `outcome` in order; return the result of the
-/// first matching rule. Returns `UnlockStatus::Failed` when no rule matches.
 pub fn apply_rules(outcome: &HttpOutcome, rules: &[UnlockRule]) -> UnlockStatus {
     for rule in rules {
         if matches_rule(outcome, &rule.match_) {
@@ -25,15 +42,13 @@ fn matches_rule(outcome: &HttpOutcome, m: &UnlockMatch) -> bool {
     match m {
         UnlockMatch::StatusEquals { code } => outcome.status == *code,
         UnlockMatch::StatusInRange { min, max } => outcome.status >= *min && outcome.status <= *max,
-        UnlockMatch::BodyRegex { pattern } => Regex::new(pattern)
+        UnlockMatch::BodyRegex { pattern } => cached_regex(pattern)
             .map(|re| re.is_match(&outcome.body))
             .unwrap_or(false),
         UnlockMatch::RedirectMatches { pattern } => {
-            let re = match Regex::new(pattern) {
-                Ok(r) => r,
-                Err(_) => return false,
+            let Some(re) = cached_regex(pattern) else {
+                return false;
             };
-            // Match against the final URL and every intermediate redirect URL
             if re.is_match(&outcome.final_url) {
                 return true;
             }

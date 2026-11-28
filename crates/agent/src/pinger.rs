@@ -14,6 +14,7 @@ use crate::probe_utils;
 /// and sends results back through an mpsc channel.
 pub struct PingManager {
     tasks: HashMap<String, tokio::task::JoinHandle<()>>,
+    configs: HashMap<String, PingTaskConfig>,
     result_tx: mpsc::Sender<PingResult>,
     capabilities: Arc<CapabilityAuthority>,
 }
@@ -25,15 +26,13 @@ impl PingManager {
     ) -> Self {
         Self {
             tasks: HashMap::new(),
+            configs: HashMap::new(),
             result_tx,
             capabilities,
         }
     }
 
-    /// Reconcile running tasks with the new config list.
-    /// Stops tasks no longer in the list, starts new ones, restarts changed ones.
     pub fn sync(&mut self, configs: Vec<PingTaskConfig>) {
-        // Filter by capability bitmap
         let caps = self.capabilities.effective();
         let configs: Vec<_> = configs
             .into_iter()
@@ -47,7 +46,6 @@ impl PingManager {
         let new_ids: HashMap<String, &PingTaskConfig> =
             configs.iter().map(|c| (c.task_id.clone(), c)).collect();
 
-        // Stop tasks not in the new list
         let to_remove: Vec<String> = self
             .tasks
             .keys()
@@ -59,17 +57,20 @@ impl PingManager {
                 handle.abort();
                 tracing::debug!("Stopped ping task {id}");
             }
+            self.configs.remove(&id);
         }
 
-        // Start or restart tasks
         for config in configs {
             let should_start = if let Some(handle) = self.tasks.get(&config.task_id) {
-                if handle.is_finished() {
-                    self.tasks.remove(&config.task_id);
-                    true
+                let unchanged = !handle.is_finished()
+                    && self.configs.get(&config.task_id).is_some_and(|prev| {
+                        prev.probe_type == config.probe_type
+                            && prev.target == config.target
+                            && prev.interval == config.interval
+                    });
+                if unchanged {
+                    false
                 } else {
-                    // Task is running — for simplicity, abort and restart
-                    // (in case interval or target changed)
                     handle.abort();
                     self.tasks.remove(&config.task_id);
                     true
@@ -81,6 +82,7 @@ impl PingManager {
             if should_start {
                 let tx = self.result_tx.clone();
                 let task_id = config.task_id.clone();
+                self.configs.insert(task_id.clone(), config.clone());
                 let handle = tokio::spawn(run_ping_task(config, tx));
                 self.tasks.insert(task_id, handle);
             }
@@ -94,6 +96,7 @@ impl PingManager {
             handle.abort();
             tracing::debug!("Stopped ping task {id}");
         }
+        self.configs.clear();
     }
 }
 

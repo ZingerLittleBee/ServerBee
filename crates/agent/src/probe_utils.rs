@@ -1,7 +1,58 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use serverbee_common::ssrf;
+
+struct MonitorSsrfResolver;
+
+impl reqwest::dns::Resolve for MonitorSsrfResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        let host = name.as_str().to_string();
+        Box::pin(async move {
+            let addrs =
+                tokio::task::spawn_blocking(move || ssrf::resolve_and_check_monitor(&host, 0))
+                    .await
+                    .map_err(|e| {
+                        Box::new(std::io::Error::other(e.to_string()))
+                            as Box<dyn std::error::Error + Send + Sync>
+                    })?
+                    .map_err(|e| {
+                        Box::new(std::io::Error::other(e.to_string()))
+                            as Box<dyn std::error::Error + Send + Sync>
+                    })?;
+            let iter: reqwest::dns::Addrs = Box::new(addrs.into_iter());
+            Ok(iter)
+        })
+    }
+}
+
+fn shared_http_probe_client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .danger_accept_invalid_certs(true)
+                .redirect(reqwest::redirect::Policy::none())
+                .dns_resolver(Arc::new(MonitorSsrfResolver))
+                .build()
+                .map_err(|e| format!("Failed to create HTTP client: {e}"))
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+fn extract_ssrf_error(err: &reqwest::Error) -> Option<String> {
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = cur {
+        let msg = e.to_string();
+        if msg.contains("SSRF guard") {
+            return Some(msg);
+        }
+        cur = e.source();
+    }
+    None
+}
 
 /// Build a [`ProbeResult`] representing a target that the SSRF guard refused to
 /// probe. Keeps the guard's message so the operator sees why it was blocked.
@@ -44,14 +95,18 @@ fn guard_probe_target(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> 
     ssrf::resolve_and_check_monitor(host, port).map_err(|e| e.to_string())
 }
 
-/// Result of a single probe attempt.
+async fn guard_probe_target_async(host: String, port: u16) -> Result<Vec<SocketAddr>, String> {
+    tokio::task::spawn_blocking(move || guard_probe_target(&host, port))
+        .await
+        .map_err(|e| format!("DNS resolution task failed: {e}"))?
+}
+
 pub struct ProbeResult {
     pub success: bool,
     pub latency_ms: f64,
     pub error: Option<String>,
 }
 
-/// Aggregated result of a batch ICMP probe (multiple pings).
 pub struct BatchIcmpResult {
     pub avg_latency: Option<f64>,
     pub min_latency: Option<f64>,
@@ -61,10 +116,8 @@ pub struct BatchIcmpResult {
     pub packet_received: u32,
 }
 
-/// Perform a single ICMP ping to `host` using the system `ping` command.
 pub async fn probe_icmp(host: &str, timeout: Duration) -> ProbeResult {
-    // SSRF guard: refuse loopback/link-local/metadata targets even for ICMP.
-    if let Err(e) = guard_probe_target(host, 0) {
+    if let Err(e) = guard_probe_target_async(host.to_string(), 0).await {
         return ssrf_blocked(e);
     }
 
@@ -74,6 +127,7 @@ pub async fn probe_icmp(host: &str, timeout: Duration) -> ProbeResult {
         timeout,
         tokio::process::Command::new("ping")
             .args(["-c", "1", "-W", "5", host])
+            .kill_on_drop(true)
             .output(),
     )
     .await;
@@ -111,14 +165,9 @@ pub async fn probe_icmp(host: &str, timeout: Duration) -> ProbeResult {
     }
 }
 
-/// Perform a TCP connect probe to `host` (format `host:port`).
-/// If no port is specified, port 80 is used.
 pub async fn probe_tcp(host: &str, timeout: Duration) -> ProbeResult {
     let (h, port) = split_host_port(host, 80);
-    // SSRF guard: validate the resolved addresses before connecting, then
-    // connect to exactly those addresses (no re-resolve) so the validated and
-    // connected addresses are identical.
-    let addrs = match guard_probe_target(&h, port) {
+    let addrs = match guard_probe_target_async(h, port).await {
         Ok(addrs) => addrs,
         Err(e) => return ssrf_blocked(e),
     };
@@ -155,7 +204,6 @@ pub(crate) async fn probe_tcp_addrs(addrs: &[SocketAddr], timeout: Duration) -> 
     }
 }
 
-/// Perform an HTTP GET probe to `url`.
 pub async fn probe_http(url: &str, timeout: Duration) -> ProbeResult {
     let start = Instant::now();
 
@@ -165,8 +213,6 @@ pub async fn probe_http(url: &str, timeout: Duration) -> ProbeResult {
         format!("http://{url}")
     };
 
-    // SSRF guard: validate scheme/credentials, then resolve the host and reject
-    // loopback/link-local/metadata. RFC1918 stays allowed for internal monitoring.
     let parsed = match ssrf::validate_monitor_url(&normalized_url) {
         Ok(u) => u,
         Err(e) => return ssrf_blocked(e.to_string()),
@@ -176,35 +222,25 @@ pub async fn probe_http(url: &str, timeout: Duration) -> ProbeResult {
         None => return ssrf_blocked("SSRF guard: URL has no host".to_string()),
     };
     let port = parsed.port_or_known_default().unwrap_or(80);
-    let addrs = match guard_probe_target(&host, port) {
-        Ok(addrs) => addrs,
-        Err(e) => return ssrf_blocked(e),
-    };
+    let trimmed_host = host.trim_start_matches('[').trim_end_matches(']');
+    if trimmed_host.parse::<IpAddr>().is_ok()
+        && let Err(e) = guard_probe_target(trimmed_host, port)
+    {
+        return ssrf_blocked(e);
+    }
 
-    let client = reqwest::Client::builder()
-        .timeout(timeout)
-        .danger_accept_invalid_certs(true)
-        // Do NOT follow redirects: a 302 into 169.254.169.254 would otherwise
-        // bypass the address guard. A redirection status still counts as
-        // "reachable" below.
-        .redirect(reqwest::redirect::Policy::none())
-        // Pin the host to the addresses we just validated so reqwest does not
-        // re-resolve (closes the DNS-rebinding window between check and connect).
-        .resolve_to_addrs(&host, &addrs)
-        .build();
-
-    let client = match client {
+    let client = match shared_http_probe_client() {
         Ok(c) => c,
         Err(e) => {
             return ProbeResult {
                 success: false,
                 latency_ms: 0.0,
-                error: Some(format!("Failed to create HTTP client: {e}")),
+                error: Some(e),
             };
         }
     };
 
-    match client.get(&normalized_url).send().await {
+    match client.get(&normalized_url).timeout(timeout).send().await {
         Ok(resp) => {
             let elapsed = start.elapsed().as_secs_f64() * 1000.0;
             let status = resp.status();
@@ -222,18 +258,21 @@ pub async fn probe_http(url: &str, timeout: Duration) -> ProbeResult {
                 }
             }
         }
-        Err(e) => ProbeResult {
-            success: false,
-            latency_ms: 0.0,
-            error: Some(format!("HTTP request failed: {e}")),
-        },
+        Err(e) => {
+            if let Some(ssrf_err) = extract_ssrf_error(&e) {
+                return ssrf_blocked(ssrf_err);
+            }
+            ProbeResult {
+                success: false,
+                latency_ms: 0.0,
+                error: Some(format!("HTTP request failed: {e}")),
+            }
+        }
     }
 }
 
-/// Run `ping -c N` once and parse the summary statistics.
 pub async fn probe_icmp_batch(host: &str, count: u32, timeout: Duration) -> BatchIcmpResult {
-    // SSRF guard: refuse loopback/link-local/metadata targets.
-    if guard_probe_target(host, 0).is_err() {
+    if guard_probe_target_async(host.to_string(), 0).await.is_err() {
         return BatchIcmpResult {
             avg_latency: None,
             min_latency: None,
@@ -249,6 +288,7 @@ pub async fn probe_icmp_batch(host: &str, count: u32, timeout: Duration) -> Batc
         timeout,
         tokio::process::Command::new("ping")
             .args(["-c", &count_str, "-W", "5", host])
+            .kill_on_drop(true)
             .output(),
     )
     .await;
