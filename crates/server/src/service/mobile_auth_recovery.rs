@@ -15,7 +15,10 @@ use crate::entity::{
     session, user,
 };
 use crate::error::AppError;
-use crate::service::{auth::AuthService, mobile_auth::MobileAuthService};
+use crate::service::{
+    auth::{AuthInvalidationEvent, AuthService, notify_auth_invalidated},
+    mobile_auth::MobileAuthService,
+};
 
 const MAX_RECOVERY_CANDIDATES: u64 = 64;
 
@@ -254,6 +257,7 @@ async fn recover_validated(
         return Err(unresolved());
     }
     txn.commit().await?;
+    notify_auth_invalidated(AuthInvalidationEvent::UserId(verified_user.id.clone()));
     Ok(response(
         &params,
         Some(target_id),

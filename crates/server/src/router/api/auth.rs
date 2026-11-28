@@ -250,13 +250,13 @@ pub async fn logout(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Result<(HeaderMap, Json<ApiResponse<&'static str>>), AppError> {
-    if let Some(cookie_header) = headers.get("cookie")
-        && let Ok(cookies) = cookie_header.to_str()
-    {
-        for cookie in cookies.split(';') {
-            let cookie = cookie.trim();
-            if let Some(token) = cookie.strip_prefix("session_token=") {
-                AuthService::logout(&state.db, token).await?;
+    for cookie_header in headers.get_all("cookie") {
+        if let Ok(cookies) = cookie_header.to_str() {
+            for cookie in cookies.split(';') {
+                let cookie = cookie.trim();
+                if let Some(token) = cookie.strip_prefix("session_token=") {
+                    AuthService::logout(&state.db, token).await?;
+                }
             }
         }
     }
@@ -321,9 +321,12 @@ pub async fn create_api_key(
         AuthService::create_api_key(&state.db, &current_user.user_id, &body.name).await?;
 
     // Audit: API keys are full credentials, so their lifecycle is security-sensitive.
-    let caller_ip =
-        extract_client_ip(&ConnectInfo(addr), &req_headers, &state.config.server.trusted_proxies)
-            .to_string();
+    let caller_ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &req_headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
@@ -395,9 +398,12 @@ pub async fn delete_api_key(
     AuthService::delete_api_key(&state.db, &id, &current_user.user_id).await?;
 
     // Audit: revoking an API key is security-sensitive.
-    let caller_ip =
-        extract_client_ip(&ConnectInfo(addr), &req_headers, &state.config.server.trusted_proxies)
-            .to_string();
+    let caller_ip = extract_client_ip(
+        &ConnectInfo(addr),
+        &req_headers,
+        &state.config.server.trusted_proxies,
+    )
+    .to_string();
     let _ = AuditService::log(
         &state.db,
         &current_user.user_id,
@@ -721,7 +727,10 @@ pub(crate) fn login_audit_detail(username: &str) -> String {
     const MAX_USERNAME_CHARS: usize = 256;
     format!(
         "username={}",
-        username.chars().take(MAX_USERNAME_CHARS).collect::<String>()
+        username
+            .chars()
+            .take(MAX_USERNAME_CHARS)
+            .collect::<String>()
     )
 }
 
@@ -744,7 +753,9 @@ mod audit_tests {
         AuthService::create_user(&db, "alice", "correct-horse", "member")
             .await
             .unwrap();
-        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
 
         let result = login(
             State(state.clone()),
@@ -817,7 +828,9 @@ mod audit_tests {
         am.totp_secret = Set(Some("JBSWY3DPEHPK3PXP".to_string()));
         am.update(&db).await.unwrap();
 
-        let state = AppState::new(db.clone(), AppConfig::default()).await.unwrap();
+        let state = AppState::new(db.clone(), AppConfig::default())
+            .await
+            .unwrap();
         let result = login(
             State(state.clone()),
             conn(),

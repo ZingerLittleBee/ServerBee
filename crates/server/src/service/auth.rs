@@ -308,6 +308,7 @@ impl AuthService {
         let now = Utc::now();
         if session.expires_at < now {
             session::Entity::delete_by_id(&session.id).exec(db).await?;
+            notify_auth_invalidated(AuthInvalidationEvent::SessionId(session.id));
             return Ok(None);
         }
 

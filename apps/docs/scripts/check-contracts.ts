@@ -593,7 +593,9 @@ invariant(
 const persistentAssets = [brandDirectory, countryFilename, asnFilename]
 const backupHandler = settingsRouter.split('pub async fn create_backup(')[1]?.split('pub async fn restore_backup(')[0]
 invariant(
-  backupHandler?.includes('VACUUM INTO') && backupHandler.includes('tokio::fs::read(&backup_path)'),
+  backupHandler?.includes('VACUUM INTO') &&
+    backupHandler.includes('tokio::fs::File::open(&backup_path)') &&
+    backupHandler.includes('Body::from_stream('),
   'The backup export implementation changed; review the documented database-only scope'
 )
 const linuxReleaseTargets = [...releaseWorkflow.matchAll(/target:\s*(\S+-unknown-linux-\S+)/g)].map((match) => match[1])

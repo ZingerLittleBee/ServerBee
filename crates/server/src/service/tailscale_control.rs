@@ -18,6 +18,7 @@ use url::Url;
 use crate::config::TailscaleConfig;
 use crate::entity::server;
 use crate::error::AppError;
+use crate::service::auth::{AuthInvalidationEvent, notify_auth_invalidated};
 use crate::service::config::ConfigService;
 use crate::service::server::ServerService;
 use serverbee_common::ssrf;
@@ -539,6 +540,7 @@ impl TailscaleControlService {
 
         ConfigService::set_typed(db, CONFIG_KEY_TAILSCALE, &updated_stored).await?;
         self.invalidate_cache().await;
+        notify_auth_invalidated(AuthInvalidationEvent::All);
 
         let effective =
             EffectiveTailscaleConfig::from_layers(&self.base_config, Some(&updated_stored));

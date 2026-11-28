@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::entity::{api_key, oauth_account, session, user};
 use crate::error::AppError;
-use crate::service::auth::AuthService;
+use crate::service::auth::{AuthInvalidationEvent, AuthService, notify_auth_invalidated};
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct UserResponse {
@@ -174,6 +174,7 @@ impl UserService {
         }
 
         txn.commit().await?;
+        notify_auth_invalidated(AuthInvalidationEvent::UserId(id.to_string()));
 
         Ok(updated)
     }
@@ -232,6 +233,7 @@ impl UserService {
         user::Entity::delete_by_id(id).exec(&txn).await?;
 
         txn.commit().await?;
+        notify_auth_invalidated(AuthInvalidationEvent::UserId(id.to_string()));
 
         Ok(())
     }
@@ -411,8 +413,13 @@ mod tests {
             "invalid role must be rejected with a validation error, got {result:?}"
         );
         // The user must not have been persisted.
-        let users = UserService::list_users(&db).await.expect("list_users should succeed");
-        assert!(users.is_empty(), "no user should be created when role is invalid");
+        let users = UserService::list_users(&db)
+            .await
+            .expect("list_users should succeed");
+        assert!(
+            users.is_empty(),
+            "no user should be created when role is invalid"
+        );
     }
 
     #[tokio::test]
@@ -424,8 +431,13 @@ mod tests {
             matches!(result, Err(AppError::Validation(_))),
             "a too-short password must be rejected, got {result:?}"
         );
-        let users = UserService::list_users(&db).await.expect("list_users should succeed");
-        assert!(users.is_empty(), "no user should be created with a weak password");
+        let users = UserService::list_users(&db)
+            .await
+            .expect("list_users should succeed");
+        assert!(
+            users.is_empty(),
+            "no user should be created with a weak password"
+        );
     }
 
     #[tokio::test]
@@ -437,7 +449,10 @@ mod tests {
             .expect("create_user should succeed for a valid member");
         assert_eq!(created.username, "valid_member");
         assert_eq!(created.role, "member", "role must be persisted as member");
-        assert!(created.totp_secret.is_none(), "new user must not have 2FA enabled");
+        assert!(
+            created.totp_secret.is_none(),
+            "new user must not have 2FA enabled"
+        );
     }
 
     #[tokio::test]
@@ -481,8 +496,13 @@ mod tests {
             "an invalid role must be rejected with a validation error, got {result:?}"
         );
         // The role must remain unchanged.
-        let after = UserService::get_user(&db, &user.id).await.expect("get_user should succeed");
-        assert_eq!(after.role, "member", "role must be unchanged after rejection");
+        let after = UserService::get_user(&db, &user.id)
+            .await
+            .expect("get_user should succeed");
+        assert_eq!(
+            after.role, "member",
+            "role must be unchanged after rejection"
+        );
     }
 
     #[tokio::test]
@@ -507,7 +527,9 @@ mod tests {
             "demoting the last admin must be blocked, got {result:?}"
         );
         // The admin must still be an admin.
-        let after = UserService::get_user(&db, &admin.id).await.expect("get_user should succeed");
+        let after = UserService::get_user(&db, &admin.id)
+            .await
+            .expect("get_user should succeed");
         assert_eq!(after.role, "admin", "last admin must keep its admin role");
     }
 
@@ -532,7 +554,10 @@ mod tests {
         )
         .await
         .expect("demoting an admin must succeed when another admin exists");
-        assert_eq!(updated.role, "member", "second admin should be demoted to member");
+        assert_eq!(
+            updated.role, "member",
+            "second admin should be demoted to member"
+        );
     }
 
     #[tokio::test]
@@ -563,7 +588,10 @@ mod tests {
         let user = UserService::create_user(&db, "pw_only", "old_pass1", "member")
             .await
             .expect("create user should succeed");
-        assert!(user.password_changed_at.is_none(), "fresh user has no reset stamp");
+        assert!(
+            user.password_changed_at.is_none(),
+            "fresh user has no reset stamp"
+        );
         let original_hash = user.password_hash.clone();
 
         let updated = UserService::update_user(
@@ -585,11 +613,17 @@ mod tests {
             updated.password_changed_at.is_some(),
             "password_changed_at must be stamped on a reset"
         );
-        assert_eq!(updated.role, "member", "role must be unchanged on a password-only update");
+        assert_eq!(
+            updated.role, "member",
+            "role must be unchanged on a password-only update"
+        );
         // The new password must verify against the stored hash.
         assert!(
-            crate::service::auth::AuthService::verify_password("brand_new_pw9", &updated.password_hash)
-                .expect("verify_password should succeed"),
+            crate::service::auth::AuthService::verify_password(
+                "brand_new_pw9",
+                &updated.password_hash
+            )
+            .expect("verify_password should succeed"),
             "new password must verify against the updated hash"
         );
     }
@@ -616,7 +650,9 @@ mod tests {
             matches!(result, Err(AppError::Validation(_))),
             "a weak reset password must be rejected, got {result:?}"
         );
-        let after = UserService::get_user(&db, &user.id).await.expect("get_user should succeed");
+        let after = UserService::get_user(&db, &user.id)
+            .await
+            .expect("get_user should succeed");
         assert_eq!(
             after.password_hash, original_hash,
             "password hash must be unchanged when the reset is rejected"
@@ -747,19 +783,18 @@ mod tests {
             .all(&db)
             .await
             .expect("query should succeed");
-        assert!(remaining.is_empty(), "oauth accounts must be removed with the user");
+        assert!(
+            remaining.is_empty(),
+            "oauth accounts must be removed with the user"
+        );
     }
 
     #[test]
     fn test_user_response_from_with_2fa() {
         use chrono::TimeZone;
         // UserResponse::from maps fields and reports has_2fa=true when a TOTP secret is set.
-        let created = chrono::Utc
-            .with_ymd_and_hms(2026, 1, 2, 3, 4, 5)
-            .unwrap();
-        let updated = chrono::Utc
-            .with_ymd_and_hms(2026, 1, 2, 6, 7, 8)
-            .unwrap();
+        let created = chrono::Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+        let updated = chrono::Utc.with_ymd_and_hms(2026, 1, 2, 6, 7, 8).unwrap();
         let model = user::Model {
             id: "u-1".to_string(),
             username: "withtfa".to_string(),
@@ -776,8 +811,14 @@ mod tests {
         assert_eq!(resp.username, "withtfa");
         assert_eq!(resp.role, "admin");
         assert!(resp.has_2fa, "has_2fa must be true when totp_secret is set");
-        assert_eq!(resp.created_at, created, "created_at must be mapped verbatim");
-        assert_eq!(resp.updated_at, updated, "updated_at must be mapped verbatim");
+        assert_eq!(
+            resp.created_at, created,
+            "created_at must be mapped verbatim"
+        );
+        assert_eq!(
+            resp.updated_at, updated,
+            "updated_at must be mapped verbatim"
+        );
     }
 
     #[test]
@@ -797,7 +838,10 @@ mod tests {
             updated_at: ts,
         };
         let resp = UserResponse::from(model);
-        assert!(!resp.has_2fa, "has_2fa must be false when totp_secret is None");
+        assert!(
+            !resp.has_2fa,
+            "has_2fa must be false when totp_secret is None"
+        );
         assert_eq!(resp.role, "member");
     }
 

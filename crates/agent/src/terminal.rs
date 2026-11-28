@@ -284,34 +284,32 @@ impl TerminalManager {
     }
 
     pub fn close(&mut self, session_id: &str) {
-        if let Some(session) = self.sessions.remove(session_id) {
+        if let Some(mut session) = self.sessions.remove(session_id) {
             session.reader_handle.abort();
             drop(session.input_tx);
             drop(session.master);
-            let mut child = session.child;
-            let sid = session_id.to_string();
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = child.kill() {
-                    tracing::debug!("Failed to kill terminal child {sid}: {e}");
-                }
-                if let Err(e) = child.wait() {
-                    tracing::debug!("Failed to reap terminal child {sid}: {e}");
-                }
-            });
+            if let Err(e) = session.child.kill() {
+                tracing::debug!("Failed to kill terminal child {session_id}: {e}");
+            }
+            if let Err(e) = session.child.wait() {
+                tracing::debug!("Failed to reap terminal child {session_id}: {e}");
+            }
             tracing::debug!("Closed terminal session {session_id}");
         }
     }
 
-    /// Close all terminal sessions. Returns the ids that were open, so the
-    /// caller can notify the server/browser side that they ended (e.g. on
-    /// capability revocation, where the PTY is torn down locally rather than
-    /// exiting on its own).
     pub fn close_all(&mut self) -> Vec<String> {
         let ids: Vec<String> = self.sessions.keys().cloned().collect();
         for id in &ids {
             self.close(id);
         }
         ids
+    }
+}
+
+impl Drop for TerminalManager {
+    fn drop(&mut self) {
+        self.close_all();
     }
 }
 

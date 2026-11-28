@@ -98,16 +98,31 @@ fn invalidation_matches_auth(
 
 pub(super) async fn auth_lease_invalidated(state: &AppState, auth: &AuthenticatedConnection) {
     let mut invalidation_rx = state.auth_invalidation_tx.subscribe();
+    let mut invalidation_open = true;
+    match auth.lease_is_valid(state).await {
+        Ok(true) => {}
+        Ok(false) => return,
+        Err(error) => {
+            tracing::warn!(
+                user_id = %auth.user.user_id,
+                error = %error,
+                "Failed to refresh WebSocket authorization lease"
+            );
+        }
+    }
     let mut interval = tokio::time::interval(AUTH_LEASE_RECHECK_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     interval.tick().await;
     loop {
         let should_check = tokio::select! {
             _ = interval.tick() => true,
-            event = invalidation_rx.recv() => match event {
+            event = invalidation_rx.recv(), if invalidation_open => match event {
                 Ok(event) => invalidation_matches_auth(&event, auth),
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => true,
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => false,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    invalidation_open = false;
+                    false
+                }
             },
         };
         if !should_check {

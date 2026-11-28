@@ -414,6 +414,7 @@ impl MobileAuthService {
         .insert(&txn)
         .await?;
         txn.commit().await?;
+        notify_auth_invalidated(AuthInvalidationEvent::UserId(user_model.id.clone()));
 
         Ok(MobileTokenResponse {
             mobile_session_id: current_session.id,
