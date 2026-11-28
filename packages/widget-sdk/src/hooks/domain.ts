@@ -1,4 +1,5 @@
-import { useApiMutation, useApiQuery } from './escape-hatch'
+import { type UseQueryResult, useQuery } from '@tanstack/react-query'
+import { request, useApiMutation, useApiQuery } from './escape-hatch'
 
 export interface AlertEvent {
   alert_key: string
@@ -67,15 +68,138 @@ export function useUptime(serverId: string | null, days = 30) {
   })
 }
 
+export type HistoryInterval = 'auto' | 'raw' | 'hourly'
+
+export interface ServerRecord {
+  cpu: number
+  disk_io_json: string | null
+  disk_used: number
+  gpu_usage: number | null
+  id: number
+  load1: number
+  load5: number
+  load15: number
+  mem_used: number
+  net_in_speed: number
+  net_in_transfer: number
+  net_out_speed: number
+  net_out_transfer: number
+  process_count: number
+  server_id: string
+  swap_used: number
+  tcp_conn: number
+  temperature: number | null
+  time: string
+  udp_conn: number
+}
+
 export interface HistoryPoint {
   ts: number
   value: number
 }
 
-export function useHistory(serverId: string | null, path: string, range: string) {
-  return useApiQuery<HistoryPoint[]>('/api/metrics/history', {
-    params: { server_id: serverId ?? undefined, path, range },
-    enabled: serverId !== null
+const DURATION_RE = /^(\d+)(s|m|h|d)$/
+
+const DURATION_UNIT_MS: Record<string, number> = {
+  s: 1000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000
+}
+
+function parseDurationMs(range: string): number | null {
+  const match = DURATION_RE.exec(range.trim())
+  if (!match) {
+    return null
+  }
+  const amount = Number(match[1])
+  const unitMs = DURATION_UNIT_MS[match[2]]
+  if (!Number.isFinite(amount) || amount <= 0 || !unitMs) {
+    return null
+  }
+  return amount * unitMs
+}
+
+function readRecordValue(record: ServerRecord, field: string): number | null {
+  switch (field) {
+    case 'cpu':
+      return record.cpu
+    case 'mem_used':
+      return record.mem_used
+    case 'swap_used':
+      return record.swap_used
+    case 'disk_used':
+      return record.disk_used
+    case 'net_in_speed':
+    case 'net_in':
+      return record.net_in_speed
+    case 'net_out_speed':
+    case 'net_out':
+      return record.net_out_speed
+    case 'network':
+      return record.net_in_speed + record.net_out_speed
+    case 'net_in_transfer':
+      return record.net_in_transfer
+    case 'net_out_transfer':
+      return record.net_out_transfer
+    case 'load1':
+      return record.load1
+    case 'load5':
+      return record.load5
+    case 'load15':
+      return record.load15
+    case 'tcp_conn':
+      return record.tcp_conn
+    case 'udp_conn':
+      return record.udp_conn
+    case 'process_count':
+      return record.process_count
+    case 'temperature':
+      return record.temperature
+    case 'gpu_usage':
+      return record.gpu_usage
+    default:
+      return null
+  }
+}
+
+function extractHistoryPoints(records: ServerRecord[], field: string): HistoryPoint[] {
+  const points: HistoryPoint[] = []
+  for (const record of records) {
+    const ts = Date.parse(record.time)
+    const value = readRecordValue(record, field)
+    if (Number.isFinite(ts) && value !== null && Number.isFinite(value)) {
+      points.push({ ts, value })
+    }
+  }
+  return points
+}
+
+export function useHistory(
+  serverId: string | null,
+  field: string,
+  range = '1h',
+  opts?: { interval?: HistoryInterval }
+): UseQueryResult<HistoryPoint[]> {
+  const durationMs = parseDurationMs(range)
+  const interval = opts?.interval ?? 'auto'
+  return useQuery<ServerRecord[], Error, HistoryPoint[]>({
+    queryKey: ['widget-api', 'history', serverId, range, interval],
+    queryFn: () => {
+      const to = new Date()
+      const from = new Date(to.getTime() - (durationMs ?? 3_600_000))
+      const params = new URLSearchParams({
+        from: from.toISOString(),
+        to: to.toISOString(),
+        interval
+      })
+      return request<ServerRecord[]>(
+        'GET',
+        `/api/servers/${encodeURIComponent(serverId ?? '')}/records?${params.toString()}`
+      )
+    },
+    select: (records) => extractHistoryPoints(records, field),
+    enabled: Boolean(serverId) && durationMs !== null
   })
 }
 
