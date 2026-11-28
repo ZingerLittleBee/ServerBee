@@ -181,10 +181,11 @@ export function useHistory(
   range = '1h',
   opts?: { interval?: HistoryInterval }
 ): UseQueryResult<HistoryPoint[]> {
-  const durationMs = parseDurationMs(range)
+  const normalizedRange = range.trim()
+  const durationMs = parseDurationMs(normalizedRange)
   const interval = opts?.interval ?? 'auto'
   return useQuery<ServerRecord[], Error, HistoryPoint[]>({
-    queryKey: ['widget-api', 'history', serverId, range, interval],
+    queryKey: ['widget-api', 'history', serverId, normalizedRange, interval],
     queryFn: () => {
       const to = new Date()
       const from = new Date(to.getTime() - (durationMs ?? 3_600_000))

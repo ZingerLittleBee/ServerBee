@@ -21,6 +21,17 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+json_escape() {
+  local s=$1
+  local dq='"'
+  s=${s//\\/\\\\}
+  s=${s//$dq/\\$dq}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  printf '%s' "$s"
+}
+
 echo "Building web assets (required by rust-embed)..."
 (cd apps/web && bun install --silent && bun run build)
 
@@ -28,7 +39,8 @@ echo "Building ServerBee server..."
 cargo build -p serverbee-server
 
 echo "Starting ServerBee server..."
-SERVERBEE_AUTH__SECURE_COOKIE=false cargo run -p serverbee-server >"$SERVER_LOG" 2>&1 &
+SERVER_BIN="${CARGO_TARGET_DIR:-./target}/debug/serverbee-server"
+SERVERBEE_AUTH__SECURE_COOKIE=false "$SERVER_BIN" >"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 tail -n +1 -f "$SERVER_LOG" &
 TAIL_PID=$!
@@ -48,22 +60,26 @@ fi
 
 echo "Server is ready at $SERVER_URL"
 
-GENERATED_PASS=$(sed -nE 's/.*Password:[[:space:]]+([^[:space:]]+).*/\1/p' "$SERVER_LOG" | head -n 1 | tr -d '\r' || true)
+GENERATED_PASS=$(sed -nE 's/^[[:space:]]*Password:[[:space:]]+([^[:space:]]+).*/\1/p' "$SERVER_LOG" | head -n 1 | tr -d '\r' || true)
 AUTHENTICATED=false
 
+ESCAPED_ADMIN_USER=$(json_escape "$ADMIN_USER")
+ESCAPED_ADMIN_PASS=$(json_escape "$ADMIN_PASS")
+
 if [ -n "$GENERATED_PASS" ]; then
+  ESCAPED_GENERATED_PASS=$(json_escape "$GENERATED_PASS")
   echo "Completing first-run admin onboarding ($ADMIN_USER / $ADMIN_PASS)..."
   curl -fsS -c "$COOKIE_JAR" -X POST "$SERVER_URL/api/auth/login" \
     -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$GENERATED_PASS\"}" > /dev/null
+    -d "{\"username\":\"admin\",\"password\":\"$ESCAPED_GENERATED_PASS\"}" > /dev/null
   curl -fsS -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST "$SERVER_URL/api/auth/onboarding" \
     -H 'Content-Type: application/json' \
-    -d "{\"new_password\":\"$ADMIN_PASS\"}" > /dev/null
+    -d "{\"new_username\":\"$ESCAPED_ADMIN_USER\",\"new_password\":\"$ESCAPED_ADMIN_PASS\"}" > /dev/null
   AUTHENTICATED=true
 else
   if curl -fsS -c "$COOKIE_JAR" -X POST "$SERVER_URL/api/auth/login" \
     -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}" > /dev/null 2>&1; then
+    -d "{\"username\":\"$ESCAPED_ADMIN_USER\",\"password\":\"$ESCAPED_ADMIN_PASS\"}" > /dev/null 2>&1; then
     AUTHENTICATED=true
   else
     echo "WARN: Could not log in as '$ADMIN_USER' with configured dev password."
