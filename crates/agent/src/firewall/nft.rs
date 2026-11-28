@@ -120,7 +120,7 @@ impl NftExecutor for CliNftExecutor {
         true
     }
 
-    async fn run_batch(&self, script: &str, op: NftOp) -> Result<(), NftError> {
+    async fn run_batch(&self, script: &str, _op: NftOp) -> Result<(), NftError> {
         use tokio::io::AsyncWriteExt;
 
         let mut child = Command::new("nft")
@@ -147,7 +147,20 @@ impl NftExecutor for CliNftExecutor {
             .wait_with_output()
             .await
             .map_err(|e| NftError::Other(e.to_string()))?;
-        classify_nft_output(out.status, &out.stderr, op)
+        if out.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        if stderr.contains("Operation not permitted") {
+            return Err(NftError::PermissionDenied);
+        }
+        Err(NftError::Other(
+            stderr
+                .lines()
+                .next()
+                .unwrap_or("nft batch failed")
+                .to_string(),
+        ))
     }
 }
 
