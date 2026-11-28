@@ -357,12 +357,18 @@ impl AgentManager {
             .collect()
     }
 
-    /// Drop the cached report for a server. Call this only when the server row
-    /// itself is gone (deletion), so the display cache doesn't outlive it. A
-    /// plain disconnect must *not* call this — the cache backs offline display.
     pub fn remove_cached_report(&self, server_id: &str) {
+        self.evict_server_state(server_id);
+    }
+
+    pub fn evict_server_state(&self, server_id: &str) {
         self.latest_reports.remove(server_id);
         self.tailscale_status.remove(server_id);
+        self.features.remove(server_id);
+        self.agent_local_capabilities.remove(server_id);
+        self.temporary_grants.remove(server_id);
+        self.server_lifecycle_locks
+            .remove_if(server_id, |_, lock| Arc::strong_count(lock) == 1);
     }
 
     /// Get the mpsc sender for a specific agent to send commands to it.

@@ -99,7 +99,8 @@ impl AgentAuthority {
         let Some(candidate) = find_offer_for_code(&self.db, &input.code).await? else {
             return Err(ClaimError::Rejected);
         };
-        let token_hash = AuthService::hash_password(input.proposed_run_token.expose())?;
+        let token_hash =
+            AuthService::hash_password_async(input.proposed_run_token.expose()).await?;
         let token_prefix = input.proposed_run_token.expose()[..8].to_string();
         let server_lock = self
             .agent_manager
@@ -114,9 +115,7 @@ impl AgentAuthority {
         else {
             return Err(ClaimError::Rejected);
         };
-        if offer.outcome.is_some()
-            || !AuthService::verify_password(input.code.expose(), &offer.code_hash)?
-        {
+        if offer.outcome.is_some() || offer.code_hash != candidate.code_hash {
             return Err(ClaimError::Rejected);
         }
         let server = server::Entity::find_by_id(&offer.target_server_id)
@@ -301,7 +300,7 @@ impl AgentAuthority {
             });
         }
 
-        let successor = prepare_offer(&server.id, &input.actor, input.ttl)?;
+        let successor = prepare_offer(&server.id, &input.actor, input.ttl).await?;
         let now = Utc::now();
         let old_offer_id = offer.id.clone();
         let mut active: enrollment_offer::ActiveModel = offer.into();
@@ -494,10 +493,21 @@ impl AgentAuthority {
             .map(|server_id| server_id.as_str().to_string())
             .collect();
         let servers = server::Entity::find()
-            .filter(server::Column::Id.is_in(ids.iter().cloned()))
+            .filter(server::Column::Id.is_in(ids))
             .all(&self.db)
             .await
             .map_err(AppError::from)?;
+        self.states_for_servers(&servers).await
+    }
+
+    pub(crate) async fn states_for_servers(
+        &self,
+        servers: &[server::Model],
+    ) -> Result<Vec<AuthorityState>, StateError> {
+        if servers.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ids: Vec<String> = servers.iter().map(|s| s.id.clone()).collect();
         let offers = enrollment_offer::Entity::find()
             .filter(enrollment_offer::Column::TargetServerId.is_in(ids))
             .filter(enrollment_offer::Column::Outcome.is_null())
@@ -514,13 +524,13 @@ impl AgentAuthority {
             .collect::<Result<_, _>>()?;
 
         servers
-            .into_iter()
+            .iter()
             .map(|server| {
                 Ok(AuthorityState {
                     server_id: ServerId::parse(server.id.clone()).map_err(|error| {
                         AppError::Internal(format!("invalid stored server id: {error}"))
                     })?,
-                    authority: authority_status(&server),
+                    authority: authority_status(server),
                     outstanding_offer: offers_by_server.remove(&server.id),
                 })
             })
@@ -546,12 +556,13 @@ impl AgentAuthority {
         let server = AuthService::validate_agent_token(&self.db, token.expose())
             .await?
             .ok_or(AdmissionError::Rejected)?;
+        let verified_token_hash = server.token_hash.ok_or(AdmissionError::Rejected)?;
         Ok(PendingAdmission {
             authority: self.clone(),
             expected_server_id: ServerId::parse(server.id).map_err(|error| {
                 AppError::Internal(format!("invalid stored server id: {error}"))
             })?,
-            token,
+            verified_token_hash,
         })
     }
 
@@ -692,10 +703,11 @@ impl AgentAuthority {
         }
         tx.commit().await?;
 
-        for server_id in &existing_ids {
-            self.agent_manager.remove_cached_report(server_id);
-        }
         drop(guards);
+        drop(locks);
+        for server_id in &existing_ids {
+            self.agent_manager.evict_server_state(server_id);
+        }
         Ok(rows)
     }
 }
@@ -703,14 +715,14 @@ impl AgentAuthority {
 pub struct PendingAdmission {
     authority: AgentAuthority,
     expected_server_id: ServerId,
-    token: PresentedRunToken,
+    verified_token_hash: String,
 }
 
 impl std::fmt::Debug for PendingAdmission {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PendingAdmission")
             .field("expected_server_id", &self.expected_server_id)
-            .field("token", &"<redacted>")
+            .field("verified_token_hash", &"<redacted>")
             .finish()
     }
 }
@@ -725,9 +737,16 @@ impl PendingAdmission {
             .agent_manager
             .server_lifecycle_lock(self.expected_server_id.as_str());
         let _guard = server_lock.lock().await;
-        let server = AuthService::validate_agent_token(&self.authority.db, self.token.expose())
-            .await?
-            .filter(|server| server.id == self.expected_server_id.as_str())
+        let server = server::Entity::find_by_id(self.expected_server_id.as_str())
+            .one(&self.authority.db)
+            .await
+            .map_err(AppError::from)?
+            .filter(|server| {
+                server
+                    .token_hash
+                    .as_deref()
+                    .is_some_and(|hash| hash == self.verified_token_hash)
+            })
             .ok_or(AdmissionError::Rejected)?;
         let connection_id = self.authority.agent_manager.add_connection(
             server.id.clone(),
@@ -735,8 +754,6 @@ impl PendingAdmission {
             connection.tx,
             connection.remote_addr,
         );
-        // Capture the already validated authority while admission owns the
-        // lifecycle lock. Security recovery never restores connection ownership.
         if let Some(hash) = server.token_hash.as_deref() {
             self.authority.agent_manager.bind_security_authority(
                 &server.id,
@@ -758,13 +775,17 @@ struct PreparedOffer {
     code: EnrollmentCode,
 }
 
-fn prepare_offer(server_id: &str, actor: &Actor, ttl: OfferTtl) -> Result<PreparedOffer, AppError> {
+async fn prepare_offer(
+    server_id: &str,
+    actor: &Actor,
+    ttl: OfferTtl,
+) -> Result<PreparedOffer, AppError> {
     let now = Utc::now();
     let plaintext = AuthService::generate_session_token();
     let code = EnrollmentCode::parse(plaintext.clone()).map_err(|error| {
         AppError::Internal(format!("generated invalid enrollment code: {error}"))
     })?;
-    let code_hash = AuthService::hash_password(&plaintext)?;
+    let code_hash = AuthService::hash_password_async(&plaintext).await?;
     let code_prefix = plaintext[..8].to_string();
     let id = Uuid::new_v4().to_string();
     Ok(PreparedOffer {
@@ -806,7 +827,7 @@ async fn mint_offer<C: ConnectionTrait>(
     actor: &Actor,
     ttl: OfferTtl,
 ) -> Result<IssuedOffer, AppError> {
-    insert_prepared_offer(conn, prepare_offer(server_id, actor, ttl)?).await
+    insert_prepared_offer(conn, prepare_offer(server_id, actor, ttl).await?).await
 }
 
 async fn find_offer_for_code<C: ConnectionTrait>(
@@ -819,7 +840,7 @@ async fn find_offer_for_code<C: ConnectionTrait>(
         .all(conn)
         .await?;
     for candidate in candidates {
-        if AuthService::verify_password(code.expose(), &candidate.code_hash)? {
+        if AuthService::verify_password_async(code.expose(), &candidate.code_hash).await? {
             return Ok(Some(candidate));
         }
     }
