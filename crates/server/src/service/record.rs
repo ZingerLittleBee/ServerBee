@@ -25,25 +25,27 @@ fn serialize_disk_io(disk_io: Option<&Vec<DiskIo>>) -> Result<Option<String>, Ap
         .transpose()
 }
 
-fn aggregate_disk_io(records: &[&record::Model]) -> Result<Option<String>, AppError> {
+fn aggregate_disk_io_raw<'a>(
+    entries: impl IntoIterator<Item = (i64, &'a str, Option<&'a str>)>,
+) -> Result<Option<String>, AppError> {
     let mut saw_non_null = false;
     let mut grouped: HashMap<String, DiskIoAccumulator> = HashMap::new();
 
-    for record in records {
-        let Some(raw) = record.disk_io_json.as_deref() else {
+    for (record_id, server_id, disk_io_json) in entries {
+        let Some(raw) = disk_io_json else {
             continue;
         };
         saw_non_null = true;
 
-        let entries = match serde_json::from_str::<Vec<DiskIo>>(raw) {
-            Ok(entries) => entries,
+        let parsed = match serde_json::from_str::<Vec<DiskIo>>(raw) {
+            Ok(parsed) => parsed,
             Err(error) => {
-                tracing::warn!(record_id = record.id, server_id = %record.server_id, "Failed to parse disk_io_json: {error}");
+                tracing::warn!(record_id, server_id = %server_id, "Failed to parse disk_io_json: {error}");
                 continue;
             }
         };
 
-        for entry in entries {
+        for entry in parsed {
             let accumulator = grouped.entry(entry.name).or_default();
             accumulator.read_total += entry.read_bytes_per_sec;
             accumulator.write_total += entry.write_bytes_per_sec;
@@ -74,10 +76,18 @@ fn aggregate_disk_io(records: &[&record::Model]) -> Result<Option<String>, AppEr
     })?))
 }
 
+#[cfg(test)]
+fn aggregate_disk_io(records: &[&record::Model]) -> Result<Option<String>, AppError> {
+    aggregate_disk_io_raw(
+        records
+            .iter()
+            .map(|r| (r.id, r.server_id.as_str(), r.disk_io_json.as_deref())),
+    )
+}
+
 impl RecordService {
-    /// Save a system report as a record for the given server.
-    pub async fn save_report(
-        db: &DatabaseConnection,
+    pub async fn save_report<C: ConnectionTrait>(
+        db: &C,
         server_id: &str,
         report: &SystemReport,
     ) -> Result<(), AppError> {
@@ -111,16 +121,21 @@ impl RecordService {
         Ok(())
     }
 
-    /// Save GPU detail records for the given server.
-    pub async fn save_gpu_records(
-        db: &DatabaseConnection,
+    pub async fn save_gpu_records<C: ConnectionTrait>(
+        db: &C,
         server_id: &str,
         gpu: &GpuReport,
     ) -> Result<(), AppError> {
-        let now = Utc::now();
+        if gpu.detailed_info.is_empty() {
+            return Ok(());
+        }
 
-        for (index, info) in gpu.detailed_info.iter().enumerate() {
-            let new_gpu = gpu_record::ActiveModel {
+        let now = Utc::now();
+        let models: Vec<gpu_record::ActiveModel> = gpu
+            .detailed_info
+            .iter()
+            .enumerate()
+            .map(|(index, info)| gpu_record::ActiveModel {
                 id: NotSet,
                 server_id: Set(server_id.to_string()),
                 time: Set(now),
@@ -130,10 +145,10 @@ impl RecordService {
                 mem_used: Set(info.mem_used),
                 utilization: Set(info.utilization),
                 temperature: Set(info.temperature),
-            };
-            new_gpu.insert(db).await?;
-        }
+            })
+            .collect();
 
+        gpu_record::Entity::insert_many(models).exec(db).await?;
         Ok(())
     }
 
@@ -170,10 +185,6 @@ impl RecordService {
         }
     }
 
-    /// Raw records for a server within the trailing `window`, newest first.
-    /// The shared read path for alert evaluation: consumers sampling "recent
-    /// metrics" go through here so a storage change cannot silently detach
-    /// them from what the recorder writes.
     pub async fn query_recent(
         db: &DatabaseConnection,
         server_id: &str,
@@ -186,6 +197,26 @@ impl RecordService {
             .order_by_desc(record::Column::Time)
             .all(db)
             .await?)
+    }
+
+    pub async fn query_recent_all(
+        db: &DatabaseConnection,
+        window: Duration,
+    ) -> Result<HashMap<String, Vec<record::Model>>, AppError> {
+        let since = Utc::now() - window;
+        let records = record::Entity::find()
+            .filter(record::Column::Time.gte(since))
+            .order_by_desc(record::Column::Time)
+            .all(db)
+            .await?;
+        let mut by_server: HashMap<String, Vec<record::Model>> = HashMap::new();
+        for rec in records {
+            by_server
+                .entry(rec.server_id.clone())
+                .or_default()
+                .push(rec);
+        }
+        Ok(by_server)
     }
 
     /// Time of the most recent raw record for a server, if any.
@@ -246,7 +277,7 @@ impl RecordService {
                 [
                     hour_start_str.clone().into(),
                     hour_start_str.clone().into(),
-                    hour_end_str.into(),
+                    hour_end_str.clone().into(),
                 ],
             ))
             .await?;
@@ -257,35 +288,51 @@ impl RecordService {
             return Ok(0);
         }
 
-        // disk_io_json: Rust-side aggregation (per-device grouping)
-        let records = record::Entity::find()
-            .filter(record::Column::Time.gte(hour_start))
-            .filter(record::Column::Time.lt(hour_end))
-            .all(db)
+        let disk_io_rows = db
+            .query_all(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT id, server_id, disk_io_json FROM records WHERE time >= ? AND time < ? AND disk_io_json IS NOT NULL",
+                [hour_start_str.clone().into(), hour_end_str.into()],
+            ))
             .await?;
 
-        let mut grouped: HashMap<String, Vec<&record::Model>> = HashMap::new();
-        for r in &records {
-            grouped.entry(r.server_id.clone()).or_default().push(r);
+        if disk_io_rows.is_empty() {
+            return Ok(rows_affected);
         }
 
-        for (server_id, server_records) in &grouped {
-            let disk_io_json = aggregate_disk_io(server_records)?;
-            let json_value: sea_orm::Value = match disk_io_json {
-                Some(s) => s.into(),
-                None => sea_orm::Value::String(None),
+        let mut grouped: HashMap<String, Vec<(i64, String)>> = HashMap::new();
+        for row in disk_io_rows {
+            let id: i64 = row.try_get_by_index(0)?;
+            let server_id: String = row.try_get_by_index(1)?;
+            let disk_io_json: String = row.try_get_by_index(2)?;
+            grouped
+                .entry(server_id)
+                .or_default()
+                .push((id, disk_io_json));
+        }
+
+        let txn = db.begin().await?;
+        for (server_id, server_rows) in &grouped {
+            let disk_io_json = aggregate_disk_io_raw(
+                server_rows
+                    .iter()
+                    .map(|(id, raw)| (*id, server_id.as_str(), Some(raw.as_str()))),
+            )?;
+            let Some(json_str) = disk_io_json else {
+                continue;
             };
-            db.execute(Statement::from_sql_and_values(
+            txn.execute(Statement::from_sql_and_values(
                 db.get_database_backend(),
                 "UPDATE records_hourly SET disk_io_json = ? WHERE server_id = ? AND time = ?",
                 [
-                    json_value,
+                    json_str.into(),
                     server_id.clone().into(),
                     hour_start_str.clone().into(),
                 ],
             ))
             .await?;
         }
+        txn.commit().await?;
 
         Ok(rows_affected)
     }

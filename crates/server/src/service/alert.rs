@@ -1,10 +1,12 @@
+use std::collections::{HashMap, HashSet};
+
 use chrono::{Duration, Utc};
 use dashmap::DashMap;
 use sea_orm::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::entity::{alert_rule, alert_state, network_probe_record, server};
+use crate::entity::{alert_rule, alert_state, network_probe_record, record, server};
 use crate::error::AppError;
 use crate::service::agent_manager::AgentManager;
 use crate::service::maintenance::MaintenanceService;
@@ -406,6 +408,9 @@ impl AlertStateManager {
             return Err(error);
         }
         txn.commit().await?;
+        if should_notify {
+            crate::service::mobile_push_outbox::notify_outbox();
+        }
         self.publish_state(&state);
         Ok(should_notify)
     }
@@ -733,39 +738,87 @@ impl AlertService {
         state_manager: &AlertStateManager,
         now: chrono::DateTime<Utc>,
     ) -> Result<Vec<String>, AppError> {
-        // Event-driven conditions cannot be re-polled. Replay captured intents
-        // before ordinary rules, including the first tick after Server restart.
         crate::service::alert_event_intents::replay(db, config, state_manager).await?;
         let rules = alert_rule::Entity::find()
             .filter(alert_rule::Column::Enabled.eq(true))
             .all(db)
             .await?;
+        if rules.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        let mut changed = Vec::new();
-        for rule in rules {
-            // A failed event admission reserves the dimension/cycle. Do not
-            // overwrite it with a later periodic evaluation of a mixed rule.
-            if crate::entity::alert_event_intent::Entity::find()
-                .filter(crate::entity::alert_event_intent::Column::RuleId.eq(&rule.id))
-                .one(db)
+        let pending_intent_rules: HashSet<String> =
+            crate::entity::alert_event_intent::Entity::find()
+                .all(db)
                 .await?
-                .is_some()
-            {
+                .into_iter()
+                .map(|intent| intent.rule_id)
+                .collect();
+
+        let mut active_rules: Vec<(alert_rule::Model, Vec<AlertRuleItem>)> = Vec::new();
+        let mut needs_recent_records = false;
+        for rule in rules {
+            if pending_intent_rules.contains(&rule.id) {
                 continue;
             }
-            // Skip rules where ALL items are event-driven (e.g. ip_changed).
-            // These are dispatched from WS handlers via check_event_rules().
             let items: Vec<AlertRuleItem> =
                 serde_json::from_str(&rule.rules_json).unwrap_or_default();
-            if !items.is_empty()
-                && items
+            if items.is_empty()
+                || items
                     .iter()
                     .all(|i| EVENT_DRIVEN_RULE_TYPES.contains(&i.rule_type.as_str()))
             {
                 continue;
             }
+            if !needs_recent_records
+                && items
+                    .iter()
+                    .any(|item| is_threshold_rule_type(&item.rule_type))
+            {
+                needs_recent_records = true;
+            }
+            active_rules.push((rule, items));
+        }
 
-            match Self::evaluate_rule_at(db, config, agent_manager, state_manager, &rule, now).await
+        if active_rules.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let all_servers = server::Entity::find().all(db).await?;
+        if all_servers.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let active_firing: HashSet<(String, String)> = alert_state::Entity::find()
+            .filter(alert_state::Column::Resolved.eq(false))
+            .filter(alert_state::Column::EventKey.eq(""))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|state| (state.rule_id, state.server_id))
+            .collect();
+
+        let recent_records = if needs_recent_records {
+            Some(RecordService::query_recent_all(db, Duration::minutes(10)).await?)
+        } else {
+            None
+        };
+
+        let mut changed = Vec::new();
+        for (rule, items) in &active_rules {
+            match Self::evaluate_rule_with_context(
+                db,
+                config,
+                agent_manager,
+                state_manager,
+                rule,
+                items,
+                &all_servers,
+                &active_firing,
+                recent_records.as_ref(),
+                now,
+            )
+            .await
             {
                 Ok(mut servers) => changed.append(&mut servers),
                 Err(e) => tracing::error!("Error evaluating alert rule '{}': {e}", rule.name),
@@ -782,28 +835,65 @@ impl AlertService {
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
     ) -> Result<(), AppError> {
-        Self::evaluate_rule_at(db, config, agent_manager, state_manager, rule, Utc::now())
-            .await
-            .map(|_| ())
+        let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json).unwrap_or_default();
+        if items.is_empty() {
+            return Ok(());
+        }
+        let all_servers = server::Entity::find().all(db).await?;
+        let active_firing: HashSet<(String, String)> = alert_state::Entity::find()
+            .filter(alert_state::Column::RuleId.eq(&rule.id))
+            .filter(alert_state::Column::Resolved.eq(false))
+            .filter(alert_state::Column::EventKey.eq(""))
+            .all(db)
+            .await?
+            .into_iter()
+            .map(|state| (state.rule_id, state.server_id))
+            .collect();
+        let recent_records = if items
+            .iter()
+            .any(|item| is_threshold_rule_type(&item.rule_type))
+        {
+            Some(RecordService::query_recent_all(db, Duration::minutes(10)).await?)
+        } else {
+            None
+        };
+        Self::evaluate_rule_with_context(
+            db,
+            config,
+            agent_manager,
+            state_manager,
+            rule,
+            &items,
+            &all_servers,
+            &active_firing,
+            recent_records.as_ref(),
+            Utc::now(),
+        )
+        .await
+        .map(|_| ())
     }
 
-    async fn evaluate_rule_at(
+    #[allow(clippy::too_many_arguments)]
+    async fn evaluate_rule_with_context(
         db: &DatabaseConnection,
         config: &crate::config::AppConfig,
         agent_manager: &AgentManager,
         state_manager: &AlertStateManager,
         rule: &alert_rule::Model,
+        items: &[AlertRuleItem],
+        all_servers: &[server::Model],
+        active_firing: &HashSet<(String, String)>,
+        recent_records: Option<&HashMap<String, Vec<record::Model>>>,
         now: chrono::DateTime<Utc>,
     ) -> Result<Vec<String>, AppError> {
-        let items: Vec<AlertRuleItem> = serde_json::from_str(&rule.rules_json).unwrap_or_default();
         if items.is_empty() {
             return Ok(Vec::new());
         }
 
-        let servers = resolve_servers(db, &rule.cover_type, &rule.server_ids_json).await?;
+        let servers = filter_covered_servers(all_servers, &rule.cover_type, &rule.server_ids_json);
 
         let mut changed = Vec::new();
-        for srv in &servers {
+        for srv in servers {
             if items.iter().any(|item| item.rule_type == "expiration")
                 && !items
                     .iter()
@@ -814,13 +904,15 @@ impl AlertService {
                     .filter(|item| item.rule_type != "expiration")
                     .cloned()
                     .collect();
-                let matched = Self::check_server_at(db, agent_manager, &other, &srv.id, now).await;
+                let matched =
+                    Self::check_server_at(db, agent_manager, &other, &srv.id, recent_records, now)
+                        .await;
                 if let Some(outcome) = crate::service::renewal_reminders::evaluate(
                     db,
                     state_manager,
                     rule,
                     &srv.id,
-                    &items,
+                    items,
                     matched,
                     now,
                 )
@@ -842,10 +934,10 @@ impl AlertService {
                     continue;
                 }
             }
-            let triggered = Self::check_server_at(db, agent_manager, &items, &srv.id, now).await;
+            let triggered =
+                Self::check_server_at(db, agent_manager, items, &srv.id, recent_records, now).await;
 
             if triggered {
-                // Skip alerting if the server is in a maintenance window
                 if MaintenanceService::is_in_maintenance(db, &srv.id)
                     .await
                     .unwrap_or(false)
@@ -858,9 +950,11 @@ impl AlertService {
                     continue;
                 }
                 Self::handle_triggered(db, config, state_manager, rule, &srv.id, &srv.name).await?;
-            } else if state_manager
-                .admit_alert_transition(db, rule, &srv.id, &srv.name, true)
-                .await?
+            } else if (state_manager.is_triggered(&rule.id, &srv.id, "")
+                || active_firing.contains(&(rule.id.clone(), srv.id.clone())))
+                && state_manager
+                    .admit_alert_transition(db, rule, &srv.id, &srv.name, true)
+                    .await?
             {
                 tracing::info!("Alert '{}' resolved for server '{}'", rule.name, srv.name);
                 Self::handle_resolved(db, config, rule, &srv.id, &srv.name).await;
@@ -877,7 +971,7 @@ impl AlertService {
         items: &[AlertRuleItem],
         server_id: &str,
     ) -> bool {
-        Self::check_server_at(db, agent_manager, items, server_id, Utc::now()).await
+        Self::check_server_at(db, agent_manager, items, server_id, None, Utc::now()).await
     }
 
     async fn check_server_at(
@@ -885,6 +979,7 @@ impl AlertService {
         agent_manager: &AgentManager,
         items: &[AlertRuleItem],
         server_id: &str,
+        recent_records: Option<&HashMap<String, Vec<record::Model>>>,
         now: chrono::DateTime<Utc>,
     ) -> bool {
         for item in items {
@@ -892,7 +987,6 @@ impl AlertService {
                 "offline" => {
                     let duration = item.duration.unwrap_or(60) as u64;
                     !agent_manager.is_online(server_id) && {
-                        // Check how long the server has been offline by looking at last record
                         match RecordService::latest_record_time(db, server_id)
                             .await
                             .ok()
@@ -909,20 +1003,19 @@ impl AlertService {
                 "transfer_in_cycle" | "transfer_out_cycle" | "transfer_all_cycle" => {
                     check_transfer_cycle(db, server_id, item).await
                 }
-                "expiration" => {
-                    // Check if server's expired_at is within N days (default 7)
-                    check_expiration_at(db, server_id, item, now).await
-                }
+                "expiration" => check_expiration_at(db, server_id, item, now).await,
                 "network_latency" => check_network_latency(db, server_id, item).await,
                 "network_packet_loss" => check_network_packet_loss(db, server_id, item).await,
-                _ => {
-                    // Resource threshold type: check recent records
-                    check_threshold(db, server_id, item).await
-                }
+                _ => match recent_records {
+                    Some(map) => map
+                        .get(server_id)
+                        .is_some_and(|recs| evaluate_threshold_records(recs, item)),
+                    None => check_threshold(db, server_id, item).await,
+                },
             };
 
             if !matched {
-                return false; // AND logic: all items must match
+                return false;
             }
         }
         true
@@ -1100,6 +1193,57 @@ fn validate_cover_type(cover_type: &str) -> Result<(), AppError> {
     }
 }
 
+fn is_threshold_rule_type(rule_type: &str) -> bool {
+    !matches!(
+        rule_type,
+        "offline"
+            | "transfer_in_cycle"
+            | "transfer_out_cycle"
+            | "transfer_all_cycle"
+            | "expiration"
+            | "network_latency"
+            | "network_packet_loss"
+    ) && !EVENT_DRIVEN_RULE_TYPES.contains(&rule_type)
+}
+
+fn filter_covered_servers<'a>(
+    all_servers: &'a [server::Model],
+    cover_type: &str,
+    server_ids_json: &Option<String>,
+) -> Vec<&'a server::Model> {
+    match cover_type {
+        "include" => {
+            let ids: HashSet<String> = server_ids_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            if ids.is_empty() {
+                return Vec::new();
+            }
+            all_servers.iter().filter(|s| ids.contains(&s.id)).collect()
+        }
+        "exclude" => {
+            let ids: HashSet<String> = server_ids_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str::<Vec<String>>(s).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            if ids.is_empty() {
+                return all_servers.iter().collect();
+            }
+            all_servers
+                .iter()
+                .filter(|s| !ids.contains(&s.id))
+                .collect()
+        }
+        _ => all_servers.iter().collect(),
+    }
+}
+
+#[cfg(test)]
 async fn resolve_servers(
     db: &DatabaseConnection,
     cover_type: &str,
@@ -1132,19 +1276,11 @@ async fn resolve_servers(
                 .all(db)
                 .await?)
         }
-        _ => {
-            // "all" (default)
-            Ok(server::Entity::find().all(db).await?)
-        }
+        _ => Ok(server::Entity::find().all(db).await?),
     }
 }
 
-async fn check_threshold(db: &DatabaseConnection, server_id: &str, item: &AlertRuleItem) -> bool {
-    let records = match RecordService::query_recent(db, server_id, Duration::minutes(10)).await {
-        Ok(r) => r,
-        Err(_) => return false,
-    };
-
+fn evaluate_threshold_records(records: &[record::Model], item: &AlertRuleItem) -> bool {
     if records.is_empty() {
         return false;
     }
@@ -1152,9 +1288,7 @@ async fn check_threshold(db: &DatabaseConnection, server_id: &str, item: &AlertR
     let mut exceeded_count = 0;
     let total = records.len();
 
-    for rec in &records {
-        // Unresolvable rule types (unknown, or non-alertable transfer
-        // counters) contribute no sample, so such rules never reach 70%.
+    for rec in records {
         let Some(value) = rollup::alert_metric(rec, &item.rule_type) else {
             continue;
         };
@@ -1169,8 +1303,16 @@ async fn check_threshold(db: &DatabaseConnection, server_id: &str, item: &AlertR
         }
     }
 
-    // 70%+ samples exceeded threshold
     exceeded_count as f64 / total as f64 >= 0.7
+}
+
+async fn check_threshold(db: &DatabaseConnection, server_id: &str, item: &AlertRuleItem) -> bool {
+    let records = match RecordService::query_recent(db, server_id, Duration::minutes(10)).await {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+
+    evaluate_threshold_records(&records, item)
 }
 
 /// Check transfer cycle alert: compare cumulative traffic within a time cycle against a limit.
