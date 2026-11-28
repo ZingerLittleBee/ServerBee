@@ -34,7 +34,7 @@ impl Collector<SysinfoSource> {
         exclude_tailscale_traffic: bool,
     ) -> Self {
         Self::with_source(
-            SysinfoSource::new(exclude_tailscale_traffic),
+            SysinfoSource::new(enable_temperature, exclude_tailscale_traffic),
             enable_temperature,
             enable_gpu,
         )
@@ -204,10 +204,10 @@ mod assembly_tests {
         fn load_averages(&self) -> (f64, f64, f64) {
             self.loads
         }
-        fn tcp_connections(&self) -> i32 {
+        fn tcp_connections(&mut self) -> i32 {
             self.tcp
         }
-        fn udp_connections(&self) -> i32 {
+        fn udp_connections(&mut self) -> i32 {
             self.udp
         }
         fn process_count(&self) -> i32 {
@@ -222,7 +222,7 @@ mod assembly_tests {
         fn temperature(&self) -> Option<f64> {
             self.temperature
         }
-        fn gpu(&self) -> Option<GpuReport> {
+        fn gpu(&mut self) -> Option<GpuReport> {
             self.gpu.clone()
         }
     }

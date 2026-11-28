@@ -6,61 +6,70 @@
 //! differencing, counter-reset saturation, the elapsed guard, enable gating)
 //! through a fake source instead of the real machine.
 
-use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use serverbee_common::types::{DiskIo, GpuReport, SystemInfo};
-use sysinfo::{Networks, ProcessRefreshKind, ProcessesToUpdate, System};
+use sysinfo::{
+    Components, CpuRefreshKind, DiskRefreshKind, Disks, MemoryRefreshKind, Networks, RefreshKind,
+    System,
+};
 
-use super::{disk, disk_io, network, process, temperature, virtualization};
+use super::{disk, disk_io, gpu, network, process, temperature, virtualization};
 
-/// One connection's window onto the host: raw gauges, cumulative counters,
-/// and windowed per-device I/O rates. Implementations own whatever handles
-/// and previous-sample state the readings require.
+const RESOURCE_LIST_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
 pub(crate) trait MetricsSource {
-    /// Refresh whatever underlying handles need refreshing before a sample.
     fn refresh(&mut self);
     fn cpu_usage(&self) -> f64;
     fn mem_used(&self) -> i64;
     fn swap_used(&self) -> i64;
     fn disk_used(&self) -> i64;
-    /// Cumulative interface byte counters since boot (in, out).
     fn net_total_bytes(&self) -> (u64, u64);
-    /// (load1, load5, load15)
     fn load_averages(&self) -> (f64, f64, f64);
-    fn tcp_connections(&self) -> i32;
-    fn udp_connections(&self) -> i32;
+    fn tcp_connections(&mut self) -> i32;
+    fn udp_connections(&mut self) -> i32;
     fn process_count(&self) -> i32;
     fn uptime(&self) -> u64;
-    /// Per-device I/O rates over the elapsed window, when the platform
-    /// exposes them.
     fn disk_io(&mut self, elapsed: f64) -> Option<Vec<DiskIo>>;
     fn temperature(&self) -> Option<f64>;
-    fn gpu(&self) -> Option<GpuReport>;
+    fn gpu(&mut self) -> Option<GpuReport>;
 }
 
-/// Production adapter: sysinfo handles plus the per-metric submodules.
 pub(crate) struct SysinfoSource {
     sys: System,
     networks: Networks,
-    prev_disk_io: HashMap<String, disk_io::DiskCounters>,
+    disks: Disks,
+    components: Option<Components>,
+    disk_io_state: disk_io::DiskIoState,
+    gpu_collector: gpu::GpuCollector,
+    proc_net_buf: Vec<u8>,
+    last_list_refresh: Instant,
     exclude_tailscale_traffic: bool,
 }
 
 impl SysinfoSource {
-    pub(crate) fn new(exclude_tailscale_traffic: bool) -> Self {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+    pub(crate) fn new(enable_temperature: bool, exclude_tailscale_traffic: bool) -> Self {
+        let sys = System::new_with_specifics(
+            RefreshKind::nothing()
+                .with_cpu(CpuRefreshKind::everything())
+                .with_memory(MemoryRefreshKind::everything()),
+        );
         let networks = Networks::new_with_refreshed_list();
+        let disks = Disks::new_with_refreshed_list();
+        let components = enable_temperature.then(Components::new_with_refreshed_list);
         Self {
             sys,
             networks,
-            prev_disk_io: HashMap::new(),
+            disks,
+            components,
+            disk_io_state: disk_io::DiskIoState::new(),
+            gpu_collector: gpu::GpuCollector::new(),
+            proc_net_buf: vec![0u8; 8192],
+            last_list_refresh: Instant::now(),
             exclude_tailscale_traffic,
         }
     }
 
-    /// Static host facts for `SystemInfo`; not part of the [`MetricsSource`]
-    /// seam because nothing in the assembly transforms them.
     pub(crate) fn system_info(&self) -> SystemInfo {
         SystemInfo {
             protocol_version: 0,
@@ -76,7 +85,7 @@ impl SysinfoSource {
             kernel_version: System::kernel_version().unwrap_or_default(),
             mem_total: self.sys.total_memory() as i64,
             swap_total: self.sys.total_swap() as i64,
-            disk_total: disk::total(),
+            disk_total: disk::total_from_disks(&self.disks),
             ipv4: None,
             ipv6: None,
             virtualization: virtualization::detect(),
@@ -141,12 +150,26 @@ impl MetricsSource for SysinfoSource {
     fn refresh(&mut self) {
         self.sys.refresh_cpu_usage();
         self.sys.refresh_memory();
-        self.sys.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing(),
-        );
         self.networks.refresh(true);
+
+        let refresh_lists = self.last_list_refresh.elapsed() >= RESOURCE_LIST_REFRESH_INTERVAL;
+        if refresh_lists {
+            self.disks.refresh(true);
+            if let Some(components) = self.components.as_mut() {
+                components.refresh(true);
+            }
+            self.last_list_refresh = Instant::now();
+        } else {
+            let disk_kind = DiskRefreshKind::nothing().with_storage();
+            for disk in self.disks.list_mut() {
+                disk.refresh_specifics(disk_kind);
+            }
+            if let Some(components) = self.components.as_mut() {
+                for component in components.list_mut() {
+                    component.refresh();
+                }
+            }
+        }
     }
 
     fn cpu_usage(&self) -> f64 {
@@ -162,7 +185,7 @@ impl MetricsSource for SysinfoSource {
     }
 
     fn disk_used(&self) -> i64 {
-        disk::used()
+        disk::used_from_disks(&self.disks)
     }
 
     fn net_total_bytes(&self) -> (u64, u64) {
@@ -170,23 +193,20 @@ impl MetricsSource for SysinfoSource {
     }
 
     fn load_averages(&self) -> (f64, f64, f64) {
-        (
-            System::load_average().one,
-            System::load_average().five,
-            System::load_average().fifteen,
-        )
+        let load = System::load_average();
+        (load.one, load.five, load.fifteen)
     }
 
-    fn tcp_connections(&self) -> i32 {
-        process::tcp_connections()
+    fn tcp_connections(&mut self) -> i32 {
+        process::tcp_connections_with_buf(&mut self.proc_net_buf)
     }
 
-    fn udp_connections(&self) -> i32 {
-        process::udp_connections()
+    fn udp_connections(&mut self) -> i32 {
+        process::udp_connections_with_buf(&mut self.proc_net_buf)
     }
 
     fn process_count(&self) -> i32 {
-        process::count(&self.sys)
+        process::count()
     }
 
     fn uptime(&self) -> u64 {
@@ -194,15 +214,17 @@ impl MetricsSource for SysinfoSource {
     }
 
     fn disk_io(&mut self, elapsed: f64) -> Option<Vec<DiskIo>> {
-        disk_io::collect(elapsed, &mut self.prev_disk_io)
+        self.disk_io_state.collect(elapsed)
     }
 
     fn temperature(&self) -> Option<f64> {
-        temperature::get_temperature()
+        self.components
+            .as_ref()
+            .and_then(temperature::get_temperature_from_components)
     }
 
-    fn gpu(&self) -> Option<GpuReport> {
-        super::gpu::get_gpu_report()
+    fn gpu(&mut self) -> Option<GpuReport> {
+        self.gpu_collector.collect()
     }
 }
 

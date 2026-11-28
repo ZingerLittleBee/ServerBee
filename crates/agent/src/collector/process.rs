@@ -1,43 +1,107 @@
-use sysinfo::System;
+#[cfg(target_os = "linux")]
+pub fn count() -> i32 {
+    let Ok(entries) = std::fs::read_dir("/proc") else {
+        return 0;
+    };
+    let mut total: i32 = 0;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let bytes = name.as_encoded_bytes();
+        if !bytes.is_empty() && bytes.iter().all(u8::is_ascii_digit) {
+            total = total.saturating_add(1);
+        }
+    }
+    total
+}
 
-pub fn count(sys: &System) -> i32 {
+#[cfg(not(target_os = "linux"))]
+pub fn count() -> i32 {
+    use sysinfo::{ProcessRefreshKind, RefreshKind, System};
+    let sys = System::new_with_specifics(
+        RefreshKind::nothing().with_processes(ProcessRefreshKind::nothing()),
+    );
     sys.processes().len() as i32
 }
 
-pub fn tcp_connections() -> i32 {
+pub fn tcp_connections_with_buf(buf: &mut [u8]) -> i32 {
     #[cfg(target_os = "linux")]
     {
-        count_lines("/proc/net/tcp").unwrap_or(0) + count_lines("/proc/net/tcp6").unwrap_or(0)
+        count_lines_with_buf("/proc/net/tcp", buf).unwrap_or(0)
+            + count_lines_with_buf("/proc/net/tcp6", buf).unwrap_or(0)
     }
     #[cfg(target_os = "windows")]
     {
+        let _ = buf;
         count_connections_netstat("TCP")
     }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
+        let _ = buf;
         0
     }
 }
 
-pub fn udp_connections() -> i32 {
+pub fn udp_connections_with_buf(buf: &mut [u8]) -> i32 {
     #[cfg(target_os = "linux")]
     {
-        count_lines("/proc/net/udp").unwrap_or(0) + count_lines("/proc/net/udp6").unwrap_or(0)
+        count_lines_with_buf("/proc/net/udp", buf).unwrap_or(0)
+            + count_lines_with_buf("/proc/net/udp6", buf).unwrap_or(0)
     }
     #[cfg(target_os = "windows")]
     {
+        let _ = buf;
         count_connections_netstat("UDP")
     }
     #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     {
+        let _ = buf;
         0
     }
 }
 
+#[cfg(test)]
+pub fn tcp_connections() -> i32 {
+    let mut buf = [0u8; 8192];
+    tcp_connections_with_buf(&mut buf)
+}
+
+#[cfg(test)]
+pub fn udp_connections() -> i32 {
+    let mut buf = [0u8; 8192];
+    udp_connections_with_buf(&mut buf)
+}
+
 #[cfg(target_os = "linux")]
+fn count_lines_with_buf(path: &str, buf: &mut [u8]) -> std::io::Result<i32> {
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path)?;
+    let mut lines: usize = 0;
+    let mut last_byte: Option<u8> = None;
+
+    loop {
+        let n = file.read(buf)?;
+        if n == 0 {
+            break;
+        }
+        let chunk = &buf[..n];
+        lines += chunk.iter().filter(|&&b| b == b'\n').count();
+        last_byte = Some(chunk[n - 1]);
+    }
+
+    if let Some(last) = last_byte
+        && last != b'\n'
+    {
+        lines += 1;
+    }
+
+    Ok(lines.saturating_sub(1) as i32)
+}
+
+#[cfg(all(test, target_os = "linux"))]
 fn count_lines(path: &str) -> std::io::Result<i32> {
-    let content = std::fs::read_to_string(path)?;
-    Ok((content.lines().count().saturating_sub(1)) as i32)
+    let mut buf = [0u8; 8192];
+    count_lines_with_buf(path, &mut buf)
 }
 
 /// On Windows, run `netstat -an -p <protocol>` and count established/active lines.
@@ -73,17 +137,10 @@ fn count_connections_netstat(protocol: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate};
 
     #[test]
     fn test_count_positive() {
-        let mut sys = System::new_all();
-        sys.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing(),
-        );
-        assert!(count(&sys) > 0, "at least the test process must be running");
+        assert!(count() > 0, "at least the test process must be running");
     }
 
     #[test]

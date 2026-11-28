@@ -1,37 +1,86 @@
+#[cfg(feature = "gpu")]
+use std::time::{Duration, Instant};
+
 use serverbee_common::types::GpuReport;
 
-/// Collect GPU metrics. Returns None if no GPU is detected or NVML is unavailable.
-pub fn get_gpu_report() -> Option<GpuReport> {
+#[cfg(feature = "gpu")]
+const NVML_RETRY_INTERVAL: Duration = Duration::from_secs(60);
+
+#[derive(Default)]
+pub(crate) struct GpuCollector {
     #[cfg(feature = "gpu")]
-    {
-        get_gpu_report_nvml()
+    nvml: Option<nvml_wrapper::Nvml>,
+    #[cfg(feature = "gpu")]
+    last_init_attempt: Option<Instant>,
+}
+
+impl GpuCollector {
+    pub(crate) fn new() -> Self {
+        Self::default()
     }
 
-    #[cfg(not(feature = "gpu"))]
-    {
-        None
+    pub(crate) fn collect(&mut self) -> Option<GpuReport> {
+        #[cfg(feature = "gpu")]
+        {
+            self.collect_nvml()
+        }
+
+        #[cfg(not(feature = "gpu"))]
+        {
+            None
+        }
+    }
+
+    #[cfg(feature = "gpu")]
+    fn collect_nvml(&mut self) -> Option<GpuReport> {
+        use nvml_wrapper::Nvml;
+
+        if self.nvml.is_none() {
+            if self
+                .last_init_attempt
+                .is_some_and(|t| t.elapsed() < NVML_RETRY_INTERVAL)
+            {
+                return None;
+            }
+            self.last_init_attempt = Some(Instant::now());
+            match Nvml::init() {
+                Ok(n) => self.nvml = Some(n),
+                Err(e) => {
+                    tracing::debug!("NVML init failed (no NVIDIA GPU?): {e}");
+                    return None;
+                }
+            }
+        }
+
+        let nvml = self.nvml.as_ref()?;
+        match read_nvml_report(nvml) {
+            Ok(report) => report,
+            Err(_) => {
+                self.nvml = None;
+                None
+            }
+        }
     }
 }
 
+#[cfg(test)]
+pub fn get_gpu_report() -> Option<GpuReport> {
+    let mut collector = GpuCollector::new();
+    collector.collect()
+}
+
 #[cfg(feature = "gpu")]
-fn get_gpu_report_nvml() -> Option<GpuReport> {
-    use nvml_wrapper::Nvml;
+fn read_nvml_report(
+    nvml: &nvml_wrapper::Nvml,
+) -> Result<Option<GpuReport>, nvml_wrapper::error::NvmlError> {
     use serverbee_common::types::GpuInfo;
 
-    let nvml = match Nvml::init() {
-        Ok(n) => n,
-        Err(e) => {
-            tracing::debug!("NVML init failed (no NVIDIA GPU?): {e}");
-            return None;
-        }
-    };
+    let count = nvml.device_count()?;
+    if count == 0 {
+        return Ok(None);
+    }
 
-    let count = match nvml.device_count() {
-        Ok(c) if c > 0 => c,
-        _ => return None,
-    };
-
-    let mut gpus = Vec::new();
+    let mut gpus = Vec::with_capacity(count as usize);
     let mut total_usage = 0.0;
 
     for i in 0..count {
@@ -64,16 +113,16 @@ fn get_gpu_report_nvml() -> Option<GpuReport> {
     }
 
     if gpus.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let avg_usage = total_usage / gpus.len() as f64;
 
-    Some(GpuReport {
+    Ok(Some(GpuReport {
         count: gpus.len() as i32,
         average_usage: avg_usage,
         detailed_info: gpus,
-    })
+    }))
 }
 
 #[cfg(test)]
