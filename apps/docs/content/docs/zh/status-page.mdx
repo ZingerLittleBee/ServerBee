@@ -23,20 +23,22 @@ IP 地址、主机名、网卡等敏感标识会在 API 层脱敏，不会出现
 
 在 **Settings → Status Page** 中配置。状态页是单例：只有一个页面，原地编辑，而非按 slug 创建多个。
 
-| 设置 | API 字段 | 说明 |
-|------|----------|------|
-| 启用 | `enabled` | 禁用后公开页面不返回数据 |
-| 标题 | `title` | 公开页面标题 |
-| 描述 | `description` | 可选介绍文本 |
-| 服务器 | `server_ids` | 页面展示的服务器 |
-| 默认布局 | `default_layout` | `list` 或 `grid` |
-| 显示服务器详情 | `show_server_detail` | 允许下钻查看单台服务器详情 |
-| 显示网络 | `show_network` | 显示网络质量模块 |
-| 显示 IP 质量 | `show_ip_quality` | 显示 IP 质量模块 |
-| 显示事件 | `show_incidents` | 显示事件公告模块 |
-| 显示维护 | `show_maintenance` | 显示维护窗口模块 |
-| 黄色可用性阈值 | `uptime_yellow_threshold` | 低于该百分比的日期显示为降级 |
-| 红色可用性阈值 | `uptime_red_threshold` | 低于该百分比的日期显示为严重故障 |
+| 设置 | API 字段 | 默认值 | 说明 |
+|------|----------|--------|------|
+| 启用 | `enabled` | `false` | 设为 `false` 时，`GET /api/status/config` 仍返回 HTTP `200`（含 `enabled: false`），其余所有 `/api/status*` 端点均返回 `403 Forbidden` |
+| 标题 | `title` | -- | 公开页面标题 |
+| 描述 | `description` | -- | 可选介绍文本 |
+| 服务器 | `server_ids` | `[]` | 页面展示的服务器；空数组 `[]` 表示包含全部非隐藏服务器。`hidden = true` 的服务器始终被排除，查询范围外的 `{id}` 返回 `404` |
+| 默认布局 | `default_layout` | `"grid"` | `list` 或 `grid` |
+| 显示服务器详情 | `show_server_detail` | `true` | 允许下钻查看单台服务器详情 |
+| 显示网络 | `show_network` | `false` | 显示网络质量模块 |
+| 显示 IP 质量 | `show_ip_quality` | `false` | 显示 IP 质量模块 |
+| 显示事件 | `show_incidents` | `true` | 显示事件公告模块 |
+| 显示维护 | `show_maintenance` | `true` | 显示维护窗口模块 |
+| 黄色可用性阈值 | `uptime_yellow_threshold` | `99.0` | 低于该百分比的日期显示为降级 |
+| 红色可用性阈值 | `uptime_red_threshold` | `95.0` | 低于该百分比的日期显示为严重故障 |
+
+启用 `show_network` 时，若 `show_server_detail` 为 `true`，公开网络详情页位于 `/status/server/{id}?tab=network`；仅当 `show_server_detail` 为 `false` 时回退到 `/status/network/{id}`。
 
 ### 管理 API
 
@@ -52,6 +54,7 @@ IP 地址、主机名、网卡等敏感标识会在 API 层脱敏，不会出现
   "title": "Production Status",
   "description": "Public health for production services",
   "server_ids": ["server-id-1", "server-id-2"],
+  "show_ip_quality": false,
   "default_layout": "grid",
   "show_server_detail": true,
   "show_network": true,
@@ -65,22 +68,22 @@ IP 地址、主机名、网卡等敏感标识会在 API 层脱敏，不会出现
 
 ## 公开 API
 
-以下端点无需认证，是公开页面的数据来源：
+以下端点无需认证，是公开页面的数据来源。所有 `/api/status/*` 端点均受按 IP 限流保护，限制为 **每 60 秒 60 次请求**（超限时返回 `429 Too Many Requests`）。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/status/config` | 页面元数据和显示选项 |
+| GET | `/api/status/config` | 页面元数据和显示选项（即使 `enabled: false` 也返回 HTTP `200`） |
 | GET | `/api/status` | 选中服务器的状态、实时指标和可用性 |
 | GET | `/api/status/servers/{id}` | 单台服务器详情 |
-| GET | `/api/status/servers/{id}/metrics` | 单台服务器的时序指标 |
+| GET | `/api/status/servers/{id}/metrics` | 单台服务器的时序指标（原始记录查询窗口上限为 **25 小时**，小时聚合记录上限为 **120 天**） |
 | GET | `/api/status/servers/{id}/uptime-daily` | 单台服务器的 90 天每日可用性 |
 | GET | `/api/status/network` | 网络质量概览 |
 | GET | `/api/status/network/{id}` | 单台服务器网络质量详情 |
 | GET | `/api/status/ip-quality` | IP 质量概览 |
-| GET | `/api/status/incidents` | 活动和近期事件 |
+| GET | `/api/status/incidents` | 活动和近期事件（返回 `{ active, recent }`，其中 `recent` 为最近 7 天内已解决的事件） |
 | GET | `/api/status/maintenances` | 活动和计划中的维护窗口 |
 
-每个服务器条目包含 `id`、`name`、`group_name`、地区/国家、`os`、`online`、`in_maintenance`、`uptime_percent` 和 `uptime_daily`。
+每个 `PublicServerSummary` 服务器条目包含 `id`、`name`、`group_name`、`country_code`、`os`、`online`、`in_maintenance`、`public_remark`、`metrics`、`uptime_percent` 和 `uptime_daily`。
 
 ## 可用性时间线
 

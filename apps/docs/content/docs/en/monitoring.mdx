@@ -16,15 +16,20 @@ The main dashboard shows all registered servers with their current status at a g
 - **Disk I/O throughput** (read / write bytes per second, aggregated across devices) streamed live alongside network speed
 - **Network throughput** (upload / download speed)
 - **Load trend** (`load5 · load15` next to `load1`) and **uptime / swap / process / TCP / UDP** summary row
-- **Region and country** flags (when GeoIP is enabled)
+- **Region and country** flags (derived automatically from GeoIP or pinned manually per server)
 
 All data is driven over WebSocket, so the view refreshes in real time without a manual reload. Servers are organized by groups and sorted by weight. You can filter, search, and batch-operate on servers from this view.
 
 For custom operations views, use [Dashboards & Widgets](/en/docs/dashboards) to create additional dashboard layouts with charts, maps, service status widgets, Markdown notes, and uptime timelines.
 
-### GeoIP Display
+### GeoIP Display & Manual Country Override
 
-Region/country labels and the Server Map widget require GeoIP data. You can configure a custom MaxMind-compatible MMDB path with `geoip.mmdb_path`, or download the DB-IP Lite database from **Settings → GeoIP Database**. The status endpoint is `GET /api/geoip/status`, and administrators can trigger a download with `POST /api/geoip/download`.
+Region/country labels and the Server Map widget use GeoIP data by default. You can configure a custom MaxMind-compatible MMDB path with `geoip.mmdb_path`, or download the DB-IP Lite database from **Settings → Data sources** (`/settings`). The status endpoint is `GET /api/geoip/status`, and administrators can trigger a download with `POST /api/geoip/download`.
+
+You can also override a server's country flag manually when GeoIP is inaccurate or unavailable:
+
+- Selecting an ISO 3166-1 alpha-2 country code in the server edit dialog (or setting `country_code` via `PUT /api/servers/{id}`) stores the uppercase code and pins `geo_manual = true`, preventing automatic GeoIP lookups from overwriting `country_code` and `region` on subsequent agent reports.
+- Clearing the override (`country_code: null`) resets `geo_manual = false`, clears the stored `country_code` and `region`, and resumes automatic GeoIP detection on the next agent report.
 
 ## Real-Time Updates
 
@@ -95,7 +100,7 @@ The agent collects per-disk read/write throughput on all major platforms:
 | Read Speed | bytes/sec | Read throughput per disk |
 | Write Speed | bytes/sec | Write throughput per disk |
 
-**Linux**: Reads `/proc/diskstats` directly. Only physical block devices are tracked (e.g., `sda`, `nvme0n1`). Virtual devices (`loop*`, `dm-*`, `ram*`, `sr*`) and partitions are excluded. DiskIo.name is the block device name.
+**Linux**: Reads `/proc/diskstats` directly. Only physical block devices are tracked (e.g., `sda`, `nvme0n1`). Virtual devices (`loop*`, `dm-*`, `ram*`, `sr*`) and partitions are excluded. `DiskIo.name` is the block device name.
 
 **macOS / Windows**: Uses sysinfo `Disk::usage()` API with `mount_point()` as the key. This provides per-mount-path semantics (e.g., `/`, `/home`, `C:\`) rather than per-physical-disk. Known limitation: on macOS with APFS, multiple volumes sharing one physical disk may report overlapping I/O counters.
 
@@ -105,7 +110,7 @@ Disk I/O data is stored as a JSON column (`disk_io_json`) in the `records` and `
 
 ### GPU (Optional)
 
-When GPU monitoring is enabled (`enable_gpu = true`), per-device metrics are collected:
+GPU monitoring requires **both** `[collector] enable_gpu = true` in `agent.toml` **and** an agent binary compiled with the optional `gpu` Cargo feature (which uses `nvml-wrapper` and supports **NVIDIA GPUs only**). Without the `gpu` feature compiled in, GPU collection always returns no data. When available, per-device metrics are collected:
 
 | Metric | Description |
 |--------|-------------|
@@ -141,7 +146,7 @@ ServerBee stores metric records at two levels of granularity:
 ### Hourly Aggregated Records
 
 - Computed by the Aggregator background task
-- Averages of all raw records within each hour
+- Computes averages (`AVG`) across raw records within each hour for gauge metrics and disk I/O rates, and maximums (`MAX`) for cumulative transfer counters (`net_in_transfer`, `net_out_transfer`)
 - Retained for **90 days** by default (configurable via `retention.records_hourly_days`)
 - Used for long-term trend visualization
 
@@ -155,8 +160,8 @@ GPU metrics are stored separately in a dedicated table with per-device granulari
 
 Historical metrics are queried via the REST API:
 
-```
-GET /api/servers/:id/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&interval=auto
+```text
+GET /api/servers/{id}/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&interval=auto
 ```
 
 The `interval` parameter controls data granularity:
@@ -169,11 +174,11 @@ The `interval` parameter controls data granularity:
 
 ### Storage Tiers
 
-```
+```text
 Agent report (every 3s)
   --> In-memory cache: keeps only the latest sample per server (for real-time push)
   --> Every 1 minute: written to the records table (minute-level records)
-  --> Every 1 hour: aggregated into the records_hourly table (averages)
+  --> Every 1 hour: aggregated into the records_hourly table (AVG for gauges/rates, MAX for net_*_transfer)
 ```
 
 ## Server Details
@@ -230,14 +235,20 @@ ServerBee automatically cleans up expired data via a background task that runs o
 
 | Data Type | Default Retention | Config Key |
 |-----------|------------------|------------|
-| Minute-level metrics (records) | 7 days | `retention.records_days` |
-| Hourly metrics (records_hourly) | 90 days | `retention.records_hourly_days` |
-| GPU metrics (gpu_records) | 7 days | `retention.gpu_records_days` |
-| Ping probe records | 7 days | `retention.ping_records_days` |
-| Traffic hourly (traffic_hourly) | 7 days | `retention.traffic_hourly_days` |
-| Traffic daily (traffic_daily) | 400 days | `retention.traffic_daily_days` |
-| Task results (task_results) | 7 days | `retention.task_results_days` |
-| Audit logs | 180 days | `retention.audit_logs_days` |
+| Minute-level metrics (`records`) | 7 days | `retention.records_days` |
+| Hourly metrics (`records_hourly`) | 90 days | `retention.records_hourly_days` |
+| GPU metrics (`gpu_records`) | 7 days | `retention.gpu_records_days` |
+| Ping probe records (`ping_records`) | 7 days | `retention.ping_records_days` |
+| Network probe raw & traceroute records (`network_probe_record`, `traceroute_record`) | 7 days | `retention.network_probe_days` |
+| Network probe hourly aggregates (`network_probe_hourly`) | 90 days | `retention.network_probe_hourly_days` |
+| Traffic hourly (`traffic_hourly`) | 7 days | `retention.traffic_hourly_days` |
+| Traffic daily (`traffic_daily`) | 400 days | `retention.traffic_daily_days` |
+| Task results (`task_results`) | 7 days | `retention.task_results_days` |
+| Docker events (`docker_events`) | 7 days | `retention.docker_events_days` |
+| Service monitor records (`service_monitor_records`) | 30 days | `retention.service_monitor_days` |
+| Security events (`security_events`) | 30 days | `retention.security_event_days` |
+| IP quality status-change events (`unlock_event`) | 90 days | `retention.ip_quality_event_days` |
+| Audit logs (`audit_logs`) | 180 days | `retention.audit_logs_days` |
 
 <Callout type="info">
 Aggregation and cleanup run as separate hourly background tasks with no fixed ordering. Cleanup starts with a 60-second offset, which only staggers their work. Each aggregation run rolls up only the previous completed hour, so a missed hour is not backfilled; monitor task errors if long-term hourly history matters.
@@ -278,6 +289,7 @@ In addition to groups, you can attach multiple tags to a server for more flexibl
 | Action | Description |
 |--------|-------------|
 | Edit name and remarks | Change the server's display name and remarks |
+| Set country / region override | Pin an ISO 3166-1 alpha-2 country code (`geo_manual = true`) or clear it to resume automatic GeoIP |
 | Set group | Assign the server to a specific group |
 | Manage tags | Add or remove server tags |
 | Adjust sorting | Control display order via the weight value |
@@ -287,7 +299,7 @@ In addition to groups, you can attach multiple tags to a server for more flexibl
 
 ## Data Flow
 
-```
+```text
 Agent                  Server                    Browser
   |                      |                         |
   |-- Report (3s) ------>|                         |
@@ -300,17 +312,17 @@ Agent                  Server                    Browser
   |                      |                     real-time UI
   |                      |                         |
   |                      |-- Aggregator (hourly) ->|
-  |                      |   hourly averages       |
+  |                      |   hourly rollup         |
   |                      |                         |
   |                      |-- Cleanup (hourly) ---->|
   |                      |   delete old records    |
 ```
 
-The agent reports every 3 seconds. The server caches the latest report in memory and immediately broadcasts it to connected browsers. Every 60 seconds, all cached reports are batch-written to SQLite. Separate hourly tasks aggregate raw records into hourly summaries and clean up expired data based on retention settings.
+The agent reports every 3 seconds. The server caches the latest report in memory and immediately broadcasts it to connected browsers. Every 60 seconds, all cached reports are batch-written to SQLite. Separate hourly tasks aggregate raw records into hourly summaries (`AVG` for gauge/rate metrics, `MAX` for `net_*_transfer`) and clean up expired data based on retention settings.
 
 ## Network Quality Views
 
-The `/network` overview and `/network/{server_id}` detail pages summarize configured probe targets for each server.
+The `/network` overview and `/servers/{id}?tab=network` detail tab summarize configured probe targets for each server (the legacy `/network/{server_id}` route redirects to `/servers/{id}?tab=network`).
 
 - Newly assigned targets appear immediately, even before the first probe result is written
 - Targets without probe data render a no-data state instead of disappearing from the summary
@@ -346,13 +358,15 @@ Traffic tracking is integrated into the existing metric recording pipeline:
 
 ### Traffic API
 
-Query traffic statistics for any server via `GET /api/servers/{id}/traffic`. The response includes:
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/servers/{id}/traffic` | Current cycle totals, usage percentage, end-of-cycle prediction, daily breakdown, and today's hourly breakdown |
+| GET | `/api/traffic/overview` | Fleet-wide traffic overview for all servers |
+| GET | `/api/traffic/overview/daily` | Fleet-wide daily traffic totals (`?days=30`) |
+| GET | `/api/traffic/{server_id}/daily` | Single-server daily traffic (`?from=YYYY-MM-DD&to=YYYY-MM-DD`, defaults to a 30-day inclusive window) |
+| GET | `/api/traffic/{server_id}/cycle` | Current and historical billing-cycle totals (`?history=6`) |
 
-- **Cycle totals** -- Total bytes in/out for the current billing cycle
-- **Usage percentage** -- Traffic used vs. the server's traffic limit (if configured)
-- **Prediction** -- Estimated end-of-cycle usage based on current consumption rate
-- **Daily breakdown** -- Per-day traffic totals within the billing cycle
-- **Hourly breakdown** -- Per-hour traffic totals for today
+When `traffic_limit` is configured on a server, `traffic_limit_type` controls which direction counts toward usage percentage and end-of-cycle prediction: `up` (outbound only), `down` (inbound only), or `sum` (inbound + outbound, default).
 
 ### Billing Cycles
 
@@ -385,7 +399,7 @@ Daily traffic aggregation respects the `scheduler.timezone` setting. Set this to
 
 ## Docker Container Monitoring
 
-ServerBee supports real-time Docker container monitoring when the agent has access to the Docker daemon. This feature requires the `docker` capability (`CAP_DOCKER`), which is off by default. Capabilities are agent-owned — enable it on the agent host by adding `docker` to its `[capabilities]` allow list (or `--allow-cap docker`) and restarting the agent. See [Capabilities](/en/docs/capabilities).
+ServerBee supports real-time Docker container monitoring and lifecycle management when the agent has access to the Docker daemon. This feature requires the `docker` capability (`CAP_DOCKER`), which is off by default. Capabilities are agent-owned -- enable it on the agent host by adding `docker` to its `[capabilities]` allow list (or `--allow-cap docker`) and restarting the agent. See [Capabilities](/en/docs/capabilities).
 
 ### Overview
 
@@ -417,7 +431,19 @@ Click any container row to view:
 4. Updates are broadcast to subscribing browsers in real time
 5. When all browsers leave the Docker page, monitoring stops automatically (viewer ref-counting)
 
-Container logs use a dedicated WebSocket endpoint (`/api/ws/docker/logs/{server_id}`) with subscribe/unsubscribe protocol for per-container log streaming.
+Container logs use a dedicated **admin-only** WebSocket endpoint (`/api/ws/docker/logs/{server_id}`) with subscribe/unsubscribe protocol for per-container log streaming.
+
+### Docker REST API
+
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| GET | `/api/servers/{id}/docker/containers` | Authenticated | List containers on the server |
+| GET | `/api/servers/{id}/docker/stats` | Authenticated | Latest container resource statistics |
+| GET | `/api/servers/{id}/docker/info` | Authenticated | Docker daemon system info |
+| GET | `/api/servers/{id}/docker/events` | Authenticated | Persisted Docker events (`?limit=100`) |
+| GET | `/api/servers/{id}/docker/networks` | Authenticated | List Docker networks |
+| GET | `/api/servers/{id}/docker/volumes` | Authenticated | List Docker volumes |
+| POST | `/api/servers/{id}/docker/containers/{cid}/action` | Admin only | Run a container lifecycle action (`Start`, `Stop`, `Restart`, or `Remove`) |
 
 ### Data Retention
 
@@ -425,7 +451,7 @@ Container logs use a dedicated WebSocket endpoint (`/api/ws/docker/logs/{server_
 |-----------|------------------|------------|
 | Docker events | 7 days | `retention.docker_events_days` |
 
-Container stats and logs are not persisted — they are streamed in real time only.
+Container stats and logs are not persisted -- they are streamed in real time only.
 
 ## Network Quality Monitoring
 
@@ -442,7 +468,7 @@ ServerBee includes a built-in network quality monitoring system that probes netw
 
 China targets use domain names (`{province}-{isp}-v4.ip.zstaticcdn.com:80`) that auto-resolve to the latest CDN node IPs. No IP maintenance is needed.
 
-Preset targets are read-only and cannot be edited or deleted. You can also create custom targets via the settings page.
+Preset targets are read-only and cannot be edited or deleted. You can also create custom targets via the settings page; custom probe targets pass through ServerBee's SSRF guard (blocking loopback, link-local, and cloud metadata addresses).
 
 ### Configuration
 
@@ -450,7 +476,8 @@ Navigate to **Settings > Network Probes** to configure:
 
 - **Target Management** -- View all 96 preset targets (with lock icon and ISP label) and manage custom targets (create/edit/delete)
 - **Global Settings** -- Probe interval (30-600 seconds, default 60), packets per round (5-20, default 10), and default targets auto-assigned to new servers
-- **Per-Server Targets** -- Assign up to 20 probe targets per server via the network detail page's "Manage Targets" dialog
+- **Per-Server Targets** -- Assign up to 20 probe targets per server via the network detail view's "Manage Targets" dialog
+- **Anomaly Thresholds** -- Configure latency anomaly thresholds in `server.toml` under `[network_probe]`: `high_latency_ms` (default `500`) and `very_high_latency_ms` (default `800`)
 
 ### Network Overview Page
 
@@ -460,11 +487,11 @@ The `/network` page shows a card for each server with:
 - Availability percentage
 - Anomaly count with severity indicators
 
-### Network Detail Page
+### Network Detail View
 
-Click a server card to see `/network/:serverId` with:
+Click a server card to open `/servers/{id}?tab=network` (the legacy `/network/{server_id}` path redirects here) with:
 
-- **Time range selector** -- Real-time, 1h, 6h, 24h, 7d, 30d
+- **Time range selector** -- Real-time, 1h, 6h, 24h, 7d, 30d (historical queries automatically switch from raw records to hourly aggregates for ranges of `>= 1 day`)
 - **Target cards** -- Per-target latency and packet loss, with toggle visibility
 - **Multi-line latency chart** -- One colored line per target, tooltips with timestamps
 - **Anomaly table** -- High latency, high packet loss, and unreachable events
@@ -473,14 +500,15 @@ Click a server card to see `/network/:serverId` with:
 
 ### Traceroute
 
-The network detail page can run traceroute from the selected agent to a target host or IP to diagnose routing changes and packet loss.
+The network detail view can run traceroute from the selected agent to a target host or IP to diagnose routing changes and packet loss.
 
 - Requires the agent's effective `CAP_PING_ICMP` capability.
-- The target may contain only letters, numbers, dots, hyphens, and colons.
-- The dialog exposes an ICMP / UDP / TCP protocol dropdown.
-- 5 rounds by default; each round is streamed over WebSocket and the table fills in real time with:
+- The target may contain only letters, numbers, dots, hyphens, and colons, and is subject to the agent's SSRF guard.
+- The dialog exposes an ICMP / UDP / TCP protocol dropdown (default destination port `33434` for UDP and `80` for TCP).
+- Runs with up to `30` hops (`max_hops = 30`), a `60`-second overall timeout, and 5 rounds by default; each round is streamed over WebSocket and the table fills in real time with:
   Hop / IP / Hostname / ASN / Loss% / Best / Avg / Worst / Jitter / StdDev.
-- For ECMP multi-path routes, a single TTL may have multiple IPs — the first row shows the primary IP, hover the `+N` chip to see the rest.
+- The server enriches hop IPs using a cached reverse-DNS (PTR) lookup (1-hour TTL, 4096 entries) and optional DB-IP ASN MMDB lookup (`asn.mmdb_path`, managed via **Settings → Data sources** or `GET /api/asn/status` and `POST /api/asn/download`).
+- For ECMP multi-path routes, a single TTL may have multiple IPs -- the first row shows the primary IP, hover the `+N` chip to see the rest.
 - Completed traceroutes are persisted to local SQLite. Click any history row to load that snapshot;
   admins can delete one row or clear the whole history.
 - Triggering a trace requires admin. Read-only members can browse history but cannot start a new trace or delete records.
@@ -496,7 +524,7 @@ The ServerBee agent now embeds [trippy-core](https://crates.io/crates/trippy-cor
 | macOS | Run as root (sudo). In some scenarios, unprivileged ICMP datagram sockets work as a fallback. |
 | Windows | Start the agent as Administrator. |
 
-If privileges are missing, the traceroute call returns an error immediately with the matching platform hint — no agent restart needed.
+If privileges are missing, the traceroute call returns an error immediately with the matching platform hint -- no agent restart needed.
 
 #### API flow
 
@@ -514,15 +542,15 @@ The server broadcasts `BrowserMessage::TracerouteUpdate` carrying the incrementa
 
 Network probe records follow the same two-tier storage as system metrics:
 
-- **Raw records** -- Retained for 7 days (configurable via `retention.network_probe_days`)
+- **Raw probe records & traceroute history** -- Retained for 7 days (configurable via `retention.network_probe_days`, which governs both `network_probe_record` and `traceroute_record`)
 - **Hourly aggregates** -- Retained for 90 days (configurable via `retention.network_probe_hourly_days`)
 
 ### Alert Integration
 
-Two alert rule types are available for network quality:
+Two alert rule types are available for network quality, evaluated against the maximum (`MAX`) value across all probe targets over the last 10 minutes:
 
-- `network_latency` -- Triggers when average latency exceeds a threshold
-- `network_packet_loss` -- Triggers when packet loss exceeds a threshold
+- `network_latency` -- Triggers when maximum probe latency (ms) meets the threshold
+- `network_packet_loss` -- Triggers when maximum probe packet loss percentage (`0`–`100`) meets the threshold
 
 <Cards>
   <Card title="Alerts & Notifications" href="/en/docs/alerts" />

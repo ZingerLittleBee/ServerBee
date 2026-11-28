@@ -23,15 +23,15 @@ Unlike Ping Monitoring, which asks agents to probe network targets, Service Moni
 1. Open **Settings → Service Monitors**.
 2. Click **New Monitor**.
 3. Choose a monitor type and enter the target.
-4. Set the check interval in seconds.
+4. Set the check interval in seconds (default `300` seconds) and optional retry count (default `1`).
 5. Configure type-specific options.
 6. Optionally select a notification group.
 7. Save the monitor.
 
-The background checker wakes every 10 seconds, schedules due monitors based on their `interval`, and runs up to 20 checks concurrently.
+The background checker wakes every 10 seconds, schedules due monitors based on their `interval`, and runs up to 20 checks concurrently. Each monitor also has a per-monitor overlap guard so two checks for the same monitor never run simultaneously.
 
 <Callout type="warn">
-As an SSRF safeguard, targets that resolve to loopback (`127.0.0.0/8`, `::1`, `localhost`), link-local, the cloud metadata endpoint (`169.254.169.254`), or other non-routable addresses are blocked. SSL, TCP, and HTTP Keyword monitors reject such targets when you save the monitor, and the guard is re-applied on every HTTP redirect hop. Private LAN ranges (`10/8`, `172.16/12`, `192.168/16`, and IPv6 ULA) remain allowed so you can monitor internal hosts.
+As an SSRF safeguard, targets pointing or resolving to loopback (`127.0.0.0/8`, `::1`, `localhost`), link-local, the cloud metadata endpoint (`169.254.169.254`), or other non-routable addresses are blocked. For SSL, TCP, and HTTP Keyword monitors, save-time validation checks literal hostnames and IP addresses only (without DNS resolution); hostnames that resolve to blocked addresses are rejected at runtime by the checkers, and the guard is re-applied on every HTTP redirect hop. Custom DNS `nameserver` targets are also SSRF-checked at runtime. Private LAN ranges (`10/8`, `172.16/12`, `192.168/16`, and IPv6 ULA) remain allowed so you can monitor internal hosts.
 </Callout>
 
 ## Type-Specific Configuration
@@ -64,7 +64,7 @@ As an SSRF safeguard, targets that resolve to loopback (`127.0.0.0/8`, `::1`, `l
 - `record_type` defaults to `A` and supports `A`, `AAAA`, `CNAME`, `MX`, and `TXT`.
 - If `expected_values` is omitted, the check passes when resolution returns at least one value.
 - If `expected_values` is present, the sorted returned values must exactly match the sorted expected values.
-- `nameserver` is optional. When omitted, the system resolver is used.
+- `nameserver` is optional (SSRF-checked at runtime). When omitted, the system resolver is used.
 
 ### HTTP Keyword
 
@@ -84,9 +84,10 @@ As an SSRF safeguard, targets that resolve to loopback (`127.0.0.0/8`, `::1`, `l
 
 - `method` supports `GET` and `POST`.
 - `expected_status` defaults to `[200]`.
-- If `keyword` is set, `keyword_exists: true` requires it to appear; `false` requires it to be absent.
+- If `keyword` is set, `keyword_exists: true` requires it to appear; `false` requires it to be absent. Keyword matching is a **case-sensitive** substring check.
 - `headers` values must be strings.
 - `body` is used for `POST` requests.
+- Enforces strict TLS certificate validation, follows up to **10 redirects**, and downgrades the method to `GET` while stripping custom `headers` and `body` on redirect hops.
 
 ### TCP Port
 
@@ -117,7 +118,7 @@ Each monitor can link to a notification group. On every check:
 
 1. A record is written with `success`, `latency`, `detail_json`, `error`, and `time`.
 2. The monitor updates `last_status`, `last_checked_at`, and `consecutive_failures`.
-3. Failure notifications are sent only after `consecutive_failures > retry_count`.
+3. Failure notifications are sent only after `consecutive_failures > retry_count` (default `retry_count` is `1`).
 4. Recovery notifications are sent when a monitor was failing and the next check succeeds.
 
 If a monitor is associated with servers and any of those servers is currently in an active maintenance window, notifications are skipped for that check. The check record is still stored.
@@ -143,7 +144,7 @@ Service monitor records are retained for 30 days by default (`retention.service_
 | PUT | `/api/service-monitors/{id}` | Update a monitor |
 | DELETE | `/api/service-monitors/{id}` | Delete a monitor and its records |
 | GET | `/api/service-monitors/{id}/records` | Query records with optional `from`, `to`, and `limit` |
-| POST | `/api/service-monitors/{id}/check` | Trigger an immediate check |
+| POST | `/api/service-monitors/{id}/check` | Trigger an immediate check (returns `409 Conflict` if a check for this monitor is already running) |
 
 Create request example:
 

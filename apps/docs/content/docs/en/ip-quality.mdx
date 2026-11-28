@@ -6,10 +6,10 @@ icon: Globe
 
 IP Quality lets each agent assess its VPS egress IP and report the results back to the server. It does two things:
 
-1. **Service unlock detection** — the agent issues HTTP requests from its egress IP to determine the unlock status of popular streaming, AI, and social services.
-2. **IP metadata and risk signals** — the server derives country and region from its local GeoIP database, then uses the configured third-party provider for supported network-type flags and, when available, a fraud risk score.
+1. **Service unlock detection** -- the agent issues HTTP requests from its egress IP to determine the unlock status of popular streaming, AI, and social services.
+2. **IP metadata and risk signals** -- the server derives country and region from its local GeoIP database, then uses the configured third-party provider for supported network-type flags and, when available, a fraud risk score.
 
-Results appear on a dedicated **IP Quality** sidebar route (global overview), a per-server detail tab, and — when enabled per status page — on the public status page.
+Results appear on a dedicated **IP Quality** sidebar route (global overview), a per-server detail tab, and -- when enabled on the public status page -- on `/status`.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ Results appear on a dedicated **IP Quality** sidebar route (global overview), a 
 
 ## Capability (agent-owned)
 
-`CAP_IP_QUALITY` is owned by the agent host, like every capability — the server cannot turn it on or off. It is enabled by default, so no action is needed to use IP Quality. To **disable** it on a specific host, add `ip_quality` to the agent's `[capabilities]` deny list (or pass `--deny-cap ip_quality`) and restart the agent:
+`CAP_IP_QUALITY` is owned by the agent host, like every capability -- the server cannot turn it on or off. It is enabled by default, so no action is needed to use IP Quality. To **disable** it on a specific host, add `ip_quality` to the agent's `[capabilities]` deny list (or pass `--deny-cap ip_quality`) and restart the agent:
 
 ```toml
 [capabilities]
@@ -56,22 +56,32 @@ In addition to the built-in set, administrators can define custom services in **
 
 Each custom service consists of:
 
-- **URL** — the endpoint to probe. Must use `https://` or `http://` on port 80 or 443. Private / loopback addresses are rejected at creation time and re-validated by the agent on each request and redirect hop (SSRF guard).
-- **Method** — HTTP method (`GET`, `HEAD`, etc.) and optional request headers.
-- **Match rules** — an ordered list of rules evaluated against the response. The first matching rule wins. Each rule matches on one of:
+- **URL** -- the endpoint to probe. When saving a custom service, the server validates that the URL uses `https://` or `http://` on port `80` or `443`. SSRF validation (blocking private, loopback, link-local, and cloud metadata addresses) runs on the **agent at probe time** on every request and redirect hop.
+- **Method** -- HTTP method (`GET`, `HEAD`, etc.) and optional request headers.
+- **Match rules** -- an ordered list of rules evaluated against the response. The first matching rule wins. Each rule matches on one of:
   - HTTP status code (exact or range)
   - Response body regex
   - Redirect target URL pattern
 
 The possible results are `unlocked`, `restricted`, `blocked`, `failed`, or `unsupported`.
 
+### Agent Execution Limits
+
+The agent enforces the following runtime limits on unlock probes:
+
+- **Concurrency cap**: up to `5` concurrent service checks per agent.
+- **Redirects**: at most `5` redirect hops per request.
+- **Response body cap**: `256 KiB` maximum read per probe.
+- **Minimum timeout floor**: per-request timeout is clamped to at least `1000 ms`.
+
 ## Check Cadence
 
 The agent runs checks:
 
-- **On schedule** — every 12 hours by default, configurable in **Settings → IP Quality → Settings → Check interval**.
-- **When the egress IP changes** — the agent automatically reruns on detected IP changes.
-- **On demand** — click **Check now** on any server's IP Quality tab.
+- **On initial sync** -- runs an automatic check immediately when the agent receives its first `IpQualitySync`.
+- **On schedule** -- every `12` hours by default, configurable in **Settings → IP Quality → Settings → Check interval** (`check_interval_hours`, valid range `1`–`168` hours).
+- **When the egress IP changes** -- the agent automatically reruns on detected IP changes.
+- **On demand** -- click **Check now** on any server's IP Quality tab.
 
 Check schedules are agent-side. The server only pushes the service catalog and forwards manual triggers.
 
@@ -80,7 +90,14 @@ Check schedules are agent-side. The server only pushes the service catalog and f
 After receiving unlock results from an agent, the server:
 
 1. **Derives available baseline metadata** from a loaded local GeoIP MMDB, without an external request. The downloadable DB-IP Lite Country database provides country and region. If the MMDB is missing, unreadable, or does not cover the address, local baseline fields remain empty.
-2. **Runs the configured third-party provider unless `risk_provider` is `none`.** Anonymous ipapi.is supplies proxy, VPN, datacenter, Tor, and abuse flags, which ServerBee also uses to derive IP type, but its minimal response does not contain the nested score fields. A numeric 0–100 score and risk level (`low` / `medium` / `high`) require an ipapi.is API key and its full response. Results are cached by IP for 24 hours, so repeated checks of the same IP do not generate repeated API calls.
+2. **Runs the configured third-party provider unless `risk_provider` is `none`.** Anonymous ipapi.is supplies proxy, VPN, datacenter, Tor, abuse, and mobile flags, which ServerBee also uses to derive IP type, but its minimal response does not contain the nested score fields. A numeric `0`–`100` score, risk level, and additional fields (`is_mobile`, `asn_abuser_score`, `abuse_email`) require an ipapi.is API key and its full response. Results are cached by IP for 24 hours, so repeated checks of the same IP do not generate repeated API calls.
+
+Risk level thresholds derived from `risk_score`:
+
+- `0`–`33`: `low`
+- `34`–`66`: `medium`
+- `67+`: `high`
+- `null`: `unknown`
 
 If no provider returns a numeric score, `risk_score` and `risk_level` are `null` / `unknown`. Local metadata appears only when a usable MMDB is loaded.
 
@@ -129,11 +146,11 @@ Full configuration reference: [Configuration → IP Quality](/en/docs/configurat
 
 | Where | What it shows |
 |-------|---------------|
-| **IP Quality** sidebar route (`/ip-quality`) | All-servers × services unlock matrix; IP quality card per server (ASN, IP type, risk score and level badge, proxy/VPN markers) |
+| **IP Quality** sidebar route (`/ip-quality`) | All-servers × services unlock matrix; IP quality card per server (IP type, country/region when GeoIP MMDB is loaded, risk score and level badge, and proxy/VPN/datacenter/Tor/abuser/mobile markers) |
 | Server detail → **IP Quality** tab | Single server's IP quality card, its unlock matrix, status-change history, and a **Check now** button |
-| Public status page | Unlock matrix section, shown only when `show_ip_quality` is enabled for that page |
+| Public status page (`/status`) | Unlock matrix section, shown only when `show_ip_quality` is enabled on the status page |
 
-Unlock status updates appear in real time over WebSocket — no page refresh required.
+Unlock status updates appear in real time over WebSocket -- no page refresh required.
 
 ## Unlock Status Values
 
@@ -147,12 +164,12 @@ Unlock status updates appear in real time over WebSocket — no page refresh req
 
 ## Public Status Page Exposure
 
-IP Quality is **off by default** on all public status pages. To enable it for a specific page:
+IP Quality is **off by default** on the public status page (which is a singleton). To enable it:
 
-1. Go to **Settings → Status Pages**, edit the page.
-2. Toggle on **Show IP Quality**.
+1. Go to **Settings → Status Page**.
+2. Toggle on **Show IP Quality** (`show_ip_quality: true`).
 
-For unauthenticated visitors, the egress IP is masked as `*.*.*.*`. Authenticated viewers see the full IP.
+The public endpoint `GET /api/status/ip-quality` is unauthenticated and returns `PublicIpQualitySnapshot`, which completely omits the egress `ip` address as well as detailed metadata and flags (`asn`, `as_org`, `region`, `city`, `is_proxy`, `is_vpn`, `is_hosting`, `is_tor`, `is_abuser`, `is_mobile`, `asn_abuser_score`, `abuse_email`, and per-service unlock `detail`) regardless of whether the viewer is signed in.
 
 ## Retention
 
@@ -160,12 +177,27 @@ Status-change history events (the `unlock_event` log) are retained for **90 days
 
 The latest unlock result and IP quality snapshot per server are kept indefinitely (they are replaced on each run, not accumulated).
 
+## REST API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/ip-quality/services` | List all unlock services (built-in and custom) |
+| POST | `/api/ip-quality/services` | Create a custom unlock service (admin) |
+| PUT | `/api/ip-quality/services/{id}` | Update a service (admin) |
+| DELETE | `/api/ip-quality/services/{id}` | Delete a custom service (admin) |
+| GET | `/api/ip-quality/settings` | Get global IP quality settings |
+| PUT | `/api/ip-quality/settings` | Update global IP quality settings (admin) |
+| GET | `/api/ip-quality/overview` | Fleet-wide unlock matrix and IP quality snapshots |
+| GET | `/api/ip-quality/servers/{id}` | Single server's IP quality snapshot and unlock results |
+| POST | `/api/ip-quality/servers/{id}/check` | Trigger an on-demand check for a server (admin) |
+| GET | `/api/ip-quality/events` | List unlock status-change events (`?server_id=...&limit=100`) |
+
 ## Data Flow
 
 ```text
 Agent
   │  (CAP_IP_QUALITY effective)
-  ├─ runs unlock checks every interval_hours / on IP change / on RunNow
+  ├─ runs unlock checks on first sync / every interval_hours / on IP change / on RunNow
   │   AgentMessage::UnlockResults  (WebSocket)
   ▼
 Server

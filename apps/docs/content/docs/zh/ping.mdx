@@ -10,22 +10,32 @@ ServerBee 内置 Ping 监控功能，通过分布在不同服务器上的 Agent 
 
 ServerBee 支持三种探测类型。每种都会测量往返延迟并上报成功 / 失败状态。
 
-| 类型 | 探测内容 | 目标格式 | 超时 | 权限要求 |
+| 类型 | 探测内容 | 目标格式 | 超时 | 运行要求 |
 |------|----------|----------|------|----------|
-| **ICMP** | 标准 ICMP Echo 请求 / 应答 | IP 或域名（如 `1.1.1.1`、`google.com`） | 10 秒 | Linux 下需 `CAP_NET_RAW` |
-| **TCP** | TCP 连接测试（握手） | `host:port`（如 `google.com:443`） | 10 秒 | 无 |
-| **HTTP** | HTTP(S) GET 请求与响应时间 | 完整 URL（如 `https://example.com/health`） | 10 秒 | 无 |
+| **ICMP** | 调用系统 `ping -c 1 -W 5 <host>` 命令 | IP 或域名（如 `1.1.1.1`、`google.com`） | 单次 5 秒（命令总超时 10 秒） | `PATH` 中存在系统 `ping` 命令；Agent 启用 `CAP_PING_ICMP` |
+| **TCP** | TCP 连接测试（握手） | `host:port`（如 `google.com:443`） | 10 秒 | Agent 启用 `CAP_PING_TCP` |
+| **HTTP** | HTTP(S) GET 请求与响应时间 | 完整 URL（如 `https://example.com/health`） | 10 秒 | Agent 启用 `CAP_PING_HTTP` |
+
+### 探测行为与安全防护
+
+- **ICMP**：Agent 直接调用宿主机系统 `ping` 二进制（`ping -c 1 -W 5 <host>`），而不是自己打开原始套接字。
+- **HTTP**：不跟随 HTTP 重定向，接受无效或自签名 TLS 证书；若目标省略协议头则自动补全 `http://`；将 HTTP `2xx` 与 `3xx` 响应视为成功。
+- **SSRF 防护**：回环地址（`127.0.0.0/8`、`::1`、`localhost`）、链路本地地址以及云元数据端点（`169.254.169.254`）在服务端保存任务和 Agent 运行时都会被拦截。
+
+## 能力门控（由 Agent 拥有）
+
+三种探测类型分别受独立的 Agent 能力门控：`ping_icmp`（`CAP_PING_ICMP`）、`ping_tcp`（`CAP_PING_TCP`）和 `ping_http`（`CAP_PING_HTTP`）。三者均**默认开启**（属于 `CAP_DEFAULT`）。若某台 Agent 主机在 `[capabilities].deny` 中（或通过 `--deny-cap`）禁用了某项能力，该 Agent 会跳过对应类型的探测任务。见 [功能开关](/zh/docs/capabilities)。
 
 ## 创建 Ping 任务
 
-在管理面板的「Ping 探测」页面创建探测任务，也可通过 API 创建。每个任务需要配置：
+在管理面板的 **设置 → Ping 任务**（`/settings/ping-tasks`）页面创建探测任务，也可通过 API 创建。每个任务需要配置：
 
 | 配置项 | 说明 |
 |--------|------|
 | 任务名称 | 用于标识的名称，如「Cloudflare DNS」 |
 | 探测类型 | `icmp`、`tcp` 或 `http` |
 | 目标地址 | 待探测的目标（格式取决于探测类型） |
-| 探测间隔 | 探测频率，单位秒 |
+| 探测间隔 | 探测频率，单位秒（Agent 强制下限为 `5` 秒） |
 | 执行节点 | 选择哪些 Agent 执行此探测 |
 | 启用状态 | 是否启用此任务 |
 
@@ -37,7 +47,7 @@ ServerBee 支持三种探测类型。每种都会测量往返延迟并上报成�
 |--------|-----|
 | 名称 | Cloudflare DNS |
 | 探测类型 | icmp |
-| 目标 | 1.1.1.1 |
+| 目标 | `1.1.1.1` |
 | 间隔 | 60 |
 
 ### 示例：TCP 端口检查
@@ -48,7 +58,7 @@ ServerBee 支持三种探测类型。每种都会测量往返延迟并上报成�
 |--------|-----|
 | 名称 | PostgreSQL Primary |
 | 探测类型 | tcp |
-| 目标 | db.internal:5432 |
+| 目标 | `db.internal:5432` |
 | 间隔 | 30 |
 
 ### 示例：HTTP 健康检查
@@ -59,7 +69,7 @@ ServerBee 支持三种探测类型。每种都会测量往返延迟并上报成�
 |--------|-----|
 | 名称 | API Health |
 | 探测类型 | http |
-| 目标 | https://api.example.com/health |
+| 目标 | `https://api.example.com/health` |
 | 间隔 | 60 |
 
 ## 目标格式
@@ -69,12 +79,12 @@ ServerBee 支持三种探测类型。每种都会测量往返延迟并上报成�
 | 探测类型 | 目标格式 | 示例 |
 |----------|----------|------|
 | ICMP | IP 地址或域名 | `1.1.1.1`、`google.com` |
-| TCP | host:port | `example.com:443`、`10.0.0.1:3306` |
+| TCP | `host:port` | `example.com:443`、`10.0.0.1:3306` |
 | HTTP | 完整 URL | `https://example.com`、`http://10.0.0.1:8080/health` |
 
 ## 间隔设置
 
-探测间隔以秒为单位，建议根据目标的重要性和探测类型合理设置：
+探测间隔以秒为单位。Agent 强制执行 **5 秒最小下限**（小于 5 秒的值会自动钳制为 `5` 秒）。建议根据目标的重要性和探测类型合理设置：
 
 | 场景 | 建议间隔 |
 |------|----------|
@@ -108,7 +118,7 @@ Server 在以下时机会向 Agent 同步探测任务：
 
 ## 分配执行节点
 
-`server_ids_json` 字段控制哪些 Agent 执行探测：
+在创建和更新 API 请求（`POST /api/ping-tasks`、`PUT /api/ping-tasks/{id}`）中，`server_ids` 数组控制哪些 Agent 执行探测（在数据库与响应记录中以 `server_ids_json` 字段存储和返回）：
 
 - **指定节点**：填写服务器 ID 数组，如 `["srv-1", "srv-2"]`
 - **全部节点**：使用空数组 `[]`
@@ -146,8 +156,8 @@ Server 在以下时机会向 Agent 同步探测任务：
 
 通过 REST API 查询探测记录：
 
-```
-GET /api/ping-tasks/:id/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&server_id=xxx
+```text
+GET /api/ping-tasks/{id}/records?from=2026-03-13T00:00:00Z&to=2026-03-14T00:00:00Z&server_id=xxx
 ```
 
 支持按时间范围和执行节点筛选。
@@ -163,12 +173,12 @@ ping_records_days = 14
 
 清理任务每小时执行一次，移除超过保留期的记录。
 
-## 与告警集成
+## 与告警及网络质量监控的关系
 
-Ping 监控可以与告警规则结合使用。通过 `network_latency` 和 `network_packet_loss` 规则类型，可针对探测延迟或丢包配置告警，在关键目标性能下降或不可达时及时收到通知。Ping 数据与常规监控数据一并存储，可复用同一套告警基础设施。详见 [告警与通知](/zh/docs/alerts)。
+Ping 任务目前**不会**触发告警规则。如需针对网络延迟或丢包配置告警，请使用[网络质量监控](/zh/docs/monitoring#网络质量监控)探测，并在[告警与通知](/zh/docs/alerts)中配置 `network_latency` 或 `network_packet_loss` 规则。
 
 <Cards>
   <Card title="监控功能" href="/zh/docs/monitoring" />
   <Card title="告警与通知" href="/zh/docs/alerts" />
-  <Card title="Agent 配置" href="/zh/docs/agent" />
+  <Card title="功能开关" href="/zh/docs/capabilities" />
 </Cards>
