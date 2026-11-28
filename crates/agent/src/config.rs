@@ -194,12 +194,51 @@ pub struct LogConfig {
 pub struct FileConfig {
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_csv_or_seq")]
     pub root_paths: Vec<String>,
     #[serde(default = "default_max_file_size")]
     pub max_file_size: u64,
-    #[serde(default = "default_deny_patterns")]
+    #[serde(
+        default = "default_deny_patterns",
+        deserialize_with = "deserialize_csv_or_seq"
+    )]
     pub deny_patterns: Vec<String>,
+}
+
+fn deserialize_csv_or_seq<'de, D>(de: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error, Visitor};
+    use std::fmt;
+
+    struct CsvOrSeq;
+    impl<'de> Visitor<'de> for CsvOrSeq {
+        type Value = Vec<String>;
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a sequence of strings or a comma-separated string")
+        }
+        fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
+            Ok(v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect())
+        }
+        fn visit_string<E: Error>(self, v: String) -> Result<Self::Value, E> {
+            self.visit_str(&v)
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut out = Vec::new();
+            while let Some(item) = seq.next_element::<String>()? {
+                out.push(item);
+            }
+            Ok(out)
+        }
+    }
+    de.deserialize_any(CsvOrSeq)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

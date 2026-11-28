@@ -1483,7 +1483,7 @@ async fn check_network_packet_loss(
 
     let worst = records
         .iter()
-        .map(|r| r.packet_loss)
+        .map(|r| r.packet_loss * 100.0)
         .fold(f64::NEG_INFINITY, f64::max);
 
     match (item.min, item.max) {
@@ -2969,8 +2969,8 @@ mod tests {
         assert!(!check_network_packet_loss(&db, "srv-1", &item).await);
 
         // Worst packet_loss of 25% exceeds a 10% threshold => triggers.
-        insert_probe(&db, "srv-1", Some(20.0), 5.0).await;
-        insert_probe(&db, "srv-1", Some(20.0), 25.0).await;
+        insert_probe(&db, "srv-1", Some(20.0), 0.05).await;
+        insert_probe(&db, "srv-1", Some(20.0), 0.25).await;
         assert!(check_network_packet_loss(&db, "srv-1", &item).await);
 
         // A 30% threshold is above the worst 25% => false.
