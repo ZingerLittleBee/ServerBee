@@ -10,7 +10,7 @@ The ServerBee server is the central component that hosts the web dashboard, mana
 
 ### Install script (recommended)
 
-The easiest path is the one-line install script. In binary mode it detects the architecture, downloads the binary, generates the config, registers and starts a systemd or OpenRC service, and symlinks the `serverbee` management CLI. The server supports two quick installs:
+The easiest path is the one-line install script. In binary mode it detects the architecture, downloads the binary, generates the config, registers and starts a systemd or OpenRC service, and installs the `serverbee` management CLI. The server supports two quick installs:
 
 ```bash
 # Option A: install with an IP (plain HTTP), reachable at http://<server-ip>:9527
@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --domain monitor.example.com --email admin@example.com -y
 ```
 
-Script layout: binary in `/opt/serverbee/bin/`, config in `/opt/serverbee/etc/server.toml`, data in `/opt/serverbee/data/`, and the management CLI symlinked to `/usr/local/bin/serverbee`. See [Quick Install](/en/docs/quick-start) for the full walkthrough.
+Script layout: binary in `/opt/serverbee/bin/`, config in `/opt/serverbee/etc/server.toml`, data in `/opt/serverbee/data/`, and the management CLI installed to `/usr/local/bin/serverbee`. See [Quick Install](/en/docs/quick-start) for the full walkthrough.
 
 ### Pre-built Binary (manual)
 
@@ -40,9 +40,11 @@ docker run -d \
   --name serverbee-server \
   -p 9527:9527 \
   -v serverbee-data:/data \
-  -e MALLOC_ARENA_MAX=2 \
+  -e SERVERBEE_AUTH__SECURE_COOKIE=false \
   ghcr.io/zingerlittlebee/serverbee-server:1.0.0-beta.7
 ```
+
+`SERVERBEE_AUTH__SECURE_COOKIE=false` allows browser sign-in over plain HTTP (for example `http://<server-ip>:9527`). Omit it (or set it to `true`) once you place the server behind HTTPS.
 
 ### Build from Source
 
@@ -58,9 +60,10 @@ cargo build --release -p serverbee-server
 
 The server reads configuration from TOML files in the following order, with later sources overriding earlier ones:
 
-1. `/etc/serverbee/server.toml` (system-wide)
-2. `server.toml` (working directory)
-3. Environment variables with `SERVERBEE_` prefix
+1. `/etc/serverbee/server.toml` (legacy / system-wide)
+2. `/opt/serverbee/etc/server.toml` (install script default)
+3. `server.toml` (working directory)
+4. Environment variables with `SERVERBEE_` prefix
 
 <Callout type="info">
 When deployed via the install script, the config lives at `/opt/serverbee/etc/server.toml` and data at `/opt/serverbee/data/` (the script writes these paths explicitly, overriding the built-in defaults below). `/etc/serverbee` and `/var/lib/serverbee` are the legacy layout, only seen on older installs; the script migrates them automatically.
@@ -72,7 +75,9 @@ Here is a `server.toml` showing the most common options and their defaults. See 
 [server]
 listen = "0.0.0.0:9527"       # Address and port to listen on
 data_dir = "./data"            # Directory for database and other data files
-trusted_proxies = []           # Defaults to private/loopback CIDRs; set to [] to disable
+# trusted_proxies defaults to 8 private/loopback/CGNAT CIDRs so X-Forwarded-For works behind proxies/Docker/Tailscale:
+# trusted_proxies = ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "fc00::/7", "fe80::/10"]
+# Set trusted_proxies = [] explicitly to disable X-Forwarded-For trust.
 
 [database]
 path = "serverbee.db"          # Database filename (relative to data_dir)
@@ -96,6 +101,8 @@ traffic_daily_days = 400       # Traffic daily records retention (days)
 task_results_days = 7          # Task results retention (days)
 docker_events_days = 7         # Docker event records retention (days)
 service_monitor_days = 30      # Service monitor records retention (days)
+security_event_days = 30       # Host security event retention (days)
+ip_quality_event_days = 90     # IP quality event retention (days)
 
 [rate_limit]
 login_max = 5                  # Max login attempts per window
@@ -105,14 +112,15 @@ register_max = 10              # Max agent registration attempts per window (Rai
 timezone = "UTC"               # Timezone for daily traffic aggregation (e.g. Asia/Shanghai)
 
 [log]
-level = "info"                 # Log level: trace, debug, info, warn, error
-file = ""                      # Log file path (empty = stdout only)
+level = "info"                 # Log level: trace, debug, info, warn, error (logs write to stdout/stderr)
 
 [upgrade]
 release_base_url = "https://github.com/ZingerLittleBee/ServerBee/releases"  # Base URL for agent upgrades
+latest_version_url = ""        # Optional override URL for latest release metadata
+channel = "stable"             # Agent upgrade channel: "stable" or "beta"
 
 [geoip]
-mmdb_path = ""                 # Path to MaxMind GeoLite2-City.mmdb (non-empty enables GeoIP)
+mmdb_path = ""                 # Optional custom MaxMind GeoLite2-City.mmdb path (or download DB-IP Lite in Settings)
 
 [oauth]
 base_url = ""                  # Public URL of your ServerBee instance
@@ -125,12 +133,6 @@ client_secret = ""
 [oauth.google]
 client_id = ""
 client_secret = ""
-
-[oauth.oidc]
-issuer_url = ""
-client_id = ""
-client_secret = ""
-scopes = ["openid", "email", "profile"]
 
 [tailscale]
 enabled = false                # Enable Tailscale / Headscale control-plane integration
@@ -176,6 +178,8 @@ Key SQLite pragmas are set automatically:
 | `synchronous` | NORMAL | Good balance of safety and speed |
 | `busy_timeout` | 5000ms | Wait up to 5 seconds for locked database |
 | `foreign_keys` | ON | Enforce referential integrity |
+| `temp_store` | MEMORY | Store temporary tables and indices in memory |
+| `cache_size` | -16000 | Allocate up to ~16 MB per connection for page cache |
 
 Database migrations run automatically on startup. No manual schema management is required.
 
@@ -184,11 +188,20 @@ Database migrations run automatically on startup. No manual schema management is
 On first startup, if no users exist in the database, the server automatically creates an admin account. There is no username/password environment variable: the password is always randomly generated and printed once to the server/container logs as a highlighted credentials banner.
 
 ```
-========================================
-  ServerBee initial admin credentials
-  Username: admin
-  Password: aB3xK9mP2qR5
-========================================
+============================================================
+==                                                        ==
+==   FIRST-RUN ADMIN CREDENTIALS — SHOWN ONLY ONCE        ==
+==                                                        ==
+============================================================
+
+Username:  admin
+Password:  aB3xK9mP2qR5
+
+You will be forced to change this password the first time
+you log in. This password is NOT recoverable from the logs
+afterwards — copy it now.
+
+============================================================
 ```
 
 Capture this password from the logs. On first login you are required to change it, and you may optionally choose a different username at that time.
@@ -218,24 +231,24 @@ Only one offer may be outstanding for a Server. Replacing or revoking it always 
 
 Agent Authority transitions are recorded as secret-free events. Their history remains available after the Server record is deleted.
 
-## GeoIP Setup
+## GeoIP & ASN Setup
 
-To enable geographic location detection for your agents:
+ServerBee resolves each agent's IP address to a country/region and ASN when databases are present. You have two options:
 
-1. Download the free [MaxMind GeoLite2-City](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data) MMDB database (requires a free MaxMind account)
-2. Place the `GeoLite2-City.mmdb` file in an accessible location
-3. Enable GeoIP in your configuration:
+1. **One-click download (recommended):** Open **Settings → Data sources** in the dashboard to download the free **DB-IP Lite Country** (`{data_dir}/dbip-country-lite.mmdb`) and **DB-IP Lite ASN** (`{data_dir}/dbip-asn-lite.mmdb`) databases directly. Downloading the country database also backfills existing servers without manual country overrides.
+2. **Custom MaxMind MMDB:** Download [MaxMind GeoLite2-City](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data) (and optionally GeoLite2-ASN), place the `.mmdb` file on the server, and configure its path:
 
 ```toml
 [geoip]
 mmdb_path = "/path/to/GeoLite2-City.mmdb"
-```
 
-The server will resolve each agent's IP address to a region and country code when it connects.
+[asn]
+mmdb_path = "/path/to/GeoLite2-ASN.mmdb"
+```
 
 ## OAuth Setup
 
-ServerBee supports third-party authentication through GitHub, Google, and any OpenID Connect provider.
+ServerBee supports third-party authentication through GitHub and Google.
 
 ### Prerequisites
 
@@ -269,18 +282,6 @@ client_secret = "your-client-secret"
 [oauth.google]
 client_id = "your-client-id"
 client_secret = "your-client-secret"
-```
-
-### Generic OIDC
-
-For any OpenID Connect provider (e.g., Keycloak, Authentik, Authelia):
-
-```toml
-[oauth.oidc]
-issuer_url = "https://auth.example.com/realms/main"
-client_id = "serverbee"
-client_secret = "your-client-secret"
-scopes = ["openid", "email", "profile"]
 ```
 
 ## Reverse Proxy
@@ -347,11 +348,17 @@ The server runs several background tasks automatically:
 | Task | Interval | Purpose |
 |------|----------|---------|
 | RecordWriter | 60s | Writes cached agent reports to the database |
+| AlertEvaluator | 60s | Evaluates enabled alert rules and advances opt-in billing renewals (`renewal::advance_all`) |
 | OfflineChecker | 10s | Detects agents that stopped reporting (30s threshold) |
-| Aggregator | Hourly | Aggregates raw records into hourly summaries |
-| Cleanup | Hourly | Removes expired records based on retention settings |
-| SessionCleaner | Periodic | Removes expired user sessions |
-| AlertEvaluator | 60s | Evaluates all enabled alert rules |
+| Aggregator | 1 hour | Aggregates raw records into hourly summaries |
+| Cleanup | 1 hour (60s startup delay) | Removes expired records based on retention settings |
+| SessionCleaner | 1 hour | Removes expired user sessions, TOTP challenges, and stale rate-limit windows |
+| TaskScheduler | Cron-driven | Restores and runs scheduled remote command tasks |
+| ServiceMonitorChecker | 10s | Dispatches due SSL, DNS, HTTP keyword, TCP, and WHOIS checks |
+| UpgradeTimeout | 10s | Marks timed-out agent upgrade jobs and cleans old upgrade records |
+| MobilePushOutbox | Continuous | Delivers queued mobile push notifications through Push Relay |
+| SecurityRecovery | Continuous | Recovers interrupted security and firewall operations |
+| BrowserFrameCoalescer | Continuous (`AppState`) | Coalesces and broadcasts real-time metric frames to connected browsers |
 
 All tasks start automatically and require no manual configuration.
 

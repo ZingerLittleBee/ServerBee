@@ -22,6 +22,7 @@ This page describes ServerBee's internal architecture for developers and operato
 |  | Axum Router                                  | |
 |  |  +-- REST API handlers                      | |
 |  |  +-- WebSocket: Agent + Browser + Terminal   | |
+|  |  |              + Docker Logs                | |
 |  |  +-- Static files (rust-embed)              | |
 |  | Service Layer                                | |
 |  |  +-- AgentManager (connections/state)        | |
@@ -66,12 +67,12 @@ Its main service modules are:
 | ServerService | Server CRUD, grouping, tagging, ordering |
 | RecordService | Metric writes, history queries, hourly aggregation, retention cleanup |
 | AlertService | Alert rule CRUD, periodic evaluation, notification dispatch |
-| NotificationService | Notification channel management and message dispatch (Webhook/Telegram/Email/Bark) |
+| NotificationService | Notification channel management and message dispatch (Webhook/Telegram/Email/Bark/APNs via Push Relay) |
 | PingService | Ping task CRUD, task assignment, result storage |
 | TaskService | Remote command dispatch, result queries |
 | ConfigService | System configuration read/write (key-value store) |
 | TailscaleControlService | Tailscale v2 / Headscale v1 control-plane client, fleet correlation, and `tailscaled` LocalAPI `whois` verification |
-| GeoIpService | IP geolocation lookup (MaxMind MMDB) |
+| GeoIpService | IP geolocation & ASN lookup (DB-IP Lite one-click download or MaxMind MMDB) |
 | UserService | User CRUD and role management |
 
 ### Agent (`crates/agent`)
@@ -128,54 +129,77 @@ The agent connects to `ws://<server>/api/agent/ws` and authenticates with `Autho
 
 | Message Type | Purpose | Needs ACK |
 |-------------|---------|-----------|
-| `SystemInfo` | Static system information, sent once on connect/reconnect | Yes |
+| `SystemInfo` | Static system information, capabilities, and temporary grants, sent on connect/reconnect | Yes |
+| `CapabilitiesChanged` | Updated host capability policy, temporary grants, and change events | Yes |
 | `Report` | Periodic metric report (every N seconds) | No |
 | `PingResult` | Result of a ping probe | No |
+| `SecurityEvent` | Host security event (SSH login, brute-force, port scan) | No |
 | `TaskResult` | Output from a remote command execution | Yes |
-| `TerminalOutput` | PTY output data (base64-encoded) | No |
-| `TerminalStarted` | Confirmation that a PTY session was created | No |
-| `TerminalError` | Error from a terminal session | No |
-| `Pong` | Protocol-level heartbeat response | No |
-| `DockerInfo` | Docker system info and feature report | No |
-| `DockerContainers` | Current container list with status | No |
-| `DockerStats` | Container resource usage statistics | No |
-| `DockerLog` | Container log entries (batched) | No |
-| `DockerEvent` | Container lifecycle event | No |
-| `TailscaleStatus` | Host `tailscaled` node summary, routes, and peer snapshot | No |
-| `TailscaleUnavailable` | Reports that local `tailscaled` is not running or unreachable | No |
+| `TerminalOutput` / `TerminalStarted` / `TerminalError` | PTY session lifecycle and base64-encoded output | No |
+| `CapabilityDenied` | Rejection of a server request blocked by agent-local capability policy | No |
+| `NetworkProbeResults` | Batch results of scheduled network quality probes | No |
+| `UnlockResults` | Egress IP and streaming/AI unlock probe results | No |
+| `IpChanged` | Detected IPv4/IPv6 or network interface change | No |
+| `TracerouteResult` / `TracerouteRoundUpdate` | Legacy completion or streamed per-round traceroute hops | No |
+| `FileListResult` / `FileStatResult` / `FileReadResult` / `FileOpResult` | Sandboxed directory listing, metadata, Base64 file read, and write/delete/mkdir/move responses | No |
+| `FileDownloadReady` / `FileDownloadChunk` / `FileDownloadEnd` / `FileDownloadError` | Streamed file download frames | No |
+| `FileUploadAck` / `FileUploadComplete` / `FileUploadError` | Streamed file upload acknowledgements and status | No |
+| `DockerInfo` / `DockerContainers` / `DockerStats` / `DockerLog` / `DockerEvent` | Docker system info, containers, stats, batched logs, and lifecycle events | No |
+| `DockerUnavailable` / `DockerNetworks` / `DockerVolumes` / `DockerActionResult` / `FeaturesUpdate` | Docker daemon availability, networks, volumes, action status, and feature flags | No |
+| `TailscaleStatus` / `TailscaleUnavailable` | Host `tailscaled` node summary, routes, and peers (or unavailability) | No |
+| `UpgradeProgress` / `UpgradeResult` | Transactional self-upgrade stage updates and terminal failure report | Yes |
+| `BlocklistAck` / `BlocklistResetAck` | Firewall nftables blocklist apply/reset acknowledgements | No |
+| `Pong` | Compatibility response for JSON `ServerMessage::Ping` (heartbeats use WS-level Ping/Pong frames) | No |
 
 ### Server to Agent (`ServerMessage`)
 
 | Message Type | Purpose |
 |-------------|---------|
-| `Welcome` | Sent on connect with server_id, protocol_version, report_interval |
-| `Ack` | Acknowledges a received message (by msg_id) |
+| `Welcome` | Sent on connect with `server_id`, `protocol_version`, `report_interval`, and capability ack flags |
+| `Ack` | Acknowledges a received message (by `msg_id`) |
 | `PingTasksSync` | Sync all assigned ping tasks to the agent |
+| `NetworkProbeSync` | Sync scheduled network quality probe targets, interval, and packet count |
+| `IpQualitySync` / `IpQualityRunNow` | Sync unlock check services/interval or trigger an immediate check |
 | `Exec` | Execute a shell command on the agent |
-| `TerminalOpen` | Request to open a new PTY session |
-| `TerminalInput` | Forward keyboard input to a PTY session |
-| `TerminalResize` | Resize a PTY session |
-| `TerminalClose` | Close a PTY session |
-| `Ping` | Protocol-level heartbeat (every 30s) |
-| `Upgrade` | Instruct the agent to self-upgrade |
-| `DockerLogsStart` | Start streaming logs for a container |
-| `DockerLogsStop` | Stop streaming logs |
-| `DockerAction` | Execute container action (start/stop/restart/remove) |
+| `TerminalOpen` / `TerminalInput` / `TerminalResize` / `TerminalClose` | PTY session lifecycle and base64 keyboard input |
+| `FileList` / `FileStat` / `FileRead` / `FileWrite` / `FileDelete` / `FileMkdir` / `FileMove` | Sandboxed remote file operations |
+| `FileDownloadStart` / `FileDownloadCancel` / `FileUploadStart` / `FileUploadChunk` / `FileUploadEnd` | Streamed file transfer commands |
+| `DockerListContainers` / `DockerStartStats` / `DockerStopStats` / `DockerEventsStart` / `DockerEventsStop` | Docker container listing, stats polling, and event streaming |
+| `DockerGetInfo` / `DockerListNetworks` / `DockerListVolumes` | Docker system info, networks, and volumes queries |
+| `DockerLogsStart` / `DockerLogsStop` | Start or stop streaming logs for a container |
+| `DockerContainerAction` | Execute container action (`start` / `stop` / `restart` / `remove`) |
 | `TailscaleGetStatus` | Request an on-demand `tailscaled` status snapshot |
+| `Traceroute` | Start an ICMP/TCP/UDP traceroute toward a target |
+| `BlocklistSync` / `BlocklistAdd` / `BlocklistRemove` / `BlocklistReset` | Reconcile, update, or wipe agent nftables firewall rules |
+| `Upgrade` | Instruct the agent to self-upgrade to a target version |
+| `Ping` | Legacy protocol-level ping variant (the server sends WebSocket-level `Message::Ping` frames every 30s) |
 
-### Server to Browser (`BrowserMessage`)
+### Server & Browser WebSockets (`BrowserMessage` / `BrowserClientMessage`)
 
-Browsers obtain data two ways: the REST API for initial load and historical queries, and a WebSocket at `ws://<server>/api/ws/servers` for real-time pushes. The WebSocket is one-way (Server -> Browser). REST results and WebSocket messages are projected into the same live server catalog so views stay current.
+Browsers obtain data through the REST API (initial load, history, and mutations) and three WebSocket endpoints:
 
-| Message Type | Purpose |
+- `ws://<server>/api/ws/servers` — **bidirectional** fleet stream: primarily server-to-browser push (`BrowserMessage`), plus upstream `BrowserClientMessage` (`DockerSubscribe`, `DockerUnsubscribe`) to toggle live Docker stats/events per server.
+- `ws://<server>/api/ws/terminal/{server_id}` — interactive PTY terminal relay.
+- `ws://<server>/api/ws/docker/logs/{server_id}` — live container log stream.
+
+REST results and WebSocket messages are projected into the same live server catalog so views stay current.
+
+| Message Type (`BrowserMessage`) | Purpose |
 |-------------|---------|
-| `FullSync` | Complete state of all servers (sent on browser connect) |
-| `Update` | Incremental update with latest metrics for changed servers |
-| `ServerOnline` | Notification that a server came online |
-| `ServerOffline` | Notification that a server went offline |
-| `DockerUpdate` | Docker container and stats update |
-| `DockerEvent` | Docker container lifecycle event |
-| `DockerAvailabilityChanged` | Docker daemon availability changed |
+| `FullSync` | Complete state of all servers and active upgrade jobs (sent on browser connect) |
+| `Update` | Incremental update with latest live metrics for changed servers |
+| `ServerCatalogChanged` | Signals REST server catalog invalidation (keeps private billing fields off metric frames) |
+| `ServerOnline` / `ServerOffline` | Server online/offline state transitions |
+| `AgentAuthorityChanged` | Enrollment offer / claim / revocation state changes |
+| `CapabilitiesChanged` | Updated host capabilities and temporary grants |
+| `AgentInfoUpdated` | Updated protocol or agent version metadata |
+| `SecurityEvent` | Real-time host security event notification |
+| `UpgradeProgress` / `UpgradeResult` | Live agent self-upgrade progress and completion status |
+| `NetworkProbeUpdate` / `TracerouteUpdate` | Live network probe results and per-round traceroute hops |
+| `DockerUpdate` / `DockerEvent` / `DockerAvailabilityChanged` | Docker container stats, lifecycle events, and daemon availability |
+| `ServerIpChanged` | Detected agent IPv4/IPv6 or remote address change |
+| `BlocklistChanged` / `FirewallApplyStateChanged` | Firewall blocklist mutations and per-server nftables apply states |
+| `IpQualityUpdate` | Updated IP quality snapshot and streaming/AI unlock results |
 
 ### Handshake
 
@@ -232,7 +256,7 @@ ServerBee uses SQLite (WAL mode), managed through sea-orm. The representative ta
 | Table | Purpose |
 |-------|---------|
 | `users` | User accounts (id, username, argon2 password hash, role, TOTP secret) |
-| `sessions` | Active login sessions (token, IP, user agent, expiry) |
+| `sessions` | Active login sessions (SHA-256 token hash, IP, user agent, expiry) |
 | `api_keys` | API key credentials (argon2-hashed key, prefix, last used) |
 | `oauth_accounts` | Linked OAuth provider accounts |
 
@@ -265,7 +289,7 @@ ServerBee uses SQLite (WAL mode), managed through sea-orm. The representative ta
 |-------|---------|
 | `alert_rules` | Alert rule definitions (conditions, cover type, trigger mode) |
 | `alert_states` | Current alert state per rule/server pair (composite unique index rule_id + server_id) |
-| `notifications` | Notification channel configs (webhook, telegram, bark, email) |
+| `notifications` | Notification channel configs (webhook, telegram, bark, email, apns) |
 | `notification_groups` | Groups of notification channels |
 | `tasks` | Remote command tasks (command, target servers, created by) |
 | `task_results` | Command execution results (output, exit code) |
@@ -275,29 +299,38 @@ All tables use UTC timestamps. IDs are UUIDs (string type) for most entities, an
 
 ### SQLite Configuration
 
-- **WAL mode** -- `PRAGMA journal_mode=WAL` runs on startup to improve concurrent read performance.
-- **Busy timeout** -- 5000ms; writers wait automatically on write contention.
+- **WAL mode** -- `PRAGMA journal_mode=WAL` runs on every pooled connection to improve concurrent read performance.
 - **Synchronous mode** -- `PRAGMA synchronous=NORMAL`.
-- **Connection pool** -- Up to 10 connections, primarily for concurrent reads.
+- **Foreign keys** -- `PRAGMA foreign_keys=ON` enforces referential integrity.
+- **Busy timeout** -- 5000ms; writers wait automatically on write contention.
+- **Temp store & cache** -- `PRAGMA temp_store=MEMORY` and `PRAGMA cache_size=-16000` (~16 MB page cache per connection).
+- **Connection pool** -- Up to 10 connections by default, primarily for concurrent reads.
 
 ## Background Tasks
 
-The server spawns several long-running background tasks via `tokio::spawn`:
+The server spawns long-running background workers via `tokio::spawn` at startup (plus `BrowserFrameCoalescer` inside `AppState`):
 
 | Task | Interval | Description |
 |------|----------|-------------|
 | **RecordWriter** | 60s | Flushes the latest cached agent reports from memory to the `records` table |
-| **AlertEvaluator** | 60s (after record write) | Evaluates all enabled alert rules against current data and dispatches notifications |
+| **AlertEvaluator** | 60s | Advances opt-in billing renewals (`renewal::advance_all`), evaluates all enabled alert rules, and dispatches notifications |
 | **OfflineChecker** | 10s | Scans agent connection state and triggers offline events/alerts for agents with no heartbeat in 30 seconds |
-| **Aggregator** | 1 hour | Computes hourly averages from raw `records` into `records_hourly` for long-term storage |
-| **Cleanup** | 1 hour (after aggregation) | Deletes records, GPU data, ping records, and audit logs older than their retention periods |
-| **PingTasksSync** | On config change | Pushes `PingTasksSync` to the relevant agents |
-| **SessionCleaner** | 1 hour | Removes expired user login sessions |
+| **Aggregator** | 1 hour | Computes hourly rollups from raw `records` into `records_hourly` for long-term storage |
+| **Cleanup** | 1 hour (60s startup delay) | Deletes records, GPU data, ping/probe records, security/IP-quality events, and audit logs older than their retention periods |
+| **SessionCleaner** | 1 hour | Removes expired user sessions, TOTP challenges, and stale rate-limit windows |
+| **TaskScheduler** | Cron-driven | `task_scheduler::restore_and_start` restores and dispatches scheduled remote command tasks |
+| **ServiceMonitorChecker** | 10s (5s startup delay) | Dispatches due SSL, DNS, HTTP keyword, TCP, and WHOIS checks |
+| **UpgradeTimeout** | 10s | Marks timed-out agent upgrade jobs and cleans up old finished upgrade records |
+| **MobilePushOutbox** | Continuous | Delivers queued mobile push notifications asynchronously through Push Relay |
+| **SecurityRecovery** | Continuous | `security_service.start_recovery()` reconciles interrupted security/firewall operations |
+| **BrowserFrameCoalescer** | Continuous (`AppState`) | Coalesces and broadcasts real-time metric updates to connected browsers |
 
-**Ordering guarantees:**
+Event-driven pushes such as `PingTasksSync` are dispatched immediately on configuration changes rather than by a polling loop.
 
-- Hourly tasks: aggregation -> cleanup (aggregate before cleaning so no long-term data is lost).
-- Minute tasks: record write -> alert evaluation (so evaluation reads the freshly written data).
+**Scheduling notes:**
+
+- Hourly tasks: `Cleanup` sleeps 60 seconds before its first tick so `Aggregator` runs ahead of `Cleanup` on each hourly cycle.
+- Minute tasks: `RecordWriter` and `AlertEvaluator` run on independent 60-second intervals with no explicit barrier or offset between them.
 
 ## Security Model
 
@@ -321,7 +354,7 @@ Agent WebSocket connects
 
 - User logs in with username/password, verified with argon2.
 - A random 32-byte token (base64url-encoded) is generated.
-- The token is stored in the `sessions` table with an HttpOnly + SameSite=Strict cookie.
+- The token's SHA-256 hash is stored in the `sessions` table (never the plaintext token), and the raw token is sent in an HttpOnly + SameSite=Strict cookie.
 - Sliding expiry: each valid request extends `expires_at` (default TTL 24 hours).
 
 #### API Key (automation)
@@ -363,18 +396,19 @@ Browser-facing WebSockets re-check the persisted session or API key and the user
 
 ### OAuth
 
-OAuth login is supported for GitHub, Google, and generic OIDC providers. The `allow_registration` flag controls whether new users are automatically created on first OAuth login.
+OAuth login is supported for GitHub and Google. The `allow_registration` flag controls whether new users are automatically created on first OAuth login.
 
 ### Rate Limiting
 
-Implemented as `tower` middleware with an in-memory map of IP to counter. Login and agent registration endpoints are rate-limited per IP to prevent brute-force attacks.
+Implemented inline in route handlers using in-memory `DashMap`-backed counters on `AppState` (not `tower` middleware). Login, agent registration, and public status endpoints are rate-limited per IP:
 
 | Endpoint | Limit |
 |----------|-------|
-| `POST /api/auth/login` | 5 attempts per IP within a 15-minute window |
+| `POST /api/auth/login` | 5 requests per IP within a 15-minute window (counted before password verification) |
 | `POST /api/agent/register` | 10 attempts per IP within a 15-minute window |
+| `GET /api/status/*` | 60 requests per IP within a 60-second window |
 
-Exceeding a limit returns `429 Too Many Requests`. Admins can clear an active window from Settings → Rate limits.
+Exceeding a limit returns `429 Too Many Requests`. Admins can inspect and clear active windows from Settings → Rate limits.
 
 ### TOTP
 
@@ -382,26 +416,27 @@ Users can enable TOTP-based two-factor authentication for additional security.
 
 ## Workspace Structure
 
-The project uses a Cargo workspace for the Rust crates. The frontend is a separate Bun/Node project under `apps/web/`.
+The project uses a Cargo workspace for the Rust crates and a Bun workspace for the TypeScript apps and shared packages.
 
 ```
 ServerBee/
-  Cargo.toml                    # Workspace root
+  Cargo.toml                    # Rust workspace root
   crates/
     common/                     # Shared: protocol, data types, constants
       src/
         lib.rs
-        protocol.rs             # Agent <-> Server message types
+        protocol.rs             # Agent <-> Server / Browser message types
         types.rs                # SystemReport, GpuInfo, etc.
         tailscale_types.rs      # Tailscale node/peer status DTOs
-        constants.rs            # Protocol version, default values
+        constants.rs            # Protocol version, default values, capabilities
     server/                     # Server binary (Axum, sea-orm, background tasks)
       src/
         main.rs
         config.rs
-        state.rs                # AppState
+        state.rs                # AppState (incl. rate-limit DashMaps & browser coalescer)
         router/                 # REST API + WebSocket handlers
         service/                # Business logic
+        task/                   # Background interval workers
         entity/                 # sea-orm entities (one module per table)
         migration/              # Database migrations
         middleware/             # Auth, logging middleware
@@ -409,26 +444,35 @@ ServerBee/
       src/
         main.rs
         config.rs
+        register.rs             # One-time enrollment claim
+        run_token_store.rs      # Persisted per-agent run token storage
+        capability_policy.rs    # Host-owned capability policy evaluation
+        capability_grants/      # Host-local temporary capability grants
         collector/              # Per-metric collectors
         reporter/               # WebSocket reporting, reconnect, commands, and file operations
-        pinger.rs                # ICMP/TCP/HTTP ping tasks
-        probe_utils.rs           # Shared probe validation and networking helpers
-        network_prober.rs        # Scheduled network probes
-        traceroute.rs            # Traceroute execution
+        pinger.rs               # ICMP/TCP/HTTP ping tasks
+        probe_utils.rs          # Shared probe validation and networking helpers
+        network_prober.rs       # Scheduled network probes
+        traceroute.rs           # Traceroute execution
         terminal.rs             # PTY terminal
-        file_manager.rs          # Restricted remote file operations
-        docker/                  # Docker inspection, actions, and log streaming
-        security/                # Host security event detection
-        firewall/                # Firewall block management
-        ip_quality/              # IP quality checks
-        tailscale/               # Local tailscaled socket & CLI collector
-        upgrade.rs               # Self-upgrade coordinator
-        upgrade/                 # Transactional self-upgrade support
+        file_manager.rs         # Restricted remote file operations
+        docker/                 # Docker inspection, actions, and log streaming
+        security/               # Host security event detection
+        firewall/               # Firewall block management
+        ip_quality/             # IP quality checks
+        tailscale/              # Local tailscaled socket & CLI collector
+        upgrade.rs              # Self-upgrade coordinator
+        upgrade/                # Transactional self-upgrade support
   apps/
     web/                        # React frontend (Vite, TanStack, shadcn/ui)
     ios/                        # Native iOS SwiftUI companion app
     docs/                       # Documentation site (TanStack Start + Fumadocs)
-  docs/                         # Design documents and plans
+    landing/                    # Standalone marketing landing site
+    push-relay/                 # Cloudflare Worker APNs push relay
+  packages/
+    config/                     # Shared TypeScript/tooling config
+    widget-sdk/                 # SDK for custom & built-in widget modules
+  docs/                         # Design documents, ADRs, and plans
 ```
 
 <Cards>

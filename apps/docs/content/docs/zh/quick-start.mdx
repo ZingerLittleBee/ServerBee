@@ -7,7 +7,7 @@ icon: Zap
 部署 ServerBee 推荐用 `deploy/install.sh` 一键脚本。架构检测、二进制下载、服务注册这些繁琐步骤它都替你做好了，开箱即用：
 
 - **交互式向导**：不带参数运行就进入向导，按提示选语言、组件和安装方式
-- **架构自适应**：自动识别 amd64/arm64，下载匹配的 Release 二进制
+- **架构自适应**：自动识别 Linux/macOS（`amd64`/`arm64`）并下载匹配的 Release 二进制（[GitHub Releases](https://github.com/ZingerLittleBee/ServerBee/releases) 亦提供 macOS 与 Windows 预编译二进制）
 - **服务管理集成**：自动创建并拉起 systemd 或 OpenRC 服务，配好开机自启
 - **二进制 / Docker 双模式**：用 `--method` 切换；Server 推荐 Docker，Agent 推荐二进制
 - **HTTPS 自动配置**：装 Server 时传 `--domain`，脚本会自动装好 Caddy 并签发证书
@@ -105,7 +105,7 @@ docker logs serverbee-server 2>&1 | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tai
 3. 按页面提示完成强制改密，也可以顺便换一个新用户名
 
 <Callout type="warn">
-如果先用 IP 明文 HTTP 装好，之后想切到域名 HTTPS：执行 `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com` 补配，并把 `/opt/serverbee/etc/server.toml` 里的 `auth.secure_cookie` 改回 `true` 重启 Server，同时把已接入 Agent 的 `server_url` 换成新的 `https://` 地址。
+如果先用 IP 明文 HTTP 装好，之后想切到域名 HTTPS：执行 `sudo serverbee domain setup --domain monitor.example.com --email admin@example.com` 即可。该命令会自动配置 Caddy、将 ServerBee 改为仅监听 `127.0.0.1:9527`、启用 `auth.secure_cookie = true`（Docker 安装模式会同步更新 Compose 环境变量）并重启或重建服务端。完成后只需把已接入 Agent 的 `server_url` 换成新的 `https://` 地址。
 </Callout>
 
 ### 管理 Server
@@ -113,13 +113,20 @@ docker logs serverbee-server 2>&1 | grep -A8 'FIRST-RUN ADMIN CREDENTIALS' | tai
 装好后用 `serverbee` 命令管理实例：
 
 ```bash
-sudo serverbee status                     # 查看所有组件状态
-sudo serverbee upgrade -y                  # 升级到最新版
-sudo serverbee restart                     # 重启服务
-sudo serverbee config                      # 查看当前配置
-sudo serverbee config set <key> <value>    # 修改配置
-sudo serverbee uninstall server --purge    # 卸载服务端并清除数据
+sudo serverbee status                                         # 查看所有组件状态
+sudo serverbee start | stop | restart [server|agent]          # 启停/重启服务
+sudo serverbee upgrade -y                                     # 升级到最新版
+sudo serverbee config                                         # 查看当前配置
+sudo serverbee config set <key> <value>                       # 修改 TOML 配置
+sudo serverbee env                                            # 查看 Docker Compose 环境变量
+sudo serverbee env set SERVERBEE_AUTH__SECURE_COOKIE true     # 修改 Docker Compose 环境变量并重建容器
+sudo serverbee domain setup --domain monitor.example.com      # 自动配置 Caddy HTTPS
+sudo serverbee version                                        # 查看 CLI 与已安装版本
+sudo serverbee help                                           # 查看全部子命令与选项
+sudo serverbee uninstall server --purge                       # 卸载服务端并清除数据
 ```
+
+常用安装选项包括 `--caps <list>`（Agent 能力列表）、`--skip-dns-check`（跳过域名 DNS 校验）、`--no-wait`（跳过安装后健康/注册等待）和 `--lang <en|zh>`。安装后校验退出码约定为：`0`（校验通过或跳过）、`1`（Server 不健康）、`75`（Agent 暂未验证通过）、`78`（Agent 认证被拒）。
 
 <Callout type="warn">
 `uninstall --purge` 会永久删除 Server 数据库、配置和受管 Docker 卷。请先创建并验证备份；希望保留数据以便恢复或重装时，不要使用 `--purge`。
@@ -147,7 +154,7 @@ curl -fsSL https://raw.githubusercontent.com/ZingerLittleBee/ServerBee/main/depl
   --enrollment-code YOUR_ONE_TIME_CODE
 ```
 
-脚本会自动识别架构、下载二进制、写入配置、注册 systemd 服务并拉起 Agent。
+脚本会自动识别架构、下载二进制、写入配置、注册 systemd 或 OpenRC 服务并拉起 Agent。
 
 <Callout type="info">
 Agent 推荐用二进制方式安装，这样才能采集到宿主机的完整指标；不建议用 Docker 跑 Agent。
