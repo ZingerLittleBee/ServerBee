@@ -396,7 +396,7 @@ pub struct RiskProviderKey {
 /// Configuration for the `[ip_quality]` section.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct IpQualityConfig {
-    /// Primary risk provider. Default: `ipapi_is`. Accepted: `none`, `ipapi_is`, `ip-api`.
+    /// Primary risk provider. Default: `ipapi_is`. Accepted: `none`, `ipapi_is`, `ip-api`, `vpndetection`.
     #[serde(default = "default_risk_provider")]
     pub risk_provider: String,
 
@@ -415,7 +415,7 @@ impl IpQualityConfig {
     /// Returns warnings for misconfigured provider names. Should be called once
     /// at startup; results are intended for `tracing::warn!`.
     pub fn validate_warnings(&self) -> Vec<String> {
-        const VALID: &[&str] = &["none", "ipapi_is", "ip-api"];
+        const VALID: &[&str] = &["none", "ipapi_is", "ip-api", "vpndetection"];
         let mut warnings = Vec::new();
 
         if !VALID.contains(&self.risk_provider.as_str()) {
