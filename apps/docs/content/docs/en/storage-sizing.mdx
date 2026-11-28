@@ -27,7 +27,7 @@ All estimates on this page use the same baseline:
   - Network probe raw records (and traceroute records): **7 days**
   - Network probe hourly records: **90 days**
   - Service monitor records: **30 days**
-  - Event and operational tables pruned by cleanup: `security_event` (**30d**), `unlock_event` (**90d**), `ip_risk_cache` (**30d**), `enrollment_offer` (**30d**), `mobile_push_outbox` (**7d**), `task_run` (**7d**), `agent_authority_event` (**180d**)
+  - Event and operational tables pruned by cleanup: `security_event` (**30d**), `unlock_event` (**90d**), `ip_risk_cache` (**30d**), `enrollment_offers` (**30d**), `mobile_push_outbox` (**7d**), `task_runs` (**7d**), `agent_authority_events` (**180d**)
 - Disk I/O enabled and temperature enabled
 - No extra growth from audit log bursts, security event bursts, large task output, or unusual Docker event churn unless called out explicitly
 
@@ -44,7 +44,7 @@ Not every capability creates ongoing database growth.
 | GPU monitoring | Agent reports every 3s, persisted every 60s per GPU device | 7d | `gpu_records` | Persisted by the 60s record writer alongside raw metrics |
 | Docker events | Event-driven | 7d | `docker_event` | Small unless containers churn frequently |
 | Security & IP quality events | Event-driven / periodic | 30d / 90d / 30d | `security_event`, `unlock_event`, `ip_risk_cache` | Small unless hosts experience high SSH/scan churn |
-| Operational & audit records | User / event-driven | 7d / 30d / 180d | `audit_logs`, `task_results`, `task_run`, `traceroute_record`, `agent_authority_event`, `enrollment_offer`, `mobile_push_outbox` | Usually negligible compared with time-series data |
+| Operational & audit records | User / event-driven | 7d / 30d / 180d | `audit_logs`, `task_results`, `task_runs`, `traceroute_record`, `agent_authority_events`, `enrollment_offers`, `mobile_push_outbox` | Usually negligible compared with time-series data |
 
 <Callout type="info">
 Turning on a capability such as Terminal, Exec, File Manager, or Docker Management does not automatically create large time-series tables. Continuous growth comes from features that are actively writing sampled results.
@@ -114,7 +114,7 @@ The table below lists common 30-day scenarios for a 20-server deployment.
 | Base + 20 targets per server | 400 total network probe assignments, which is the current max | `1,019,748,512 B` | `972.51 MiB` |
 | Base + 1 monitor per server | 20 total service monitors at 300s | `102,420,472 B` | `97.68 MiB` |
 | Base + 5 monitors per server | 100 total service monitors at 300s | `229,937,112 B` | `219.29 MiB` |
-| Base + 1 GPU per server | 20 total GPU devices (60s cadence) | `112,066,552 B` | `106.88 MiB` |
+| Base + 1 GPU per server | 20 total GPU devices (60s cadence) | `112,066,552 B` | `106.87 MiB` |
 | Small production stack | 3 ping tasks + 1 target per server + 1 monitor per server | `296,804,353 B` | `283.05 MiB` |
 | Medium production stack | 3 ping tasks + 5 targets per server + 2 monitors per server | `518,524,953 B` | `494.50 MiB` |
 | Heavy stack without GPU | 3 ping tasks + 20 targets per server + 1 monitor per server | `1,198,551,193 B` | `1.12 GiB` |

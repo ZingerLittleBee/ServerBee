@@ -42,10 +42,10 @@ IP 地址、主机名、网卡等敏感标识会在 API 层脱敏，不会出现
 
 ### 管理 API
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/status-page` | 读取状态页配置 |
-| PUT | `/api/status-page` | 更新状态页配置 |
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/status-page` | 已登录（Admin + Member） | 读取状态页配置 |
+| PUT | `/api/status-page` | Admin | 更新状态页配置 |
 
 更新示例：
 
@@ -83,7 +83,7 @@ IP 地址、主机名、网卡等敏感标识会在 API 层脱敏，不会出现
 | GET | `/api/status/incidents` | 活动和近期事件（返回 `{ active, recent }`，其中 `recent` 为最近 7 天内已解决的事件） |
 | GET | `/api/status/maintenances` | 活动和计划中的维护窗口 |
 
-每个 `PublicServerSummary` 服务器条目包含 `id`、`name`、`group_name`、`country_code`、`os`、`online`、`in_maintenance`、`public_remark`、`metrics`、`uptime_percent` 和 `uptime_daily`。
+每个 `PublicServerSummary` 服务器条目包含 `id`、`name`、`group_name`、`region`、`country_code`、`os`、`online`、`in_maintenance`、`public_remark`、`metrics`、`uptime_percent` 和 `uptime_daily`。
 
 ## 可用性时间线
 

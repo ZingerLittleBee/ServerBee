@@ -110,9 +110,9 @@ client_secret = "your-github-client-secret"
 
 ### 登录限流
 
-ServerBee 在校验密码**之前**对 `POST /api/auth/login` 实施 IP 级别速率限制：
+ServerBee 在校验凭据**之前**对 `POST /api/auth/login`、`POST /api/mobile/auth/login` 与 `POST /api/mobile/auth/recover` 实施 IP 级别速率限制：
 
-- 默认每 15 分钟窗口内最多 **5 次请求**（可通过 `rate_limit.login_max` 配置）。发往 `POST /api/auth/login` 的**所有请求**都会计入配额（包括成功登录以及 2FA 登录的两个步骤），而不仅限于失败尝试。
+- 默认每 15 分钟窗口内最多 **5 次请求**（可通过 `rate_limit.login_max` 配置）。发往上述三个端点的**所有请求**共享同一个 `login` 限流桶（包括成功登录以及 2FA 登录的两个步骤），而不仅限于失败尝试。
 - 超过限制后返回 `429 Too Many Requests`（并写入 `login_rate_limited` 审计日志）
 - 过期的限流记录由后台 `session_cleaner` 任务自动清理
 

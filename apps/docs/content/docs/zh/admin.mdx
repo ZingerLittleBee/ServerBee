@@ -93,7 +93,7 @@ Member 的可见范围是全部服务器，不支持按服务器隔离。Member 
 
 | 作用域 | 覆盖端点 | 默认上限 | 窗口时长 |
 |--------|----------|----------|----------|
-| `login` | `POST /api/auth/login`（密码校验前统计全部请求） | `5`（`rate_limit.login_max`） | 15 分钟 |
+| `login` | `POST /api/auth/login`、`POST /api/mobile/auth/login`、`POST /api/mobile/auth/recover`（凭据校验前统计全部请求） | `5`（`rate_limit.login_max`） | 15 分钟 |
 | `register` | Agent 注册端点 | `10`（`rate_limit.register_max`） | 15 分钟 |
 | `public` | 未认证的 `/api/status/*` 端点 | `60`（固定） | 60 秒 |
 

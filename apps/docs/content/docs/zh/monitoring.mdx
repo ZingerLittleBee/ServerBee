@@ -240,13 +240,13 @@ ServerBee 自动清理过期数据，由后台任务每小时执行一次：
 | GPU 指标（`gpu_records`） | 7 天 | `retention.gpu_records_days` |
 | Ping 探测记录（`ping_records`） | 7 天 | `retention.ping_records_days` |
 | 网络探测原始记录与 Traceroute 记录（`network_probe_record`、`traceroute_record`） | 7 天 | `retention.network_probe_days` |
-| 网络探测小时聚合（`network_probe_hourly`） | 90 天 | `retention.network_probe_hourly_days` |
+| 网络探测小时聚合（`network_probe_record_hourly`） | 90 天 | `retention.network_probe_hourly_days` |
 | 流量小时记录（`traffic_hourly`） | 7 天 | `retention.traffic_hourly_days` |
 | 流量日记录（`traffic_daily`） | 400 天 | `retention.traffic_daily_days` |
 | 任务执行结果（`task_results`） | 7 天 | `retention.task_results_days` |
-| Docker 事件（`docker_events`） | 7 天 | `retention.docker_events_days` |
-| 服务监控记录（`service_monitor_records`） | 30 天 | `retention.service_monitor_days` |
-| 安全事件（`security_events`） | 30 天 | `retention.security_event_days` |
+| Docker 事件（`docker_event`） | 7 天 | `retention.docker_events_days` |
+| 服务监控记录（`service_monitor_record`） | 30 天 | `retention.service_monitor_days` |
+| 安全事件（`security_event`） | 30 天 | `retention.security_event_days` |
 | IP 质量状态变更事件（`unlock_event`） | 90 天 | `retention.ip_quality_event_days` |
 | 审计日志（`audit_logs`） | 180 天 | `retention.audit_logs_days` |
 

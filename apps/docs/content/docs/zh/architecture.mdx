@@ -67,7 +67,7 @@ icon: Boxes
 | ServerService | 服务器 CRUD、分组、标签、排序管理 |
 | RecordService | 指标写入、历史查询、小时聚合、过期清理 |
 | AlertService | 告警规则 CRUD、周期性规则评估、触发通知 |
-| NotificationService | 通知渠道管理、消息分发（Webhook/Telegram/Email/Bark/通过 Push Relay 的 APNs） |
+| NotificationService | 通知渠道管理、消息分发（Webhook/Telegram/Email/Bark，以及通过 `ApnsService::send_push` 直接发送的手动 APNs 渠道；基于 Push Relay 的移动推送由独立的 `MobilePushOutbox` 管线处理） |
 | PingService | Ping 探测任务 CRUD、任务下发、结果存储 |
 | TaskService | 远程命令下发、执行结果查询 |
 | ConfigService | 系统配置读写（K-V 存储） |
@@ -400,11 +400,11 @@ Agent WebSocket 连接
 
 ### 速率限制
 
-在路由处理器中基于 `AppState` 的内存 `DashMap` 计数器内联实现（并非 `tower` middleware）。登录、Agent 注册与公开状态页接口均按 IP 限流：
+基于 `AppState` 的内存 `DashMap` 按 IP 计数实现。`login` 与 `register` 限流桶在路由处理器中内联校验，`/api/status/*` 的 `public` 限流桶通过 Axum 路由中间件（`from_fn_with_state`）执行：
 
 | 接口 | 限制 |
 |------|------|
-| `POST /api/auth/login` | 每 IP 15 分钟内 5 次请求（在密码校验之前计数） |
+| `POST /api/auth/login`、`POST /api/mobile/auth/login`、`POST /api/mobile/auth/recover` | 每 IP 15 分钟内 5 次请求（共享 `login` 限流桶，在凭据校验之前计数） |
 | `POST /api/agent/register` | 每 IP 15 分钟内 10 次 |
 | `GET /api/status/*` | 每 IP 60 秒内 60 次 |
 

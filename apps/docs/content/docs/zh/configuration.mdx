@@ -70,22 +70,18 @@ Agent 依次使用内置默认值、`/etc/serverbee/agent.toml`、工作目录�
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `SERVERBEE_OAUTH__BASE_URL` | `""` | 服务器公网地址（用于构造 OAuth 回调 URL） |
-| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `false` | 首次 OAuth 登录时自动创建 member 账号。仅在 OAuth 提供方本身受访问控制（如自建 OIDC / 企业内部 IdP）时开启：member 可读取全部监控数据（安全事件、公网 IP），若对 GitHub 或 Google 等公共提供方开启，该提供方的任意用户均可获得这些数据访问权限 |
+| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `false` | 首次 OAuth 登录时自动创建 member 账号。仅在 OAuth 应用本身仅限受信任用户访问时开启：member 可读取全部监控数据（安全事件、公网 IP），若对 GitHub 或 Google 等公共提供方开启，该提供方的任意用户均可获得这些数据访问权限 |
 | `SERVERBEE_OAUTH__GITHUB__CLIENT_ID` | -- | GitHub OAuth App Client ID |
 | `SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET` | -- | GitHub OAuth App Client Secret |
 | `SERVERBEE_OAUTH__GOOGLE__CLIENT_ID` | -- | Google OAuth Client ID |
 | `SERVERBEE_OAUTH__GOOGLE__CLIENT_SECRET` | -- | Google OAuth Client Secret |
-| `SERVERBEE_OAUTH__OIDC__ISSUER_URL` | -- | OIDC Issuer URL |
-| `SERVERBEE_OAUTH__OIDC__CLIENT_ID` | -- | OIDC Client ID |
-| `SERVERBEE_OAUTH__OIDC__CLIENT_SECRET` | -- | OIDC Client Secret |
-| `SERVERBEE_OAUTH__OIDC__SCOPES` | `["openid", "email", "profile"]` | OAuth 请求的 scope |
 
 #### GeoIP（按需配置）
 
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
-| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | MaxMind 兼容 MMDB 文件路径。路径非空时启用该自定义 GeoIP 数据库；否则管理员可在「设置 → GeoIP Database」下载 DB-IP Lite 数据库 |
-| `SERVERBEE_ASN__MMDB_PATH` | `""` | DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB 文件路径。路径非空时启用路由追踪 ASN 富化；否则管理员可在「设置 → ASN Database」下载 DB-IP Lite ASN |
+| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | MaxMind 兼容 MMDB 文件路径。路径非空时启用该自定义 GeoIP 数据库；否则管理员可在「设置 → 数据源」下载 DB-IP Lite 数据库 |
+| `SERVERBEE_ASN__MMDB_PATH` | `""` | DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB 文件路径。路径非空时启用路由追踪 ASN 富化；否则管理员可在「设置 → 数据源」下载 DB-IP Lite ASN |
 
 #### Resend（邮件通知）
 
@@ -221,7 +217,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | 环境变量 | 默认值 | 说明 |
 |----------|--------|------|
 | `SERVERBEE_TOKEN` | 留空时由 Agent 生成 | Agent run token。接入时 Agent 会在 claim 前生成并持久化；显式环境变量值会原样使用且不写入磁盘 |
-| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | 文件读取 / 下载的最大字节数（默认 1GB） |
+| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | 文件上传的最大字节数（默认 1 GiB；内联读取上限 384 KiB，下载不设上限） |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Agent 拒绝访问的文件名 glob 模式（支持 Figment 数组语法 `["*.key","*.pem"]` 或逗号分隔） |
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | 公网 IP 查询服务的有序列表，Agent 启动和每次 IP 变更检测时按顺序逐个尝试，首个成功即采用。在 NAT、容器或网卡看不到可路由 IP 的环境下是必需的。完全离线部署可设为 `[]` 跳过外部查询 |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `300` | IP 检测间隔（秒），默认 5 分钟 |
@@ -346,7 +342,7 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 | 键 | 类型 | 默认值 | 说明 |
 |----|------|--------|------|
 | `base_url` | string | `""` | ServerBee 实例的公网 URL（用于回调 URL） |
-| `allow_registration` | bool | `false` | 首次 OAuth 登录时自动创建 member 账号。仅在 OAuth 提供方本身受访问控制（如自建 OIDC / 企业内部 IdP）时开启：member 可读取全部监控数据（安全事件、公网 IP），若对 GitHub 或 Google 等公共提供方开启，该提供方的任意用户均可获得这些数据访问权限 |
+| `allow_registration` | bool | `false` | 首次 OAuth 登录时自动创建 member 账号。仅在 OAuth 应用本身仅限受信任用户访问时开启：member 可读取全部监控数据（安全事件、公网 IP），若对 GitHub 或 Google 等公共提供方开启，该提供方的任意用户均可获得这些数据访问权限 |
 
 ### `[oauth.github]` —— GitHub OAuth
 
@@ -361,15 +357,6 @@ Agent 顶层键使用单下划线，嵌套键使用 `__`（双下划线）。
 |----|------|--------|------|
 | `client_id` | string | -- | Google OAuth Client ID |
 | `client_secret` | string | -- | Google OAuth Client Secret |
-
-### `[oauth.oidc]` —— OpenID Connect
-
-| 键 | 类型 | 默认值 | 说明 |
-|----|------|--------|------|
-| `issuer_url` | string | -- | OIDC Issuer URL（如 `https://auth.example.com/realms/main`） |
-| `client_id` | string | -- | OIDC Client ID |
-| `client_secret` | string | -- | OIDC Client Secret |
-| `scopes` | string[] | `["openid", "email", "profile"]` | OAuth 请求的 scope |
 
 ### `[upgrade]` —— Agent 升级
 
@@ -484,7 +471,7 @@ Server 默认匿名调用 [ipapi.is](https://ipapi.is/developers.html)，每个�
 |----|------|--------|------|
 | `enabled` | bool | `false` | 启用文件管理子系统（路径沙箱）。Agent 还需上报 `file` 能力 —— 在 `[capabilities]` 的 allow 列表中加入 `file` |
 | `root_paths` | string[] | `[]` | 将浏览限制在这些目录内。空数组拒绝所有文件操作 |
-| `max_file_size` | u64 | `1073741824` | 文件读取和下载操作的最大大小（字节），默认 1 GB |
+| `max_file_size` | u64 | `1073741824` | 文件上传的最大大小（字节），默认 1 GiB（内联读取上限 384 KiB，下载不设上限） |
 | `deny_patterns` | string[] | `["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]` | Agent 拒绝访问的文件名 glob 模式 |
 
 ### `[capabilities]` —— Agent 拥有的能力策略

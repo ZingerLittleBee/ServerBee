@@ -83,7 +83,7 @@ Evaluates [Network Quality Monitoring](/en/docs/monitoring#network-quality-monit
 | `capability_grant_detected` | Event-driven; fires when a high-risk capability (`terminal` / `exec` / `file` / `docker`) is **temporarily granted** on a server via the host-local `serverbee-agent grant` CLI. Expiry, revoke, and low-risk grants are audited but do not alert. See [Capabilities → Temporary grants](/en/docs/capabilities#temporary-grants) |
 
 <Callout type="info">
-The Web UI **Settings → Alerts** rule editor currently does not expose the three security rule types (`ssh_new_ip_login`, `ssh_brute_force_detected`, `port_scan_detected`) in its rule-type dropdown. Create and update those rules via the Alert Rules REST API (`POST /api/alert-rules` / `PUT /api/alert-rules/{id}`).
+**Settings → Alerts** provides one-click preset cards (`SecurityAlertPresets`) for creating the three security alert rules (`ssh_new_ip_login`, `ssh_brute_force_detected`, `port_scan_detected`) with sensible defaults (see [Security Events](/en/docs/security-events)). The manual rule-type dropdown does not expose those three types, so custom creation or editing outside the presets uses the Alert Rules REST API (`POST /api/alert-rules` / `PUT /api/alert-rules/{id}`).
 </Callout>
 
 The Alerts page offers a one-click **preset card** for `capability_grant_detected` ("Capability Temporarily Granted") with sensible defaults; the rule type is also selectable directly in the rule editor. It carries no `security` filter parameters and no auto-block action -- it fires on any high-risk temporary grant -- but it follows the same cover-type and maintenance-suppression behavior as the other event-driven rules.
@@ -388,23 +388,23 @@ Offline status is determined by a dedicated background task and works together w
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/alert-rules` | List all alert rules |
+| GET | `/api/alert-rules` | List all alert rules (admin) |
 | POST | `/api/alert-rules` | Create an alert rule (admin) |
-| GET | `/api/alert-rules/{id}` | Get alert rule details |
+| GET | `/api/alert-rules/{id}` | Get alert rule details (admin) |
 | PUT | `/api/alert-rules/{id}` | Update an alert rule (admin) |
 | DELETE | `/api/alert-rules/{id}` | Delete an alert rule (admin) |
-| GET | `/api/alert-rules/{id}/states` | List active/recent states for a rule |
+| GET | `/api/alert-rules/{id}/states` | List active/recent states for a rule (admin) |
 | GET | `/api/alert-events` | List recent alert events (`?limit=20`) |
 | GET | `/api/alert-events/{alert_key}` | Get detail for a single alert event |
-| GET | `/api/notifications` | List notification channels |
+| GET | `/api/notifications` | List notification channels (admin) |
 | POST | `/api/notifications` | Create a notification channel (admin) |
-| GET | `/api/notifications/{id}` | Get notification channel details |
+| GET | `/api/notifications/{id}` | Get notification channel details (admin) |
 | PUT | `/api/notifications/{id}` | Update a notification channel (admin) |
 | DELETE | `/api/notifications/{id}` | Delete a notification channel (admin) |
 | POST | `/api/notifications/{id}/test` | Send a test notification (admin) |
-| GET | `/api/notification-groups` | List notification groups |
+| GET | `/api/notification-groups` | List notification groups (admin) |
 | POST | `/api/notification-groups` | Create a notification group (admin) |
-| GET | `/api/notification-groups/{id}` | Get notification group details |
+| GET | `/api/notification-groups/{id}` | Get notification group details (admin) |
 | PUT | `/api/notification-groups/{id}` | Update a notification group (admin) |
 | DELETE | `/api/notification-groups/{id}` | Delete a notification group (admin) |
 

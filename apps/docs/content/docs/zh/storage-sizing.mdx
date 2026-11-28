@@ -27,7 +27,7 @@ icon: Database
   - 网络探针原始记录（及路由追踪记录）：**7 天**
   - 网络探针小时记录：**90 天**
   - 服务监控记录：**30 天**
-  - 清理任务追踪的其余事件与运维表：`security_event`（**30 天**）、`unlock_event`（**90 天**）、`ip_risk_cache`（**30 天**）、`enrollment_offer`（**30 天**）、`mobile_push_outbox`（**7 天**）、`task_run`（**7 天**）、`agent_authority_event`（**180 天**）
+  - 清理任务追踪的其余事件与运维表：`security_event`（**30 天**）、`unlock_event`（**90 天**）、`ip_risk_cache`（**30 天**）、`enrollment_offers`（**30 天**）、`mobile_push_outbox`（**7 天**）、`task_runs`（**7 天**）、`agent_authority_events`（**180 天**）
 - 磁盘 I/O 和温度监控已启用
 - 除非明确说明，否则不包含审计日志突发增长、安全事件突发增长、大型任务输出或异常的 Docker 事件波动带来的额外增长
 
@@ -44,7 +44,7 @@ icon: Database
 | GPU 监控 | Agent 每 3 秒上报，每 GPU 设备每 60 秒持久化 | 7 天 | `gpu_records` | 与原始指标一同由 60 秒写入器持久化 |
 | Docker 事件 | 事件驱动 | 7 天 | `docker_event` | 除非容器频繁变更，否则占用很小 |
 | 安全与 IP 质量事件 | 事件驱动 / 周期性 | 30 天 / 90 天 / 30 天 | `security_event`、`unlock_event`、`ip_risk_cache` | 除非主机遭遇高频 SSH / 扫描，否则占用较小 |
-| 运维与审计记录 | 用户 / 事件驱动 | 7 天 / 30 天 / 180 天 | `audit_logs`、`task_results`、`task_run`、`traceroute_record`、`agent_authority_event`、`enrollment_offer`、`mobile_push_outbox` | 通常比时序数据小得多 |
+| 运维与审计记录 | 用户 / 事件驱动 | 7 天 / 30 天 / 180 天 | `audit_logs`、`task_results`、`task_runs`、`traceroute_record`、`agent_authority_events`、`enrollment_offers`、`mobile_push_outbox` | 通常比时序数据小得多 |
 
 <Callout type="info">
 开启终端、执行、文件管理器或 Docker 管理等功能不会自动创建大型时序表。持续增长来自那些主动写入采样结果的功能。
@@ -114,7 +114,7 @@ S_30d =
 | 基础 + 每台 20 个目标 | 共 400 个网络探针分配（当前上限） | `1,019,748,512 B` | `972.51 MiB` |
 | 基础 + 每台 1 个监控 | 共 20 个 300 秒间隔的服务监控 | `102,420,472 B` | `97.68 MiB` |
 | 基础 + 每台 5 个监控 | 共 100 个 300 秒间隔的服务监控 | `229,937,112 B` | `219.29 MiB` |
-| 基础 + 每台 1 个 GPU | 共 20 个 GPU 设备（60 秒频率） | `112,066,552 B` | `106.88 MiB` |
+| 基础 + 每台 1 个 GPU | 共 20 个 GPU 设备（60 秒频率） | `112,066,552 B` | `106.87 MiB` |
 | 小型生产环境 | 3 个 Ping 任务 + 每台 1 个目标 + 每台 1 个监控 | `296,804,353 B` | `283.05 MiB` |
 | 中型生产环境 | 3 个 Ping 任务 + 每台 5 个目标 + 每台 2 个监控 | `518,524,953 B` | `494.50 MiB` |
 | 重型环境（无 GPU） | 3 个 Ping 任务 + 每台 20 个目标 + 每台 1 个监控 | `1,198,551,193 B` | `1.12 GiB` |

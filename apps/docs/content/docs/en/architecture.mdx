@@ -67,7 +67,7 @@ Its main service modules are:
 | ServerService | Server CRUD, grouping, tagging, ordering |
 | RecordService | Metric writes, history queries, hourly aggregation, retention cleanup |
 | AlertService | Alert rule CRUD, periodic evaluation, notification dispatch |
-| NotificationService | Notification channel management and message dispatch (Webhook/Telegram/Email/Bark/APNs via Push Relay) |
+| NotificationService | Notification channel management and message dispatch (Webhook/Telegram/Email/Bark, plus direct manual APNs channels via `ApnsService::send_push`; Push Relay mobile notifications run through the separate `MobilePushOutbox` pipeline) |
 | PingService | Ping task CRUD, task assignment, result storage |
 | TaskService | Remote command dispatch, result queries |
 | ConfigService | System configuration read/write (key-value store) |
@@ -400,11 +400,11 @@ OAuth login is supported for GitHub and Google. The `allow_registration` flag co
 
 ### Rate Limiting
 
-Implemented inline in route handlers using in-memory `DashMap`-backed counters on `AppState` (not `tower` middleware). Login, agent registration, and public status endpoints are rate-limited per IP:
+Uses in-memory `DashMap`-backed per-IP counters on `AppState`. The `login` and `register` buckets are checked inline in route handlers, while the `/api/status/*` `public` bucket is enforced via Axum route middleware (`from_fn_with_state`):
 
 | Endpoint | Limit |
 |----------|-------|
-| `POST /api/auth/login` | 5 requests per IP within a 15-minute window (counted before password verification) |
+| `POST /api/auth/login`, `POST /api/mobile/auth/login`, `POST /api/mobile/auth/recover` | 5 requests per IP within a 15-minute window (shared `login` bucket, counted before credential verification) |
 | `POST /api/agent/register` | 10 attempts per IP within a 15-minute window |
 | `GET /api/status/*` | 60 requests per IP within a 60-second window |
 

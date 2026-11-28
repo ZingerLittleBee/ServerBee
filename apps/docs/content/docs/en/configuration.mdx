@@ -70,22 +70,18 @@ There is no admin username/password environment variable. On first start (when n
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_OAUTH__BASE_URL` | `""` | Public server URL for constructing OAuth callback URLs |
-| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `false` | Auto-create member accounts on first OAuth login. Enable only when the OAuth provider itself is access-controlled (self-hosted OIDC / org-internal IdP): members can read all monitoring data (security events, public IPs), so enabling this with a public provider such as GitHub or Google grants that access to every user of the provider |
+| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `false` | Auto-create member accounts on first OAuth login. Keep disabled unless access to the OAuth app itself is restricted to trusted users: members can read all monitoring data (security events, public IPs), so enabling this with a public provider such as GitHub or Google grants that access to every user of the provider |
 | `SERVERBEE_OAUTH__GITHUB__CLIENT_ID` | -- | GitHub OAuth App client ID |
 | `SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET` | -- | GitHub OAuth App client secret |
 | `SERVERBEE_OAUTH__GOOGLE__CLIENT_ID` | -- | Google OAuth client ID |
 | `SERVERBEE_OAUTH__GOOGLE__CLIENT_SECRET` | -- | Google OAuth client secret |
-| `SERVERBEE_OAUTH__OIDC__ISSUER_URL` | -- | OIDC provider issuer URL |
-| `SERVERBEE_OAUTH__OIDC__CLIENT_ID` | -- | OIDC client ID |
-| `SERVERBEE_OAUTH__OIDC__CLIENT_SECRET` | -- | OIDC client secret |
-| `SERVERBEE_OAUTH__OIDC__SCOPES` | `["openid", "email", "profile"]` | OAuth scopes to request |
 
 #### GeoIP (Optional)
 
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
-| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to a MaxMind-compatible MMDB file. Non-empty path enables this custom GeoIP database; otherwise admins can download the DB-IP Lite database from Settings → GeoIP Database |
-| `SERVERBEE_ASN__MMDB_PATH` | `""` | Path to a DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB file. Non-empty path enables traceroute ASN enrichment; otherwise admins can download DB-IP Lite ASN from Settings → ASN Database |
+| `SERVERBEE_GEOIP__MMDB_PATH` | `""` | Path to a MaxMind-compatible MMDB file. Non-empty path enables this custom GeoIP database; otherwise admins can download the DB-IP Lite database from Settings → Data sources |
+| `SERVERBEE_ASN__MMDB_PATH` | `""` | Path to a DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB file. Non-empty path enables traceroute ASN enrichment; otherwise admins can download DB-IP Lite ASN from Settings → Data sources |
 
 #### Resend (Email Notifications)
 
@@ -221,7 +217,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | Environment Variable | Default | Description |
 |---------------------|---------|-------------|
 | `SERVERBEE_TOKEN` | generated when empty | Agent run token. During enrollment the Agent generates and persists one before claim; an explicit environment override is used as provided and is not written to disk |
-| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | Max file size in bytes for read/download (default 1GB) |
+| `SERVERBEE_FILE__MAX_FILE_SIZE` | `1073741824` | Max file size in bytes for uploads (default 1 GiB; inline reads are capped at 384 KiB and downloads are uncapped) |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `*.key,*.pem,...` | Glob patterns for files the agent refuses to access (Figment array syntax `["*.key","*.pem"]` or comma-separated) |
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | Ordered list of public IP services tried at startup and on every IP-change tick. First success wins. Required for agents behind NAT or in containers where interface enumeration can't see the routable IP. Set to `[]` to skip external lookups for air-gapped deployments |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `300` | IP check interval in seconds (default 5 minutes) |
@@ -346,7 +342,7 @@ Logs are written to stdout. The log level can also be set via the `RUST_LOG` env
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `base_url` | string | `""` | Public URL of your ServerBee instance (for callback URLs) |
-| `allow_registration` | bool | `false` | Auto-create member accounts on first OAuth login. Enable only when the OAuth provider itself is access-controlled (self-hosted OIDC / org-internal IdP): members can read all monitoring data (security events, public IPs), so enabling this with a public provider such as GitHub or Google grants that access to every user of the provider |
+| `allow_registration` | bool | `false` | Auto-create member accounts on first OAuth login. Keep disabled unless access to the OAuth app itself is restricted to trusted users: members can read all monitoring data (security events, public IPs), so enabling this with a public provider such as GitHub or Google grants that access to every user of the provider |
 
 ### `[oauth.github]` -- GitHub OAuth
 
@@ -361,15 +357,6 @@ Logs are written to stdout. The log level can also be set via the `RUST_LOG` env
 |-----|------|---------|-------------|
 | `client_id` | string | -- | Google OAuth client ID |
 | `client_secret` | string | -- | Google OAuth client secret |
-
-### `[oauth.oidc]` -- OpenID Connect
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `issuer_url` | string | -- | OIDC issuer URL (e.g., `https://auth.example.com/realms/main`) |
-| `client_id` | string | -- | OIDC client ID |
-| `client_secret` | string | -- | OIDC client secret |
-| `scopes` | string[] | `["openid", "email", "profile"]` | OAuth scopes to request |
 
 ### `[upgrade]` -- Agent Upgrade
 
@@ -484,7 +471,7 @@ By default, the Server calls [ipapi.is](https://ipapi.is/developers.html) anonym
 |-----|------|---------|-------------|
 | `enabled` | bool | `false` | Enable the file-management subsystem (path sandbox). The agent must also report the `file` capability — add `file` to the `[capabilities]` allow list |
 | `root_paths` | string[] | `[]` | Restrict browsing to these directories. Empty array rejects all file operations |
-| `max_file_size` | u64 | `1073741824` | Maximum file size (bytes) for read and download operations (default 1 GB) |
+| `max_file_size` | u64 | `1073741824` | Maximum file size (bytes) for uploads (default 1 GiB; inline reads are capped at 384 KiB and downloads are uncapped) |
 | `deny_patterns` | string[] | `["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]` | Glob patterns for files the agent will refuse to access |
 
 ### `[capabilities]` -- Agent-Owned Capability Policy

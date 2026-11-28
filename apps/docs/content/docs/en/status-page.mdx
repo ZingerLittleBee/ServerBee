@@ -42,10 +42,10 @@ When `show_network` is enabled, public network detail opens at `/status/server/{
 
 ### Admin API
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/status-page` | Read the status page configuration |
-| PUT | `/api/status-page` | Update the status page configuration |
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| GET | `/api/status-page` | Authenticated (Admin + Member) | Read the status page configuration |
+| PUT | `/api/status-page` | Admin | Update the status page configuration |
 
 Update example:
 
@@ -83,7 +83,7 @@ These endpoints are unauthenticated and power the public page. All `/api/status/
 | GET | `/api/status/incidents` | Active and recent incidents (`{ active, recent }`, where `recent` includes incidents resolved within the last 7 days) |
 | GET | `/api/status/maintenances` | Active and upcoming maintenance windows |
 
-Each `PublicServerSummary` entry includes `id`, `name`, `group_name`, `country_code`, `os`, `online`, `in_maintenance`, `public_remark`, `metrics`, `uptime_percent`, and `uptime_daily`.
+Each `PublicServerSummary` entry includes `id`, `name`, `group_name`, `region`, `country_code`, `os`, `online`, `in_maintenance`, `public_remark`, `metrics`, `uptime_percent`, and `uptime_daily`.
 
 ## Uptime Timeline
 

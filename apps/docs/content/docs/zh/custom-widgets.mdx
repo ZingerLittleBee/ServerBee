@@ -189,7 +189,7 @@ my-pack.zip
 
 ### 资源解析
 
-集合包里的资源（图片、JSON、辅助 JS 等）通过 `GET /api/widget-modules/{id}/{相对路径}` 访问。相对路径会自动以 entry 所在文件夹为根目录拼接：
+集合包里的资源（图片、JSON、辅助 JS 等）通过 `GET /api/widget-modules/{id}/{relative-path}` 访问。相对路径会自动以 entry 所在文件夹为根目录拼接：
 
 | 请求 URL | 解析到的 zip 内路径 |
 |----------|--------------------|
@@ -279,7 +279,7 @@ curl -X DELETE "https://your-host/api/widget-modules/com.example.hello" \
   -H "X-API-Key: $SERVERBEE_API_KEY"
 ```
 
-卸载成功返回 `204 No Content`。内置组件模块（如 `com.serverbee.tailscale-overview` 和 `com.serverbee.hello-world`）不能被卸载，对其调用 DELETE 会返回 `400`。
+卸载成功返回 `204 No Content`。内置组件模块（如 `com.serverbee.tailscale-overview` 和 `com.serverbee.hello-world`）不能被卸载，对其调用 `DELETE` 会返回 `400`。
 
 ## 限制与安全
 

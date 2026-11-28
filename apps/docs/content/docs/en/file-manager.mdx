@@ -36,7 +36,7 @@ max_file_size = 1073741824
 deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
 ```
 
-Equivalent environment variables (array fields require Figment array syntax rather than comma-separated values):
+Equivalent environment variables (`SERVERBEE_FILE__ROOT_PATHS` and `SERVERBEE_FILE__DENY_PATTERNS` accept either Figment array syntax or comma-separated values; `SERVERBEE_CAPABILITIES__ALLOW` and `SERVERBEE_CAPABILITIES__DENY` require Figment array syntax):
 
 ```bash
 SERVERBEE_CAPABILITIES__ALLOW='["file"]'

@@ -93,7 +93,7 @@ Go to **Settings → Rate Limits** (`/settings/rate-limits`) to monitor and rese
 
 | Scope | Endpoints Covered | Default Limit | Window |
 |-------|-------------------|---------------|--------|
-| `login` | `POST /api/auth/login` (all requests before credential verification) | `5` (`rate_limit.login_max`) | 15 minutes |
+| `login` | `POST /api/auth/login`, `POST /api/mobile/auth/login`, `POST /api/mobile/auth/recover` (all requests before credential verification) | `5` (`rate_limit.login_max`) | 15 minutes |
 | `register` | Agent registration endpoints | `10` (`rate_limit.register_max`) | 15 minutes |
 | `public` | Unauthenticated `/api/status/*` endpoints | `60` (fixed) | 60 seconds |
 

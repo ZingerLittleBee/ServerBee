@@ -36,7 +36,7 @@ max_file_size = 1073741824
 deny_patterns = ["*.key", "*.pem", "id_rsa*", ".env*", "shadow", "passwd"]
 ```
 
-等价环境变量（数组字段必须使用 Figment 数组语法，而非逗号分隔字符串）：
+等价环境变量（`SERVERBEE_FILE__ROOT_PATHS` 与 `SERVERBEE_FILE__DENY_PATTERNS` 同时支持 Figment 数组语法或逗号分隔值；`SERVERBEE_CAPABILITIES__ALLOW` 与 `SERVERBEE_CAPABILITIES__DENY` 必须使用 Figment 数组语法）：
 
 ```bash
 SERVERBEE_CAPABILITIES__ALLOW='["file"]'

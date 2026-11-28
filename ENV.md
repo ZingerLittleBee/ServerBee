@@ -49,15 +49,11 @@ These variables are for local repo tooling and development workflows. They are n
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_OAUTH__BASE_URL` | `oauth.base_url` | string | `""` | Public base URL for constructing OAuth callback URLs (e.g. `https://monitor.example.com`) |
-| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `oauth.allow_registration` | bool | `false` | Auto-create member accounts on first OAuth login. ⚠️ Enable only when the OAuth provider itself is access-controlled (self-hosted OIDC / org-internal IdP): members can read **all** monitoring data (security events, public IPs), so enabling this with a public provider such as GitHub grants that access to every user of the provider |
+| `SERVERBEE_OAUTH__ALLOW_REGISTRATION` | `oauth.allow_registration` | bool | `false` | Auto-create member accounts on first OAuth login. ⚠️ Keep disabled unless access to the OAuth app itself is restricted to trusted users: members can read **all** monitoring data (security events, public IPs), so enabling this with a public provider such as GitHub or Google grants that access to every user of the provider |
 | `SERVERBEE_OAUTH__GITHUB__CLIENT_ID` | `oauth.github.client_id` | string | - | GitHub OAuth App client ID |
 | `SERVERBEE_OAUTH__GITHUB__CLIENT_SECRET` | `oauth.github.client_secret` | string | - | GitHub OAuth App client secret |
 | `SERVERBEE_OAUTH__GOOGLE__CLIENT_ID` | `oauth.google.client_id` | string | - | Google OAuth client ID |
 | `SERVERBEE_OAUTH__GOOGLE__CLIENT_SECRET` | `oauth.google.client_secret` | string | - | Google OAuth client secret |
-| `SERVERBEE_OAUTH__OIDC__ISSUER_URL` | `oauth.oidc.issuer_url` | string | - | OIDC provider issuer URL |
-| `SERVERBEE_OAUTH__OIDC__CLIENT_ID` | `oauth.oidc.client_id` | string | - | OIDC client ID |
-| `SERVERBEE_OAUTH__OIDC__CLIENT_SECRET` | `oauth.oidc.client_secret` | string | - | OIDC client secret |
-| `SERVERBEE_OAUTH__OIDC__SCOPES` | `oauth.oidc.scopes` | string[] | `["openid", "email", "profile"]` | OAuth scopes to request |
 
 ### GeoIP (Optional)
 
@@ -69,7 +65,7 @@ These variables are for local repo tooling and development workflows. They are n
 
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
-| `SERVERBEE_ASN__MMDB_PATH` | `asn.mmdb_path` | string | `""` | Path to a DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB file. Non-empty path enables traceroute ASN enrichment; otherwise admins can download DB-IP Lite ASN from Settings → ASN Database |
+| `SERVERBEE_ASN__MMDB_PATH` | `asn.mmdb_path` | string | `""` | Path to a DB-IP Lite ASN / MaxMind GeoLite2-ASN MMDB file. Non-empty path enables traceroute ASN enrichment; otherwise admins can download DB-IP Lite ASN from Settings → Data sources |
 
 ### Resend (Email Notifications)
 
@@ -204,7 +200,7 @@ Agent top-level keys use single underscore. Nested keys use `__` (double undersc
 | Environment Variable | TOML Key | Type | Default | Description |
 |---------------------|----------|------|---------|-------------|
 | `SERVERBEE_TOKEN` | `token` | string | `""` | Agent run token. When empty during enrollment, the Agent generates and persists one before claim; an explicit environment override is used as provided and is not written to disk |
-| `SERVERBEE_FILE__MAX_FILE_SIZE` | `file.max_file_size` | u64 | `1073741824` | Maximum file size in bytes for read/download (default 1GB) |
+| `SERVERBEE_FILE__MAX_FILE_SIZE` | `file.max_file_size` | u64 | `1073741824` | Maximum file size in bytes for uploads (default 1 GiB; inline reads are capped at 384 KiB and downloads are uncapped) |
 | `SERVERBEE_FILE__DENY_PATTERNS` | `file.deny_patterns` | string[] | `*.key,*.pem,id_rsa*,.env*,shadow,passwd` | Glob patterns for files the agent will refuse to access (Figment array syntax `["*.key","*.pem"]` or comma-separated) |
 | `SERVERBEE_IP_CHANGE__EXTERNAL_IP_URLS` | `ip_change.external_ip_urls` | string[] | `["https://api.ipify.org","https://ifconfig.me/ip","https://icanhazip.com","https://checkip.amazonaws.com"]` | Ordered list of external IP services tried at startup and on every IP-change check. First success wins. Required for agents behind NAT, in containers, or anywhere interface enumeration can't see the routable public IP. Air-gapped deployments can set this to an empty list to skip external lookups entirely |
 | `SERVERBEE_IP_CHANGE__INTERVAL_SECS` | `ip_change.interval_secs` | u64 | `300` | IP check interval in seconds (default 5 minutes) |

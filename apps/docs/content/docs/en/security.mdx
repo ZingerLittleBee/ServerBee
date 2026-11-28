@@ -110,9 +110,9 @@ On first start (when no users exist), ServerBee auto-creates an admin account wi
 
 ### Login Rate Limiting
 
-ServerBee enforces IP-level rate limiting on `POST /api/auth/login` **before** credential verification:
+ServerBee enforces IP-level rate limiting on `POST /api/auth/login`, `POST /api/mobile/auth/login`, and `POST /api/mobile/auth/recover` **before** credential verification:
 
-- Maximum **5 requests** per 15-minute window by default (configurable via `rate_limit.login_max`). Every request to `POST /api/auth/login` counts toward the window — including successful logins and both steps of a 2FA login, not only failed attempts.
+- Maximum **5 requests** per 15-minute window by default (configurable via `rate_limit.login_max`). Every request across those three endpoints shares the `login` bucket — including successful logins and both steps of a 2FA login, not only failed attempts.
 - Returns `429 Too Many Requests` when exceeded (and writes a `login_rate_limited` audit entry)
 - Expired rate limit entries are cleaned up by the background `session_cleaner` task
 

@@ -240,13 +240,13 @@ ServerBee automatically cleans up expired data via a background task that runs o
 | GPU metrics (`gpu_records`) | 7 days | `retention.gpu_records_days` |
 | Ping probe records (`ping_records`) | 7 days | `retention.ping_records_days` |
 | Network probe raw & traceroute records (`network_probe_record`, `traceroute_record`) | 7 days | `retention.network_probe_days` |
-| Network probe hourly aggregates (`network_probe_hourly`) | 90 days | `retention.network_probe_hourly_days` |
+| Network probe hourly aggregates (`network_probe_record_hourly`) | 90 days | `retention.network_probe_hourly_days` |
 | Traffic hourly (`traffic_hourly`) | 7 days | `retention.traffic_hourly_days` |
 | Traffic daily (`traffic_daily`) | 400 days | `retention.traffic_daily_days` |
 | Task results (`task_results`) | 7 days | `retention.task_results_days` |
-| Docker events (`docker_events`) | 7 days | `retention.docker_events_days` |
-| Service monitor records (`service_monitor_records`) | 30 days | `retention.service_monitor_days` |
-| Security events (`security_events`) | 30 days | `retention.security_event_days` |
+| Docker events (`docker_event`) | 7 days | `retention.docker_events_days` |
+| Service monitor records (`service_monitor_record`) | 30 days | `retention.service_monitor_days` |
+| Security events (`security_event`) | 30 days | `retention.security_event_days` |
 | IP quality status-change events (`unlock_event`) | 90 days | `retention.ip_quality_event_days` |
 | Audit logs (`audit_logs`) | 180 days | `retention.audit_logs_days` |
 
