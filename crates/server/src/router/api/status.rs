@@ -153,7 +153,22 @@ fn check_public_rate(map: &dashmap::DashMap<String, RateLimitEntry>, ip: &str) -
 // Gate helpers
 // ---------------------------------------------------------------------------
 
-/// Resolve the public scope and verify the top-level `enabled` toggle.
+async fn resolve_enabled_scope_with_servers(
+    state: &AppState,
+) -> Result<
+    (
+        PublicScope,
+        std::collections::HashMap<String, crate::entity::server::Model>,
+    ),
+    AppError,
+> {
+    let (scope, servers) = svc::resolve_scope_with_servers(&state.db).await?;
+    if !scope.config.enabled {
+        return Err(AppError::Forbidden("public_status_disabled".into()));
+    }
+    Ok((scope, servers))
+}
+
 async fn resolve_enabled_scope(state: &AppState) -> Result<PublicScope, AppError> {
     let scope = svc::resolve_scope(&state.db).await?;
     if !scope.config.enabled {
@@ -217,9 +232,10 @@ async fn get_config(
 async fn list_servers(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiResponse<Vec<svc::PublicServerSummary>>>, AppError> {
-    resolve_enabled_scope(&state).await?;
-    let servers = svc::list_servers(&state.db, &state.agent_manager).await?;
-    ok(servers)
+    let (scope, servers) = resolve_enabled_scope_with_servers(&state).await?;
+    let summaries =
+        svc::list_servers_with_resolved(&state.db, &state.agent_manager, &scope, servers).await?;
+    ok(summaries)
 }
 
 #[utoipa::path(
@@ -238,10 +254,13 @@ async fn get_server_detail(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Result<Json<ApiResponse<svc::PublicServerDetail>>, AppError> {
-    let scope = resolve_enabled_scope(&state).await?;
+    let (scope, mut servers) = resolve_enabled_scope_with_servers(&state).await?;
     gate_subpage(&scope, |c| c.show_server_detail)?;
     gate_scope_id(&scope, &id)?;
-    let detail = svc::get_server_detail(&state.db, &state.agent_manager, &id).await?;
+    let srv = servers
+        .remove(&id)
+        .ok_or_else(|| AppError::NotFound("server".into()))?;
+    let detail = svc::get_server_detail_for_model(&state.db, &state.agent_manager, srv).await?;
     ok(detail)
 }
 
@@ -271,7 +290,7 @@ async fn get_server_metrics(
     let scope = resolve_enabled_scope(&state).await?;
     gate_subpage(&scope, |c| c.show_server_detail)?;
     gate_scope_id(&scope, &id)?;
-    let points = svc::get_server_metrics(&state.db, &id, range).await?;
+    let points = svc::get_server_metrics_unchecked(&state.db, &id, range).await?;
     ok(points)
 }
 
@@ -293,7 +312,7 @@ async fn get_server_uptime_daily(
 ) -> Result<Json<ApiResponse<Vec<UptimeDailyEntry>>>, AppError> {
     let scope = resolve_enabled_scope(&state).await?;
     gate_scope_id(&scope, &id)?;
-    let daily = svc::get_server_uptime_daily(&state.db, &id).await?;
+    let daily = crate::service::uptime::UptimeService::get_daily_filled(&state.db, &id, 90).await?;
     ok(daily)
 }
 
@@ -312,8 +331,13 @@ async fn network_overview(
 ) -> Result<Json<ApiResponse<svc::PublicNetworkOverview>>, AppError> {
     let scope = resolve_enabled_scope(&state).await?;
     gate_subpage(&scope, |c| c.show_network)?;
-    let overview =
-        svc::network_overview(&state.db, &state.agent_manager, &state.config.network_probe).await?;
+    let overview = svc::network_overview_with_scope(
+        &state.db,
+        &state.agent_manager,
+        &state.config.network_probe,
+        &scope,
+    )
+    .await?;
     ok(overview)
 }
 
@@ -336,7 +360,7 @@ async fn network_server_detail(
     let scope = resolve_enabled_scope(&state).await?;
     gate_subpage(&scope, |c| c.show_network)?;
     gate_scope_id(&scope, &id)?;
-    let detail = svc::network_server_detail(
+    let detail = svc::network_server_detail_unchecked(
         &state.db,
         &state.agent_manager,
         &state.config.network_probe,
@@ -361,7 +385,7 @@ async fn ip_quality_overview(
 ) -> Result<Json<ApiResponse<svc::PublicIpQualityOverview>>, AppError> {
     let scope = resolve_enabled_scope(&state).await?;
     gate_subpage(&scope, |c| c.show_ip_quality)?;
-    let overview = svc::ip_quality_overview(&state.db).await?;
+    let overview = svc::ip_quality_overview_with_scope(&state.db, &scope).await?;
     ok(overview)
 }
 

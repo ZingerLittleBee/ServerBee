@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::{NaiveDate, SecondsFormat, Utc};
 use sea_orm::*;
 use serde::Serialize;
@@ -71,14 +73,68 @@ impl UptimeService {
         Ok(result)
     }
 
-    /// Aggregate uptime data for the current day.
-    /// Checks record existence in the `records` table to determine online minutes.
-    /// Each record represents ~1 minute of online time (record_writer writes every 60s).
-    /// Uses INSERT ... ON CONFLICT DO UPDATE (upsert) on (server_id, date).
+    pub async fn get_daily_filled_batch(
+        db: &DatabaseConnection,
+        server_ids: &[String],
+        days: u32,
+    ) -> Result<HashMap<String, Vec<UptimeDailyEntry>>, AppError> {
+        if server_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let today = Utc::now().date_naive();
+        let start_date = today - chrono::Duration::days((days as i64) - 1);
+
+        let records = uptime_daily::Entity::find()
+            .filter(uptime_daily::Column::ServerId.is_in(server_ids.iter().cloned()))
+            .filter(uptime_daily::Column::Date.gte(start_date))
+            .filter(uptime_daily::Column::Date.lte(today))
+            .order_by_asc(uptime_daily::Column::Date)
+            .all(db)
+            .await?;
+
+        let mut records_by_server: HashMap<&str, HashMap<NaiveDate, &uptime_daily::Model>> =
+            HashMap::new();
+        for r in &records {
+            records_by_server
+                .entry(r.server_id.as_str())
+                .or_default()
+                .insert(r.date, r);
+        }
+
+        let mut out = HashMap::with_capacity(server_ids.len());
+        for server_id in server_ids {
+            let record_map = records_by_server.get(server_id.as_str());
+            let mut entries = Vec::with_capacity(days as usize);
+            let mut current = start_date;
+            while current <= today {
+                let entry = if let Some(r) = record_map.and_then(|m| m.get(&current)) {
+                    UptimeDailyEntry {
+                        date: current,
+                        total_minutes: r.total_minutes,
+                        online_minutes: r.online_minutes,
+                        downtime_incidents: r.downtime_incidents,
+                    }
+                } else {
+                    UptimeDailyEntry {
+                        date: current,
+                        total_minutes: 0,
+                        online_minutes: 0,
+                        downtime_incidents: 0,
+                    }
+                };
+                entries.push(entry);
+                current += chrono::Duration::days(1);
+            }
+            out.insert(server_id.clone(), entries);
+        }
+
+        Ok(out)
+    }
+
     pub async fn aggregate_daily(db: &DatabaseConnection) -> Result<u32, AppError> {
         let now = Utc::now();
         let today = now.date_naive();
-        // Use RFC3339 format to match sea-orm's DateTimeUtc storage format in SQLite
         let day_start = today
             .and_hms_opt(0, 0, 0)
             .unwrap()
@@ -86,42 +142,58 @@ impl UptimeService {
             .to_rfc3339_opts(SecondsFormat::AutoSi, false);
         let day_end = now.to_rfc3339_opts(SecondsFormat::AutoSi, false);
 
-        // Minutes elapsed in the current day so far
         let total_minutes = {
             let elapsed = now - today.and_hms_opt(0, 0, 0).unwrap().and_utc();
             elapsed.num_minutes().max(1) as i32
         };
 
-        // Get all server IDs
         let servers = server::Entity::find().all(db).await?;
         if servers.is_empty() {
             return Ok(0);
         }
 
+        let rows = db
+            .query_all(Statement::from_sql_and_values(
+                db.get_database_backend(),
+                "SELECT server_id, time FROM records WHERE time >= $1 AND time < $2 ORDER BY server_id, time",
+                [day_start.into(), day_end.into()],
+            ))
+            .await?;
+
+        let mut stats: HashMap<String, (i32, i32, chrono::DateTime<Utc>)> = HashMap::new();
+        for row in &rows {
+            let server_id: String = row
+                .try_get_by_index(0)
+                .map_err(|e| AppError::Internal(format!("Failed to read server_id: {e}")))?;
+            let time: chrono::DateTime<Utc> = row
+                .try_get_by_index(1)
+                .map_err(|e| AppError::Internal(format!("Failed to read record time: {e}")))?;
+
+            match stats.get_mut(&server_id) {
+                Some((count, incidents, prev_time)) => {
+                    *count += 1;
+                    if (time - *prev_time).num_seconds() > 120 {
+                        *incidents += 1;
+                    }
+                    *prev_time = time;
+                }
+                None => {
+                    stats.insert(server_id, (1, 0, time));
+                }
+            }
+        }
+
         let date_str = today.format("%Y-%m-%d").to_string();
+        let txn = db.begin().await?;
         let mut upserted = 0u32;
 
         for srv in &servers {
-            // Count records for this server today (each record = ~1 minute online)
-            let count_result = db
-                .query_one(Statement::from_sql_and_values(
-                    db.get_database_backend(),
-                    "SELECT COUNT(*) FROM records WHERE server_id = $1 AND time >= $2 AND time < $3",
-                    [srv.id.clone().into(), day_start.clone().into(), day_end.clone().into()],
-                ))
-                .await?;
+            let (online_minutes, downtime_incidents) = stats
+                .get(&srv.id)
+                .map(|&(count, incidents, _)| (count, incidents))
+                .unwrap_or((0, 0));
 
-            let online_minutes: i32 = match count_result {
-                Some(row) => row.try_get_by_index(0).unwrap_or(0),
-                None => 0,
-            };
-
-            // Count downtime incidents: gaps > 2 minutes between consecutive records
-            let downtime_incidents =
-                Self::count_downtime_incidents(db, &srv.id, &day_start, &day_end).await?;
-
-            // Upsert into uptime_daily
-            db.execute(Statement::from_sql_and_values(
+            txn.execute(Statement::from_sql_and_values(
                 db.get_database_backend(),
                 "INSERT INTO uptime_daily (server_id, date, total_minutes, online_minutes, downtime_incidents) \
                  VALUES ($1, $2, $3, $4, $5) \
@@ -142,48 +214,8 @@ impl UptimeService {
             upserted += 1;
         }
 
+        txn.commit().await?;
         Ok(upserted)
-    }
-
-    /// Count distinct downtime incidents for a server in a time range.
-    /// A downtime incident is a gap of more than 2 minutes between consecutive records.
-    async fn count_downtime_incidents(
-        db: &DatabaseConnection,
-        server_id: &str,
-        start: &str,
-        end: &str,
-    ) -> Result<i32, AppError> {
-        let rows = db
-            .query_all(Statement::from_sql_and_values(
-                db.get_database_backend(),
-                "SELECT time FROM records WHERE server_id = $1 AND time >= $2 AND time < $3 ORDER BY time",
-                [server_id.into(), start.into(), end.into()],
-            ))
-            .await?;
-
-        if rows.len() < 2 {
-            return Ok(0);
-        }
-
-        let mut incidents = 0i32;
-        let mut prev_time: Option<chrono::DateTime<Utc>> = None;
-
-        for row in &rows {
-            let time: chrono::DateTime<Utc> = row
-                .try_get_by_index(0)
-                .map_err(|e| AppError::Internal(format!("Failed to read record time: {e}")))?;
-
-            if let Some(prev) = prev_time {
-                let gap = (time - prev).num_seconds();
-                if gap > 120 {
-                    incidents += 1;
-                }
-            }
-
-            prev_time = Some(time);
-        }
-
-        Ok(incidents)
     }
 }
 

@@ -175,6 +175,51 @@ impl MaintenanceService {
 
         Ok(false)
     }
+
+    pub async fn get_in_maintenance_set<C: ConnectionTrait>(
+        db: &C,
+        server_ids: &[String],
+        now: DateTime<Utc>,
+    ) -> Result<std::collections::HashSet<String>, AppError> {
+        let mut result = std::collections::HashSet::new();
+        if server_ids.is_empty() {
+            return Ok(result);
+        }
+
+        let maintenances = maintenance::Entity::find()
+            .filter(maintenance::Column::Active.eq(true))
+            .filter(maintenance::Column::StartAt.lte(now))
+            .filter(maintenance::Column::EndAt.gte(now))
+            .all(db)
+            .await?;
+
+        if maintenances.is_empty() {
+            return Ok(result);
+        }
+
+        for m in &maintenances {
+            match &m.server_ids_json {
+                None => {
+                    result.extend(server_ids.iter().cloned());
+                    return Ok(result);
+                }
+                Some(json) => {
+                    let ids: Vec<String> = serde_json::from_str(json).unwrap_or_default();
+                    if ids.is_empty() {
+                        result.extend(server_ids.iter().cloned());
+                        return Ok(result);
+                    }
+                    for id in server_ids {
+                        if ids.iter().any(|listed| listed == id) {
+                            result.insert(id.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 #[cfg(test)]
@@ -235,7 +280,9 @@ mod tests {
         assert_eq!(model.description, Some("scheduled".to_string()));
 
         // server_ids_json should be a JSON-serialized array.
-        let stored = model.server_ids_json.expect("server_ids_json should be set");
+        let stored = model
+            .server_ids_json
+            .expect("server_ids_json should be set");
         let parsed: Vec<String> = serde_json::from_str(&stored).unwrap();
         assert_eq!(parsed, ids);
     }
@@ -326,7 +373,10 @@ mod tests {
 
         let list = MaintenanceService::list(&db).await.unwrap();
         assert_eq!(list.len(), 2);
-        assert_eq!(list[0].id, "newer", "most recent created_at should be first");
+        assert_eq!(
+            list[0].id, "newer",
+            "most recent created_at should be first"
+        );
         assert_eq!(list[1].id, "older");
     }
 
@@ -373,7 +423,8 @@ mod tests {
             updated.updated_at >= original_updated_at,
             "updated_at should be refreshed"
         );
-        let parsed: Vec<String> = serde_json::from_str(updated.server_ids_json.as_ref().unwrap()).unwrap();
+        let parsed: Vec<String> =
+            serde_json::from_str(updated.server_ids_json.as_ref().unwrap()).unwrap();
         assert_eq!(parsed, vec!["x".to_string(), "y".to_string()]);
     }
 
@@ -413,7 +464,13 @@ mod tests {
 
         let created = MaintenanceService::create(
             &db,
-            make_input("clearme", -60, 3600, Some(vec!["s1".to_string()]), Some(true)),
+            make_input(
+                "clearme",
+                -60,
+                3600,
+                Some(vec!["s1".to_string()]),
+                Some(true),
+            ),
         )
         .await
         .unwrap();
@@ -671,14 +728,26 @@ mod tests {
         // Active window targeting a different server.
         MaintenanceService::create(
             &db,
-            make_input("other", -60, 3600, Some(vec!["other-srv".to_string()]), Some(true)),
+            make_input(
+                "other",
+                -60,
+                3600,
+                Some(vec!["other-srv".to_string()]),
+                Some(true),
+            ),
         )
         .await
         .unwrap();
         // Active window targeting our server.
         MaintenanceService::create(
             &db,
-            make_input("mine", -60, 3600, Some(vec!["my-srv".to_string()]), Some(true)),
+            make_input(
+                "mine",
+                -60,
+                3600,
+                Some(vec!["my-srv".to_string()]),
+                Some(true),
+            ),
         )
         .await
         .unwrap();
