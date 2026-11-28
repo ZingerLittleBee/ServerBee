@@ -4,7 +4,7 @@ description: ServerBee 原生 iOS 配套应用，支持二维码配对、推送�
 icon: Smartphone
 ---
 
-ServerBee 提供原生 iOS 配套应用，把服务器监控带到你的手机：实时指标、告警历史，以及随时随地管理服务器。目前支持已验证通知注册和定时任务最终结果通知，成功通知需单独启用，现已支持通过 Server 确认的移动订阅接收加密告警触发和恢复通知，管理员安全规则通知沿用同一已验证的加密投递链路。
+ServerBee 提供原生 iOS 配套应用，把服务器监控带到你的手机：实时指标、告警历史、机群洞察，以及随时随地管理服务器。目前支持已验证通知注册和定时任务最终结果通知，成功通知需单独启用，现已支持通过 Server 确认的移动订阅接收加密告警触发和恢复通知，管理员安全规则通知沿用同一已验证的加密投递链路。
 
 ## 获取方式
 
@@ -16,22 +16,22 @@ xcodegen generate
 open ServerBee.xcodeproj
 ```
 
-从源码构建需要自己的 Apple Development Team。官方应用的设计由发布者运营的独立 Relay 保管 APNs 凭证，官方应用用户和自托管 Server 运维者无需持有发布者的密钥。本仓库尚未分发该签名应用，本地构建不能证明 真实 APNs 投递。
+从源码构建需要自己的 Apple Development Team。官方应用的设计由发布者运营的独立 Relay 保管 APNs 凭证，官方应用用户和自托管 Server 运维者无需持有发布者的密钥。本仓库尚未分发该签名应用，本地构建不能证明真实 APNs 投递。
 
 ## 功能特性
 
-- **二维码配对** -- 扫描 Web 应用中的二维码即可即时认证，无需手动输入 Token
-- **已验证通知设置** -- 显式授权、订阅设置与 已认证安装注册，以及管理员所有者的任务最终结果通知，成功通知需单独启用，以及无需通知组的加密告警触发、恢复和管理员安全规则通知
-- **实时指标** -- 通过 WebSocket 传输的实时服务器状态、CPU、内存、磁盘和网络指标
-- **Tailscale 与 Headscale 视图** -- 原生单机 WireGuard 对端路径诊断（`ServerTailscaleView`）与全局 Tailnet 控制面管理（`TailscaleAdminView` + `TailnetOverviewSection`），完整适配隐私模式 IP 打码
-- **告警历史** -- 查看近期告警及其状态（触发/已解决）和详细信息
+- **二维码配对与账密直连登录** -- 扫描 Web 应用中的二维码即可即时认证，也可直接输入 Server 地址、用户名、密码及 2FA TOTP 验证码登录
+- **四标签原生工作区** -- **服务器**（WebSocket 实时指标、历史图表、网络探测/Ping/Traceroute、流量与成本洞察及计费/自动续费编辑、安全事件、IP 质量、Docker 容器与实时日志、Tailscale 对端诊断、Agent 接入与升级进度）、**告警**（触发/已解决历史与详情）、**洞察（Insights）**（机群健康、流量与成本汇总、服务监控、事件公告与维护窗口，以及全局安全、IP 质量、网络探测汇总），以及 **设置**
+- **已验证通知设置** -- 显式授权、订阅设置与已认证安装注册，以及管理员所有者的任务最终结果通知（成功通知需单独启用），还有无需通知组的加密告警触发、恢复和管理员安全规则通知
+- **Tailscale 与 Headscale 视图** -- 原生单机 WireGuard 对端路径诊断（`ServerTailscaleView`）与全局 Tailnet 控制面管理（`TailscaleAdminView` + `TailnetOverviewSection`）
+- **设置与系统管理** -- 修改密码、2FA、防火墙封禁列表、API Key、已配对设备、设备名称、外观、应用内语言切换、全局隐私模式，以及完整的 **管理（Administration）** 入口（服务器分组、Ping 任务、定时命令、网络探测、Tailscale、IP 质量、速率限制、状态页、用户、审计日志、GeoIP 与 ASN 数据库）
 - **安全认证** -- 基于 Bearer Token 的认证，支持自动刷新（15 分钟访问令牌，30 天刷新令牌）
 
 ## 系统要求
 
 - iOS 17.0 或更高版本
 - 启用移动认证的 ServerBee 服务器实例（v0.8.0+）
-- 已验证通知设置需要：配置 HTTPS Push Relay，并使用正确签名、正确签名的实体设备
+- 已验证通知设置需要：配置 HTTPS Push Relay，并使用正确签名的实体设备
 
 ## 设备配对
 
@@ -51,13 +51,13 @@ refresh_ttl = 2592000 # 刷新令牌有效期（秒），默认 30 天
 
 1. 登录你的 ServerBee Web 应用
 2. 进入 **设置** → **移动设备**
-3. 点击 **配对新设备**
+3. 点击 **添加设备**
 4. 显示一个 5 分钟有效期的二维码
 
-### 3. 使用 iOS 应用扫描
+### 3. 使用 iOS 应用扫描（或直接登录）
 
 1. 打开 ServerBee iOS 应用
-2. 在欢迎屏幕点击 **扫描二维码**
+2. 在欢迎屏幕点击 **扫描二维码**（或直接填写 Server 地址、用户名、密码及 2FA TOTP 验证码登录）
 3. 将相机对准 Web 应用中显示的二维码
 4. 应用将自动认证并显示你的服务器列表
 
@@ -91,7 +91,7 @@ iOS 客户端提供原生的单机 Tailscale 诊断视图与全局 Tailnet 管�
 
 - **服务器详情 → Tailscale（`ServerTailscaleView`）**：当服务器开启 `CAP_TAILSCALE` 并上报实时 `tailscaled` 状态或存在持久化 Tailscale 地址时显示（`GET /api/servers/{id}/tailscale/status`）。展示后端状态（`Running`、`NeedsLogin`、`Stopped`）、支持点按复制的 Tailscale IPv4/IPv6 与 MagicDNS 行、DERP 主区域、密钥过期预警、Exit Node 与子网路由标签、ACL 标签、健康告警，以及带 `Direct`、`DERP`、`Peer Relay`、`Idle` 连接模式徽章的对端列表（含活跃 Endpoint、收发流量、握手时间及离线缓存快照提示）。
 - **设置 → 管理 → Tailscale（`TailscaleAdminView` 与 `TailnetOverviewSection`）**：管理员可配置 Tailscale 或自建 Headscale 控制面凭据、已保存的 API Key、首选 Server 地址及 Tailscale Serve 回环认证（`GET/PUT /api/tailscale/config`），执行 **测试连接**（`POST /api/tailscale/test`），并通过 `TailnetOverviewSection`（`GET /api/tailscale/overview`）查看在线/总设备数、已关联 ServerBee 服务器数、即将过期密钥数，以及点击已匹配设备直达对应 `ServerDetailView`。
-- **隐私模式与 `*.ts.net` HTTPS**：开启 **设置 → 隐私模式** 后，两处界面中的 Tailscale IP、对端 Endpoint、子网路由、含 IP 的域名/设备名及 Tailnet URL 均自动隐藏后两段，而复制操作与编辑输入框保留原始值。通过 `deploy/docker-compose.tailscale.yml` 部署时，Tailscale 自动签发的 Let's Encrypt `*.ts.net` 证书天然满足 iOS App Transport Security（ATS）要求，详见 [Tailscale 集成](/zh/docs/tailscale)。
+- **隐私模式与 `*.ts.net` HTTPS**：开启 **设置 → 隐私模式** 后，应用内各处敏感 IP 与主机信息（包括两处 Tailscale 界面中的 IP、对端 Endpoint、子网路由、含 IP 的域名/设备名及 Tailnet URL）均自动打码，而复制操作与编辑输入框保留原始值。通过 `deploy/docker-compose.tailscale.yml` 部署时，Tailscale 自动签发的 Let's Encrypt `*.ts.net` 证书天然满足 iOS App Transport Security（ATS）要求，详见 [Tailscale 集成](/zh/docs/tailscale)。
 
 ## 已验证通知设置
 
@@ -103,15 +103,17 @@ iOS 客户端提供原生的单机 Tailscale 诊断视图与全局 Tailnet 管�
 
 页面分别显示系统权限与 Server 注册状态。保存失败会保留上次确认的偏好并显示错误。**重试通知设置**可重试验证，**打开系统通知设置**可调整 iOS 权限。应用会在启动、回到前台和网络恢复时核对注册，不会因登录而弹出权限请求。
 
-**开启“告警触发与恢复”可接收告警状态变化。** 使用**发送测试通知**仅测试当前认证安装。Server 加密消息，公开 Relay 将密文转发给 APNs，Notification Service Extension 解密并本地化内容。页面分别报告服务商接受和设备展示，展示需在真机观察。点击有效测试通知会打开当前账户，旧账户、旧部署或无效消息不能触发导航。任务最终失败和已启用的成功通知使用相同的加密流程，管理员也可启用安全规则通知。
+**开启“告警触发与恢复”可接收告警状态变化。** 使用**发送测试通知**仅测试当前认证安装。Server 加密消息，公开 Relay 将密文转发给 APNs，Notification Service Extension 解密并本地化内容。页面分别报告服务商接受和设备展示，展示需在真机观察。前台 APNs 投递仅显示一个系统横幅，WebSocket 只更新应用状态。点击有效测试通知会打开当前账户，旧账户、旧部署或无效消息不能触发导航。任务最终失败和已启用的成功通知使用相同的加密流程，管理员也可启用安全规则通知。
 
 测试通知先进入 Server 的持久加密队列。**等待发送**表示已在本地排队；**可重试**表示尚未确认提供商接受，将再次尝试；**已接受**表示收到 APNs 提供商回执；**永久失败**停止重试；**已过期**表示通知已到达创建后 30 分钟的期限。重试和 Server 重启不会延长期限。页面会刷新当前测试状态，响应丢失后重试会保留同一测试标识。网络结果不明确时可能重复发送，接受或重试均不保证只展示一次。
 
 每次发送前，Server 都会检查账户、当前角色、移动会话、订阅和注册版本。重复注册相同令牌、环境、内容密钥和部署时保留注册版本、密文与原始重试期限；真实身份变化仍会隔离旧任务。关闭通知、退出登录、撤销设备或账户、会话过期、替换注册会阻止后续符合条件的发送。已在发送中或已被 APNs 接受的通知无法撤回。队列保存加密内容，不会另存明文通知历史。终态会清除密文，不含凭证的发送回执会保留，以避免重复入队重新开始有效期。
 
-### 当前安装测试 API
+### 通知设置与当前安装测试 API
 
-`POST /api/mobile/push/test` 必须携带 `expected_revision` 和客户端保留的 UUID `event_id`。接口将密文持久入队，返回等待发送状态和 `presentation=unobserved`。响应结果不明时使用同一 UUID 和版本重试；`GET /api/mobile/push/test/{event_id}` 仅读取当前认证安装及登录的回执。主动创建新测试时使用新 UUID，状态恢复不重新计算原始 30 分钟期限。
+- `GET /api/mobile/push/settings` 与 `PUT /api/mobile/push/settings` 用于读取和保存 Server 确认的订阅偏好及生效权限。
+- `POST /api/mobile/push/encrypted-register` 向已认证的 Server 注册当前安装的 APNs 令牌、环境、注册版本、部署绑定及每安装内容密钥。
+- `POST /api/mobile/push/test` 必须携带 `expected_revision` 和客户端保留的 UUID `event_id`。接口将密文持久入队，返回等待发送状态和 `presentation=unobserved`。响应结果不明时使用同一 UUID 和版本重试；`GET /api/mobile/push/test/{event_id}` 仅读取当前认证安装及登录的回执。主动创建新测试时使用新 UUID，状态恢复不重新计算原始 30 分钟期限。
 
 ### 告警触发与恢复
 
@@ -141,8 +143,6 @@ Server 分别为当前符合条件的已订阅安装排队发送加密通知，�
 
 Notification Service Extension 会本地化匹配的事件类型。点击后，应用验证部署/账号、当前管理员角色及资源身份，再打开对应的 Server 安全事件列表和事件详情。已删除、不可用或无权限的目标显示可返回的提示；旧账号或部署的通知不能导航。本地测试不能证明 APNs 在前台、后台或应用终止状态下的投递。
 
-前台 APNs 投递仅显示一个系统横幅，WebSocket 只更新应用状态。
-
 ### 隐私边界
 
 Server 负责账户、会话授权和接收者选择。Relay 可见 APNs 令牌、来源 IP、时间、请求大小、环境、事件/投递元数据及加密内容，不应收到内容密钥或明文通知。申请权限前会向用户显示此说明。
@@ -155,7 +155,7 @@ Worker 公开且无状态。已知有效设备令牌可被用于垃圾通知或�
 
 通过 `[push_relay].url` 或 `SERVERBEE_PUSH_RELAY__URL` 指定独立 HTTPS Relay。无需通知组或旧 APNs 渠道。验证迁移会移除本账户的旧令牌，并持久隔离此安装与账户，关闭或注销现代通知后也不会恢复旧直连 APNs 群发。其他安装保留旧渠道。现有外部渠道继续使用自己的配置。
 
-Cloudflare Worker 使用 WebCrypto JWT 签名与平台 fetch，topic 和 APNs 主机/环境允许列表固定。Worker 绑定包括 `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_TOPIC`、`APNS_ENVIRONMENTS`，以及存储 PKCS#8 PEM 文本的 `APNS_PRIVATE_KEY` secret，仅属于 Relay。不再需要 App Attest、challenge/grant 服务、Relay 数据库、Bun/OpenSSL 生产运行时或自建 HTTP/2 池。测试不得指向 Heeler 的 Relay。
+Cloudflare Worker 使用 WebCrypto JWT 签名与平台 fetch，topic 和 APNs 主机/环境允许列表固定。Worker 绑定包括 `APNS_TEAM_ID`、`APNS_KEY_ID`、`APNS_TOPIC`、`APNS_ENVIRONMENTS`，以及存储 PKCS#8 PEM 文本的 `APNS_PRIVATE_KEY` secret，仅属于 Relay。不再需要 App Attest、challenge/grant 服务、Relay 数据库、Bun/OpenSSL 生产运行时或自建 HTTP/2 池。测试不得指向生产或无关的 Relay。
 
 隔离签名与部署手册、分层排障及真实设备验收记录参见 [Push Relay 运维](/zh/docs/push-relay)。本地检查成功不建立真实设备验收证据。
 

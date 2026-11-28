@@ -8,37 +8,39 @@ ServerBee 仪表盘由可配置组件组成。你可以保留默认总览仪表�
 
 ## 管理仪表盘
 
-在首页顶部的仪表盘切换器中可以：
+所有已登录用户都可以在首页顶部的仪表盘切换器中切换仪表盘。以下管理操作**仅限管理员**，位于切换器右上角的更多菜单（`⋯`）中：
 
-- 切换不同仪表盘
 - 创建新仪表盘
+- 编辑当前仪表盘布局
 - 重命名仪表盘
-- 删除不再需要的仪表盘
 - 将某个仪表盘设为默认
+- 删除不再需要的仪表盘
 
-如果系统中还没有仪表盘，ServerBee 会自动创建第一个默认仪表盘。已经是默认的仪表盘不能直接取消默认；请把另一个仪表盘设为默认。
+如果系统中还没有仪表盘，ServerBee 会自动创建第一个默认仪表盘。已经是默认的仪表盘不能直接取消默认，请先把另一个仪表盘设为默认。系统会阻止删除默认仪表盘或最后一个剩余的仪表盘。
 
 ## 编辑布局
 
-1. 打开一个仪表盘。
-2. 点击 **Edit**。
+1. 使用管理员账号打开一个仪表盘。
+2. 打开右上角更多菜单（`⋯`）并点击 **Edit**。
 3. 从组件选择器添加组件。
-4. 拖拽组件调整位置。
+4. 拖拽组件调整位置，或为单个组件锁定位置（`is_static`）。按 `Escape` 可取消正在进行的拖拽或缩放。
 5. 在组件的最小/最大尺寸约束内调整大小。
-6. 配置组件数据源和标题。
+6. 配置组件数据源、标题和可选配色。
 7. 点击 **Save**。
 
-布局以网格坐标保存：`grid_x`、`grid_y`、`grid_w`、`grid_h`，组件设置保存为 JSON。保存时会做差异更新：已有组件更新，新组件插入，从布局中移除的组件会被删除。
+布局以网格坐标保存：`grid_x`、`grid_y`、`grid_w`、`grid_h`，组件设置保存为 JSON。保存时会做差异更新：已有组件更新，新组件插入，从布局中移除的组件会被删除。当视口宽度小于 `900px` 时，网格会自动回退为单列布局。
+
+你可以通过主题切换器或快捷键 `d` 在浅色、深色与跟随系统之间切换。站点品牌外观配置位于 **Settings → Appearance**（早期自定义主题包已被[自定义组件](/zh/docs/custom-widgets)取代）。
 
 ## 组件类型
 
-ServerBee 内置 **18 种仪表盘组件**，涵盖实时、图表和状态三类：
+ServerBee 内置 **19 种仪表盘组件**（17 个核心组件 + 2 个内置组件模块），涵盖实时、图表和状态三类：
 
 | 组件 | 分类 | 典型用途 |
 |------|------|----------|
-| `stat-number` | 实时 | 展示一个全局汇总指标（服务器数量、平均 CPU/内存、总带宽或健康状态） |
-| `metric-card` | 实时 | 以彩色卡片展示单台服务器的多个关键指标 |
-| `server-cards` | 实时 | 展示选中服务器的紧凑卡片 |
+| `stat-number` | 实时 | 展示一个全局汇总指标（`server_count`、`avg_cpu`、`avg_memory`、`total_bandwidth` 或 `health`） |
+| `metric-card` | 实时 | 展示单台服务器的单一指标（`cpu`、`memory`、`network` 或 `disk_io`），包含近 1 小时变化量、24 小时峰值/均值及 24 小时迷你趋势图 |
+| `server-cards` | 实时 | 展示选中服务器的紧凑卡片（支持 `grid` 网格或 `list` 列表布局） |
 | `gauge` | 实时 | 用仪表盘形式展示某台服务器的一个指标 |
 | `line-chart` | 图表 | 展示单台服务器单一指标的历史曲线 |
 | `multi-line` | 图表 | 对比多台服务器的同一指标 |
@@ -50,10 +52,11 @@ ServerBee 内置 **18 种仪表盘组件**，涵盖实时、图表和状态三�
 | `server-map` | 状态 | 安装 GeoIP 后在地图上展示服务器位置 |
 | `markdown` | 状态 | 用 Markdown 添加说明、Runbook 或链接 |
 | `uptime-timeline` | 状态 | 展示选中服务器的可用性条形时间线 |
-| `network-latency` | 图表 | 展示网络延迟探测历史曲线 |
+| `network-latency` | 图表 | 展示网络延迟探测历史曲线（`hours: 0` 时为实时模式） |
 | `network-quality` | 实时 | 展示网络质量评分与实时指标 |
 | `network-overview` | 状态 | 跨服务器汇总网络质量概览 |
-| `com.serverbee.tailscale-overview` | 状态 | 展示 Tailnet 在线/总设备数、已关联 ServerBee 服务器数及即将过期密钥数（**Tailscale Overview**，见 [Tailscale 集成](/zh/docs/tailscale)） |
+| `com.serverbee.tailscale-overview` | 状态 | 内置组件模块，展示 Tailnet 在线/总设备数、已关联 ServerBee 服务器数及即将过期密钥数（**Tailscale Overview**，见 [Tailscale 集成](/zh/docs/tailscale)） |
+| `com.serverbee.hello-world` | 实时 | 极简内置组件模块，展示当前主题模式与在线服务器数量（**Hello World**） |
 
 ## 常见组件配置
 
@@ -63,18 +66,23 @@ ServerBee 内置 **18 种仪表盘组件**，涵盖实时、图表和状态三�
 |------|----------|------|
 | `server_id` | 单服务器组件 | 要查询的服务器 ID |
 | `server_ids` | 多服务器组件 | 要包含的服务器 ID 列表 |
-| `metric` | 指标组件 | 指标键，例如 CPU、内存、磁盘、流量或负载 |
-| `hours` | 历史组件 | 图表回看时间窗口 |
+| `metric` | 指标组件 | 指标键（例如 `stat-number` 的 `avg_cpu`，或 `metric-card` 的 `cpu` / `memory` / `network` / `disk_io`） |
+| `hours` | 历史组件 | 图表回看时间窗口（小时；`network-latency` 支持 `0` 表示实时模式） |
 | `interval` | 历史组件 | 数据粒度（`raw`、`hourly` 或 `auto`） |
-| `monitor_ids` | Service Status | 要展示的服务监控 ID |
-| `content` | Markdown | Markdown 内容 |
+| `color` / `color_secondary` | `metric-card`、`gauge`、`line-chart`、`top-n`、`traffic-bar`、`disk-io` | 可选的 `#RRGGBB` 自定义主色/辅色 |
+| `layout` | `server-cards` | 卡片布局模式（`grid` 或 `list`；成本数据仅在 `list` 模式展示） |
+| `count` / `sort` | `top-n` | 排行数量上限与排序方向（`asc` 或 `desc`） |
+| `max_items` | `alert-list` | 最多展示的告警条数 |
+| `days` | `uptime-timeline` | 可用性时间线展示的天数 |
+| `monitor_ids` | `service-status` | 要展示的服务监控 ID |
+| `content` | `markdown` | Markdown 内容 |
 
 ## GeoIP 与服务器地图
 
 Server Map 组件需要 GeoIP 数据。你可以：
 
 - 通过 `geoip.mmdb_path` 配置自定义 MaxMind 兼容 MMDB 文件，或
-- 在 **Settings → GeoIP Database** 中下载 DB-IP Lite 数据库。
+- 在 **Settings → Settings**（`/settings` 的 **Data sources** 区域）中下载 DB-IP Lite 数据库。
 
 缺少 GeoIP 数据时，组件会显示安装提示。
 
@@ -90,26 +98,30 @@ Server Map 组件需要 GeoIP 数据。你可以：
 | 30 – 60 | ~360 ms  | 可用，密集滚动时略有顿挫 |
 | > 60   | ~360 ms   | 滚动期间明显卡顿，主线程被图表布局测量占用 |
 
-如果 Server 部署在公网远端，冷加载 LCP 会随**首屏内**图表数量增长——每个图表都要等自己的历史查询返回才能绘制，40 组件仪表盘经公网实测首屏为秒级，而非 ~360 ms。上表的滚动特征仍然适用。
+如果 Server 部署在公网远端，冷加载 LCP 会随**首屏内**图表数量增长：每个图表都要等自己的历史查询返回才能绘制，40 组件仪表盘经公网实测首屏为秒级，而非 ~360 ms。上表的滚动特征仍然适用。
 
 **推荐范围**：
 
 - **舒适区**：单仪表盘 ≤ **30 个组件**。
 - **可接受**：30 – 60 个组件。如果业务必须超过，请优先放置静态/非图表组件（`markdown`、`alert-list`、`service-status`、`stat-number`），把成本较高的图表组件（`line-chart`、`multi-line`、`disk-io`、`traffic-bar`、`gauge`）控制在 30 个以内。
-- **不推荐**：单仪表盘 > 60 个组件 —— 建议按团队 / 区域 / 场景拆成多个仪表盘。
+- **不推荐**：单仪表盘 > 60 个组件，建议按团队 / 区域 / 场景拆成多个仪表盘。
 
 如果你确实需要在一个仪表盘里展示几十个图表，把它们**分组放在同一区域**而不是均匀散布在长页面里，这样滚动时进入视口的图表批次更少，瞬时压力更低。
 
 ## API
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/dashboards` | 列出仪表盘 |
-| GET | `/api/dashboards/default` | 获取默认仪表盘，必要时自动创建 |
-| GET | `/api/dashboards/{id}` | 获取仪表盘及其组件 |
-| POST | `/api/dashboards` | 创建仪表盘 |
-| PUT | `/api/dashboards/{id}` | 更新元数据和/或组件 |
-| DELETE | `/api/dashboards/{id}` | 删除仪表盘 |
+读取端点对所有已认证用户开放；写入端点（`POST`、`PUT`、`DELETE`）仅限 **Admin**。
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/dashboards` | 已认证 | 列出仪表盘 |
+| GET | `/api/dashboards/default` | 已认证 | 获取默认仪表盘，必要时自动创建 |
+| GET | `/api/dashboards/{id}` | 已认证 | 获取仪表盘及其组件 |
+| POST | `/api/dashboards` | Admin | 创建仪表盘 |
+| PUT | `/api/dashboards/{id}` | Admin | 更新元数据和/或组件 |
+| DELETE | `/api/dashboards/{id}` | Admin | 删除仪表盘（禁止删除默认仪表盘或最后一个仪表盘） |
+
+要在仪表盘中放置内置或自定义组件模块，需设置 `"widget_type": "module"` 并在 `"module_id"` 中传入已安装的模块 ID。
 
 更新请求示例：
 
@@ -120,17 +132,26 @@ Server Map 组件需要 GeoIP 数据。你可以：
   "widgets": [
     {
       "widget_type": "stat-number",
-      "title": "Web CPU",
+      "title": "Fleet Avg CPU",
       "config_json": {
-        "server_id": "server-id",
-        "metric": "cpu",
-        "unit": "%"
+        "metric": "avg_cpu"
       },
       "grid_x": 0,
       "grid_y": 0,
       "grid_w": 2,
       "grid_h": 1,
       "sort_order": 0
+    },
+    {
+      "widget_type": "module",
+      "module_id": "com.serverbee.tailscale-overview",
+      "title": "Tailscale Overview",
+      "config_json": {},
+      "grid_x": 2,
+      "grid_y": 0,
+      "grid_w": 4,
+      "grid_h": 3,
+      "sort_order": 1
     }
   ]
 }
@@ -138,6 +159,7 @@ Server Map 组件需要 GeoIP 数据。你可以：
 
 <Cards>
   <Card title="监控功能" href="/zh/docs/monitoring" />
+  <Card title="自定义组件" href="/zh/docs/custom-widgets" />
   <Card title="服务监控" href="/zh/docs/service-monitors" />
   <Card title="存储与容量规划" href="/zh/docs/storage-sizing" />
 </Cards>

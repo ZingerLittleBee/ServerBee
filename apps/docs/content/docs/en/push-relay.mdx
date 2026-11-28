@@ -14,15 +14,22 @@ Anyone can submit requests. Knowing a valid device token permits junk ciphertext
 
 AES-256-GCM protects business content and its authenticated identity when the per-installation key remains secret. It does not authenticate public Relay callers. The original APNs alert is fixed generic text because a Notification Service Extension can fail or time out; invalid ciphertext does not guarantee silent dismissal. The app refuses invalid or old-account navigation.
 
-Safeguards are strict schema and size limits, a hard streaming-read limit before parsing, read/send deadlines, fixed APNs hosts/topic/environment allowlist, a bounded concurrent-request cap, and hard-capacity source/target limiter maps with an isolate-wide request cap. Rate state is best effort and local to each Worker isolate: isolates restart and scale independently. It is not a global budget, exact global rate limit, replay database or denial-of-service guarantee. Confirm available platform limits and account billing controls independently before deployment; no paid plan or WAF feature is assumed.
+Built-in safeguards (held in each Worker isolate's volatile memory):
+
+- **Request body & upload deadline**: `8192`-byte (8 KiB) streamed request cap checked before full read and JSON parsing, plus a `5s` whole-upload deadline.
+- **Field & APNs bounds**: `device_token` is `2–1024` lowercase hex characters (even length), `envelope.identity` is `64` lowercase hex characters, decoded `ciphertext` is `16–2070` bytes, APNs payload and provider response body are capped at `4096` bytes, and APNs requests enforce a `10s` deadline.
+- **Fixed APNs allowlist**: `api.sandbox.push.apple.com` and `api.push.apple.com` only, with a deployment-fixed `APNS_TOPIC` and optional `APNS_ENVIRONMENTS` allowlist.
+- **Concurrency & per-isolate rate limits**: maximum `32` in-flight requests, `120` requests/min per `CF-Connecting-IP`, `60` sends/min per `environment:device_token`, `600` requests/min per isolate, and a hard `4096`-entry cap on both the IP and target limiter maps (rejecting new keys when full instead of evicting active entries).
+
+Rate state is best effort and local to each Worker isolate: isolates restart and scale independently. It is not a global budget, exact global rate limit, replay database or denial-of-service guarantee. Confirm available platform limits and account billing controls independently before deployment; no paid plan or WAF feature is assumed.
 
 ## Cloudflare Quick Setup
 
-Use a dedicated ServerBee Worker and synthetic test data, separate from Heeler and production services. Record exact revisions, signing build, APNs environment and UTC timestamps.
+Use a dedicated ServerBee Worker and synthetic test data, separate from production and unrelated services. Record exact revisions, signing build, APNs environment and UTC timestamps.
 
 1. Install locked development dependencies with the repository's Bun version and Node 24. Worker production code uses Web APIs, WebCrypto and fetch; Bun is tooling, not the deployed runtime.
-2. Review `apps/push-relay/wrangler.jsonc`. Choose the dedicated Worker name and fixed `APNS_TOPIC`, `APNS_TEAM_ID`, `APNS_KEY_ID`, and `APNS_ENVIRONMENTS`. The official topic is `app.serverbee`, matching the main app bundle identifier; never use the extension identifier `app.serverbee.notifications`. The optional environment allowlist accepts `sandbox`, `production`, or both as a comma-separated list; omission allows both.
-3. Provision `APNS_PRIVATE_KEY` as a Worker secret containing the publisher's PKCS#8 P-256 PEM contents. Use the authorized secret-entry flow; never put it in Git, public variables, the app or the Server. No PEM file path is used by the deployed Worker.
+2. Review `apps/push-relay/wrangler.jsonc`. Choose the dedicated Worker name, keep `enable_request_signal` in `compatibility_flags` (required so incoming client cancellation wires into upload/APNs deadlines and cleanup; a compatibility date alone does not enable it), and set `APNS_TOPIC` and `APNS_ENVIRONMENTS` under `vars`. The official topic is `app.serverbee`, matching the main app bundle identifier; never use the extension identifier `app.serverbee.notifications`. The optional environment allowlist accepts `sandbox`, `production`, or `sandbox,production` (default); omission allows both.
+3. Provision `APNS_TEAM_ID`, `APNS_KEY_ID`, and `APNS_PRIVATE_KEY` via `wrangler secret put` (as shown in `apps/push-relay/README.md`). Team and key IDs must each be 10 uppercase `[A-Z0-9]` characters; they may alternatively be ordinary Wrangler variables, whereas `APNS_PRIVATE_KEY` (the publisher's PKCS#8 P-256 PEM contents) must always remain a Worker secret. Never put the private key in Git, public variables, the app or the Server. No PEM file path is used by the deployed Worker.
 4. Run the Relay type check, Workers-runtime tests and deployment dry run described in `apps/push-relay/README.md`. A dry run bundles code locally; it does not validate Apple credentials or make a deployment.
 5. Deploy only with separate authorization, then set the Server's `SERVERBEE_PUSH_RELAY__URL` to the final HTTPS Worker URL. The app must also use the final HTTPS Server URL; secret-bearing Server requests reject redirects.
 6. Use a signed app and the live acceptance matrix below. Never report registration or an APNs receipt as proof that a phone displayed a notification.
@@ -32,17 +39,28 @@ Use a dedicated ServerBee Worker and synthetic test data, separate from Heeler a
 | Owner | Configuration |
 | --- | --- |
 | Self-hosted Server | `SERVERBEE_PUSH_RELAY__URL` or `[push_relay].url`; encrypted durable outbox and current recipient/session/revision checks |
-| Worker variables | `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_TOPIC`, `APNS_ENVIRONMENTS` |
-| Worker secret | `APNS_PRIVATE_KEY`, PKCS#8 PEM contents; publisher-controlled only |
+| Worker variables (`wrangler.jsonc` `vars`) | `APNS_TOPIC`, `APNS_ENVIRONMENTS` (plus `compatibility_flags: ["enable_request_signal"]`) |
+| Worker secrets (`wrangler secret put`) | `APNS_PRIVATE_KEY` (required secret, PKCS#8 PEM contents; publisher-controlled only); `APNS_TEAM_ID` and `APNS_KEY_ID` (10 uppercase `[A-Z0-9]` chars, recommended as secrets and also accepted as Wrangler variables) |
 | Signed iOS app and NSE | Matching APNs environment, embedded extension and app/extension shared Keychain group; login credentials remain app-private |
 
-Cloudflare manages inbound HTTPS and outbound connections. There is no Bun listener, trusted reverse-proxy header configuration, OpenSSL subprocess, self-managed HTTP/2 pool, container or Relay SQLite volume. Source rate limiting uses the platform-provided client IP, not arbitrary forwarded headers. Keep request-body/token/content-key logging disabled.
+Cloudflare manages inbound HTTPS and outbound connections. There is no Bun listener, trusted reverse-proxy header configuration, OpenSSL subprocess, self-managed HTTP/2 pool, container or Relay SQLite volume. Source rate limiting uses the platform-provided `CF-Connecting-IP` header, ignoring `X-Forwarded-For` and `X-Real-IP`. Keep request-body/token/content-key logging disabled.
 
 ## Registration, Delivery and Privacy
 
 The app calls authenticated `POST /api/mobile/push/encrypted-register` with its token, environment, revision, deployment binding and per-installation content key. It never calls Relay. Account/installation/mobile-session ownership and revision checks remain on the Server. The legacy direct-APNs registration route remains separate for existing clients.
 
 The Server submits `device_token`, `environment`, `event_id`, `expires_at` and the versioned encrypted `envelope` to `POST /v1/send`. Relay sees token, source IP, timing, size, environment, event/delivery metadata and ciphertext. It never receives content keys or business plaintext. Do not log request bodies, device tokens, keys or provider authorization headers.
+
+All `POST /v1/send` responses carry `Cache-Control: no-store` and the JSON shape `{ "outcome": "...", "reason": "...", "device_invalid": false }`:
+
+| HTTP Status | Outcome / Meaning |
+| --- | --- |
+| `200` | Provider/event verdict: `accepted` (APNs `200`), `expired` (already expired before forwarding), `permanent` (`Unregistered` with `device_invalid: true` only on APNs `410 Unregistered`; other APNs 4xx/config failures with `device_invalid: false`, including `BadDeviceToken` mapped to `DeviceOrEnvironmentMismatch`), or `retryable` (APNs `429`/5xx or network/timeout/malformed response) |
+| `400` / `413` / `415` | `permanent` validation, body-size (`> 8192` B), or content-type error |
+| `408` | `retryable` upload timeout (`5s` upload deadline exceeded) |
+| `429` | `retryable` per-IP, per-target, or per-isolate rate limit exceeded (with `Retry-After`) |
+| `503` | `retryable` concurrency limit (`32` in-flight) reached, or `permanent` `RelayNotConfigured` when required bindings are missing/invalid |
+| `404` / `405` | Unknown path or unsupported HTTP method |
 
 The original 30-minute delivery deadline survives retries and Server restart. Before dispatch the Server rechecks ownership, session, role, subscription and registration revision. Retryable responses retain ciphertext; terminal responses erase it while retaining secret-free receipts. Logout/revocation cannot retract already in-flight or accepted requests. Exact-target, deletion-only offline mobile-session cleanup remains independent of Relay.
 

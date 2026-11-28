@@ -4,17 +4,17 @@ description: Author custom dashboard widgets with React + Zod, and install them 
 icon: Puzzle
 ---
 
-ServerBee dashboards natively support custom widget modules alongside the 18 built-in dashboard widgets (including SDK-built modules like `com.serverbee.tailscale-overview` — **Tailscale Overview**). Each widget is a standalone ES module that an admin installs once and can then drop onto any dashboard, exactly like a built-in widget. This guide covers the two supported install methods:
+ServerBee dashboards natively support custom widget modules alongside the **19 built-in dashboard widgets** (17 core widgets plus 2 SDK-built modules: `com.serverbee.tailscale-overview` — **Tailscale Overview** — and `com.serverbee.hello-world` — **Hello World**). Each widget is a standalone ES module that an admin installs once and can then drop onto any dashboard, exactly like a built-in widget. This guide covers the two supported install methods:
 
-- **Method B** — a single `.js` file (one widget per file)
+- **Method B** — a single `.js` or `.mjs` file (one widget per file)
 - **Method C** — a `.zip` collection bundle (multiple widgets in one upload, sharing the same build output)
 
 ## Concepts
 
 A widget module has three parts:
 
-1. **Static JSDoc manifest** — a `@serverbee-widget {...}` JSON block at the top of the file declaring the widget's `id`, `version`, `name`, `category`, default sizing, required SDK version, and so on. The manifest is **statically parseable**: the server can index it without ever executing the module, which means offline scanning and permission checks work the same way as runtime loading.
-2. **Default export** — the object returned by `defineWidget({ configSchema, component, actions? })`. `configSchema` is a Zod schema describing the configurable fields; `component` is a React component that receives `{ config, size, isEditing, actions }` props at runtime.
+1. **Static JSDoc manifest** — a `@serverbee-widget {...}` JSON block at the top of the file declaring the widget's `id`, `version`, `name`, `category`, default sizing, required SDK version, optional `requiredCaps`, and so on. The manifest is **statically parseable**: the server can index it without ever executing the module, which means offline scanning and permission checks work the same way as runtime loading.
+2. **Default export** — the object returned by `defineWidget({ configSchema, component, actions? })`. `configSchema` is a Zod schema describing the configurable fields; `component` is a React component that receives `{ config, size, isEditing, actions }` props from `ModuleWidgetHost` at runtime (`isEditing` reflects live dashboard edit mode, and `actions.render(id)` renders any declared `actions`).
 3. **Runtime dependencies** — imported as `react`, `react/jsx-runtime`, and `@serverbee/widget-sdk`. These are **provided by the host** and must be marked `external` at build time; the browser reuses the main app's instances.
 
 ### Trust model
@@ -82,6 +82,7 @@ export default defineWidget({
 | `sizing.maxW/H` | – | Optional maximum size |
 | `sizing.strategy` | yes | `free` / `fixed` / `aspect-square` / `content-height` |
 | `sdkVersion` | yes | SDK version range, e.g. `^0.1.0` |
+| `requiredCaps` | – | Optional `string[]` listing agent capability keys the widget relies on |
 
 ### Build requirements
 
@@ -126,8 +127,8 @@ export default defineConfig({
 
 1. Sign in as an admin.
 2. Open **Settings → Widget Modules**.
-3. Choose **Upload `.js`** to upload a local file, or **Import URL** to fetch over HTTPS.
-4. Once installed, open any dashboard, click **Edit → Add Widget**, and the new widget appears in the picker.
+3. Use **Upload widget bundle** to pick a local `.js`, `.mjs`, or `.zip` file, or use **Install from URL** to fetch over HTTP or HTTPS (HTTPS is recommended; private/reserved IPs and redirects are blocked).
+4. Once installed, open any dashboard, open the top-right overflow (`⋯`) menu, click **Edit**, and add the new widget from the picker.
 
 ### Install via API
 
@@ -137,7 +138,7 @@ curl -X POST "https://your-host/api/widget-modules" \
   -H "X-API-Key: $SERVERBEE_API_KEY" \
   -F file=@my.widget.js
 
-# Fetch from URL
+# Fetch from URL (http:// or https://, public hosts only)
 curl -X POST "https://your-host/api/widget-modules?url=https://cdn.example.com/my.widget.js" \
   -H "X-API-Key: $SERVERBEE_API_KEY"
 ```
@@ -217,7 +218,7 @@ zip -r my-pack.zip collection.json weather/ clock/
 
 ### Install
 
-The UI flow is identical to Method B — just upload the `.zip`. The server sniffs the `PK\x03\x04` magic bytes and dispatches automatically.
+The UI flow is identical to Method B — just upload the `.zip` via **Upload widget bundle** (or pass its URL to **Install from URL**). The server sniffs the `PK\x03\x04` magic bytes and dispatches automatically.
 
 ```bash
 curl -X POST "https://your-host/api/widget-modules" \
@@ -236,7 +237,7 @@ A collection install returns an **array** — one entry per widget in the bundle
 }
 ```
 
-Each widget gets its own row in the database and can be enabled, disabled, or uninstalled individually. They share a single underlying zip blob for storage.
+Each widget gets its own row in the database and can be uninstalled individually. They share a single underlying zip blob for storage.
 
 ## Sizing strategies
 
@@ -253,31 +254,37 @@ See [Dashboards & Widgets](/en/docs/dashboards) for more on layout and editing.
 
 `@serverbee/widget-sdk` is the stable API exposed to custom widgets. It includes:
 
-- `defineWidget` — declares a widget's entry point.
+- `defineWidget` — declares a widget's entry point (`{ configSchema, component, actions? }`).
 - `z` / `ZodSchema` — bundled Zod for describing config schemas.
-- Live hooks: `useServers`, `useServer`, `useMetric`, `useCapability` (subscribe to the live WebSocket store via `useSyncExternalStore`).
-- Domain hooks: `useHistory`, `useTraffic`, `useAlerts`, `useServiceMonitors`, `useUptime`, `useGeoIp`.
-- Host hooks: `useTheme`, `useConfigUpdate`.
-- Generic escape hatches: `useApiQuery` / `useApiMutation` for direct REST calls.
-- `createActionsHelper` and `ActionDefinition` for registering action buttons on a widget.
+- **Live hooks** (subscribe to the live WebSocket store via `useSyncExternalStore`):
+  - `useServers`, `useServer`, `useMetric`
+  - `useCapability(serverId, cap)` — checks all 12 agent capability keys, including `CAP_TAILSCALE` (`2048`), matching `crates/common/src/constants.rs`.
+- **Domain hooks**:
+  - `useHistory(serverId: string | null, field: string, range = '1h', opts?: { interval?: 'auto' | 'raw' | 'hourly' }): UseQueryResult<HistoryPoint[]>` — queries `GET /api/servers/{id}/records?from=<ISO>&to=<ISO>&interval=<auto|raw|hourly>` and returns `{ ts: number, value: number }[]`. `range` accepts duration strings matching `^\d+(s|m|h|d)$` (for example `15m`, `1h`, `24h`, `7d`). Supported `field` keys: `cpu`, `mem_used`, `swap_used`, `disk_used`, `net_in_speed` (alias `net_in`), `net_out_speed` (alias `net_out`), `network` (`net_in_speed + net_out_speed`), `net_in_transfer`, `net_out_transfer`, `load1`, `load5`, `load15`, `tcp_conn`, `udp_conn`, `process_count`, `temperature`, `gpu_usage`.
+  - `useTraffic`, `useAlerts`, `useServiceMonitors`, `useUptime`, `useGeoIp`.
+- **Host hooks & props**:
+  - `useTheme`, `useConfigUpdate`.
+  - `isEditing` — live boolean prop reflecting whether the dashboard is currently in edit mode.
+- **Generic escape hatches**: `useApiQuery` / `useApiMutation` for direct REST calls.
+- **Action buttons**: `defineWidget({ actions })`, `ActionDefinition`, and `createActionsHelper` — `ModuleWidgetHost` passes a wired `actions` helper so `actions.render(id)` renders an `ActionButton` with built-in confirmation dialog (when `confirm` is set), pending state, and toast notifications.
 
-See `packages/widget-sdk/README.md` in the repo for the complete API reference.
+See `packages/widget-sdk/README.md` in the repository for the full list of SDK exports.
 
 ## Uninstall
 
-Click the delete button next to a widget in **Settings → Widget Modules**, or:
+Click **Uninstall** next to a widget in **Settings → Widget Modules**, or:
 
 ```bash
 curl -X DELETE "https://your-host/api/widget-modules/com.example.hello" \
   -H "X-API-Key: $SERVERBEE_API_KEY"
 ```
 
-Built-in widget modules (such as `com.serverbee.tailscale-overview` and `com.serverbee.hello-world`) cannot be uninstalled — `DELETE` against them returns `400`.
+A successful uninstall returns `204 No Content`. Built-in widget modules (such as `com.serverbee.tailscale-overview` and `com.serverbee.hello-world`) cannot be uninstalled — `DELETE` against them returns `400`.
 
 ## Limits and safety
 
 - **Size caps**: a single `.js` file or `.zip` may not exceed **1 MiB** on upload; each entry inside a zip is capped at **5 MiB** uncompressed; the whole zip is capped at **32 MiB** total uncompressed across at most **64 entries**.
-- **SSRF protection**: URL installs resolve DNS and reject any host whose IP falls in a reserved/private range — loopback (`127.0.0.0/8`, `::1`), private networks (`10/8`, `172.16/12`, `192.168/16`), CGNAT (`100.64/10`), link-local (`169.254/16` — includes cloud metadata endpoints), IPv6 ULA (`fc00::/7`) and link-local (`fe80::/10`), benchmarking, documentation, multicast, and reserved ranges. HTTP redirects are disabled — 3xx responses are rejected outright so a public URL cannot pivot into the private network.
+- **URL schemes & SSRF protection**: URL installs accept `http://` and `https://` URLs (HTTPS recommended), resolve DNS, and reject any host whose IP falls in a reserved/private range — loopback (`127.0.0.0/8`, `::1`), private networks (`10/8`, `172.16/12`, `192.168/16`), CGNAT (`100.64/10`), link-local (`169.254/16` — includes cloud metadata endpoints), IPv6 ULA (`fc00::/7`) and link-local (`fe80::/10`), benchmarking, documentation, multicast, and reserved ranges. HTTP redirects are disabled — 3xx responses are rejected outright so a public URL cannot pivot into the private network.
 - **Zip-slip protection**: extraction rejects entries with `..` or absolute paths.
 - **Static parsing only**: the manifest must be extractable with a plain regex — there is no `eval` / `Function()` involved in installation. The extractor itself rejects sources > 1 MiB up front.
 - **ID conflict rejection**: an upload whose `id` already belongs to a module from a different source (e.g. trying to overwrite a built-in with an upload) is refused with `409 Conflict`.
@@ -285,7 +292,7 @@ Built-in widget modules (such as `com.serverbee.tailscale-overview` and `com.ser
 - **Admin-gated**: install and uninstall endpoints require admin privileges; members can only list and fetch served assets.
 - **Audit logged**: every install and uninstall is recorded in the audit log with the actor, source, id, version, and code SHA-256.
 - **Same-origin execution**: widgets run in the same browsing context as the main SPA — only install code from sources you trust.
-- **Action buttons** declared via `defineWidget({ actions })` get a built-in confirm dialog (when `confirm` is set), pending state, and toast notifications on success/failure.
+- **Action buttons** declared via `defineWidget({ actions })` and rendered via `actions.render(id)` get a built-in confirm dialog (when `confirm` is set), pending state, and toast notifications on success/failure.
 
 <Cards>
   <Card title="Dashboards & Widgets" href="/en/docs/dashboards" />

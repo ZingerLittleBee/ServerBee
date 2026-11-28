@@ -4,17 +4,17 @@ description: 用 React + Zod 编写自定义仪表盘组件，通过单文件或
 icon: Puzzle
 ---
 
-ServerBee 的仪表盘除内置 18 种组件（含基于同一 SDK 构建的 `com.serverbee.tailscale-overview` —— **Tailscale Overview**）外，还原生支持自定义组件（Widget Module）。每个组件就是一个独立的 ES 模块，由管理员安装后即可像内置组件一样拖拽到任意仪表盘上。本指南介绍两种安装方式：
+ServerBee 的仪表盘除内置 **19 种组件**（17 个核心组件 + 2 个基于同一 SDK 构建的内置模块：`com.serverbee.tailscale-overview` —— **Tailscale Overview**，以及 `com.serverbee.hello-world` —— **Hello World**）外，还原生支持自定义组件（Widget Module）。每个组件就是一个独立的 ES 模块，由管理员安装后即可像内置组件一样拖拽到任意仪表盘上。本指南介绍两种安装方式：
 
-- **方式 B** — 单个 `.js` 文件（一个组件 = 一个文件）
+- **方式 B** — 单个 `.js` 或 `.mjs` 文件（一个组件 = 一个文件）
 - **方式 C** — `.zip` 集合包（一次安装多个组件，可共享同一份发布产物）
 
 ## 概念
 
 一个 Widget Module 包含三部分：
 
-1. **静态 JSDoc 清单** — 文件顶部的 `@serverbee-widget {...}` JSON 块，描述组件的 `id`、`version`、`name`、`category`、默认尺寸、所需 SDK 版本等。清单必须**可静态解析**：服务端不会执行模块代码就能完成索引与权限校验，离线扫描也能识别。
-2. **默认导出** — 调用 `defineWidget({ configSchema, component, actions? })` 返回的对象。`configSchema` 是一个 Zod schema，用来描述组件可配置项；`component` 是一个 React 组件，运行时收到 `{ config, size, isEditing, actions }` props。
+1. **静态 JSDoc 清单** — 文件顶部的 `@serverbee-widget {...}` JSON 块，描述组件的 `id`、`version`、`name`、`category`、默认尺寸、所需 SDK 版本、可选的 `requiredCaps` 等。清单必须**可静态解析**：服务端不会执行模块代码就能完成索引与权限校验，离线扫描也能识别。
+2. **默认导出** — 调用 `defineWidget({ configSchema, component, actions? })` 返回的对象。`configSchema` 是一个 Zod schema，用来描述组件可配置项；`component` 是一个 React 组件，运行时由 `ModuleWidgetHost` 传入 `{ config, size, isEditing, actions }` props（`isEditing` 实时反映仪表盘编辑状态，`actions.render(id)` 渲染声明的 `actions` 按钮）。
 3. **运行时依赖** — 通过 `import` 引用 `react`、`react/jsx-runtime`、`@serverbee/widget-sdk`。这些都是**宿主提供**的依赖，打包时必须声明为 `external`，浏览器加载时会重用主应用已有的实例。
 
 ### 信任模型
@@ -82,6 +82,7 @@ export default defineWidget({
 | `sizing.maxW/H` | – | 可选的最大尺寸 |
 | `sizing.strategy` | ✅ | `free` / `fixed` / `aspect-square` / `content-height` |
 | `sdkVersion` | ✅ | SDK 版本范围，例如 `^0.1.0` |
+| `requiredCaps` | – | 可选的 `string[]`，声明组件依赖的 Agent 能力键列表 |
 
 ### 打包要求
 
@@ -126,8 +127,8 @@ export default defineConfig({
 
 1. 用管理员账号登录。
 2. 打开 **Settings → Widget Modules**。
-3. 选择 **Upload `.js`** 上传本地文件，或选择 **Import URL** 填入 HTTPS 链接。
-4. 安装成功后，到任意仪表盘点击 **Edit** → **Add Widget**，新组件就会出现在列表里。
+3. 使用 **上传 Widget 包**（英文界面 **Upload widget bundle**）选择本地 `.js`、`.mjs` 或 `.zip` 文件，或使用 **从 URL 安装**（英文界面 **Install from URL**）填入 HTTP/HTTPS 链接（推荐使用 HTTPS；内网/保留 IP 与重定向会被拒绝）。
+4. 安装成功后，打开任意仪表盘，点击右上角更多菜单（`⋯`）中的 **Edit**，即可从组件选择器中添加新组件。
 
 ### 通过 API 安装
 
@@ -137,7 +138,7 @@ curl -X POST "https://your-host/api/widget-modules" \
   -H "X-API-Key: $SERVERBEE_API_KEY" \
   -F file=@my.widget.js
 
-# 从 URL 安装
+# 从 URL 安装（支持 http:// 与 https://，仅限公网主机）
 curl -X POST "https://your-host/api/widget-modules?url=https://cdn.example.com/my.widget.js" \
   -H "X-API-Key: $SERVERBEE_API_KEY"
 ```
@@ -217,7 +218,7 @@ zip -r my-pack.zip collection.json weather/ clock/
 
 ### 安装
 
-UI 操作和方式 B 完全一致——直接上传 `.zip` 即可，后端会通过文件首部的 `PK\x03\x04` 魔数自动识别。
+UI 操作和方式 B 完全一致——通过 **上传 Widget 包** 直接上传 `.zip`（或通过 **从 URL 安装** 填入链接），后端会通过文件首部的 `PK\x03\x04` 魔数自动识别。
 
 ```bash
 curl -X POST "https://your-host/api/widget-modules" \
@@ -236,7 +237,7 @@ curl -X POST "https://your-host/api/widget-modules" \
 }
 ```
 
-每个组件会在数据库中独立成行，可以单独启用、停用或卸载；同时它们共享同一份 zip blob 存储。
+每个组件会在数据库中独立成行，可以单独卸载；同时它们共享同一份 zip blob 存储。
 
 ## 尺寸策略
 
@@ -253,31 +254,37 @@ curl -X POST "https://your-host/api/widget-modules" \
 
 `@serverbee/widget-sdk` 是 ServerBee 暴露给自定义组件的稳定 API 表面，包含：
 
-- `defineWidget` — 声明组件的入口；
+- `defineWidget` — 声明组件的入口（`{ configSchema, component, actions? }`）；
 - `z` / `ZodSchema` — 内嵌的 Zod，用于描述配置项 schema；
-- 实时钩子：`useServers`、`useServer`、`useMetric`、`useCapability`（通过 `useSyncExternalStore` 订阅 WebSocket 实时数据）；
-- 业务钩子：`useHistory`、`useTraffic`、`useAlerts`、`useServiceMonitors`、`useUptime`、`useGeoIp`；
-- 宿主钩子：`useTheme`、`useConfigUpdate`；
-- 通用逃生舱：`useApiQuery` / `useApiMutation` 直接调用后端 REST API；
-- `createActionsHelper` 与 `ActionDefinition` —— 在组件上注册按钮操作。
+- **实时钩子**（通过 `useSyncExternalStore` 订阅 WebSocket 实时数据）：
+  - `useServers`、`useServer`、`useMetric`；
+  - `useCapability(serverId, cap)` — 支持全部 12 个 Agent 能力键（包含位值为 `2048` 的 `CAP_TAILSCALE`，与 `crates/common/src/constants.rs` 一致）；
+- **业务钩子**：
+  - `useHistory(serverId: string | null, field: string, range = '1h', opts?: { interval?: 'auto' | 'raw' | 'hourly' }): UseQueryResult<HistoryPoint[]>` — 请求 `GET /api/servers/{id}/records?from=<ISO>&to=<ISO>&interval=<auto|raw|hourly>`，返回 `{ ts: number, value: number }[]`。`range` 支持匹配 `^\d+(s|m|h|d)$` 的时长字符串（如 `15m`、`1h`、`24h`、`7d`）。支持的 `field` 字段键包括：`cpu`、`mem_used`、`swap_used`、`disk_used`、`net_in_speed`（别名 `net_in`）、`net_out_speed`（别名 `net_out`）、`network`（`net_in_speed + net_out_speed`）、`net_in_transfer`、`net_out_transfer`、`load1`、`load5`、`load15`、`tcp_conn`、`udp_conn`、`process_count`、`temperature`、`gpu_usage`；
+  - `useTraffic`、`useAlerts`、`useServiceMonitors`、`useUptime`、`useGeoIp`；
+- **宿主钩子与属性**：
+  - `useTheme`、`useConfigUpdate`；
+  - `isEditing` — 实时反映当前仪表盘是否处于编辑模式的布尔 prop；
+- **通用逃生舱**：`useApiQuery` / `useApiMutation` 直接调用后端 REST API；
+- **操作按钮**：`defineWidget({ actions })`、`ActionDefinition` 与 `createActionsHelper` —— `ModuleWidgetHost` 会注入已接线的 `actions` 辅助对象，通过 `actions.render(id)` 渲染自带确认对话框（配置 `confirm` 时）、加载状态与 toast 提示的 `ActionButton`。
 
-完整 API 见 SDK 自带的 `packages/widget-sdk/README.md`。
+完整导出列表见仓库中的 `packages/widget-sdk/README.md`。
 
 ## 卸载
 
-在 **Settings → Widget Modules** 里点击组件右侧的删除按钮，或者：
+在 **Settings → Widget Modules** 里点击组件右侧的 **卸载**（**Uninstall**）按钮，或者：
 
 ```bash
 curl -X DELETE "https://your-host/api/widget-modules/com.example.hello" \
   -H "X-API-Key: $SERVERBEE_API_KEY"
 ```
 
-内置组件模块（如 `com.serverbee.tailscale-overview` 和 `com.serverbee.hello-world`）不能被卸载，对其调用 DELETE 会返回 `400`。
+卸载成功返回 `204 No Content`。内置组件模块（如 `com.serverbee.tailscale-overview` 和 `com.serverbee.hello-world`）不能被卸载，对其调用 DELETE 会返回 `400`。
 
 ## 限制与安全
 
 - **大小上限**：上传单个 `.js` 文件或 `.zip` 不超过 **1 MiB**；zip 中单个条目最大 **5 MiB**（解压后）；整个 zip 的解压总大小不超过 **32 MiB**，条目数不超过 **64**。
-- **SSRF 防护**：从 URL 安装会先做 DNS 解析，任何落在保留/私有段的 IP 都会被拒绝——回环（`127.0.0.0/8`、`::1`）、私网（`10/8`、`172.16/12`、`192.168/16`）、CGNAT（`100.64/10`）、链路本地（`169.254/16`，含云元数据接口）、IPv6 ULA（`fc00::/7`）和链路本地（`fe80::/10`）、benchmarking、文档、组播、保留段。HTTP 跳转被禁用——3xx 响应直接拒绝，避免公网 URL 通过重定向绕回内网。
+- **URL 协议与 SSRF 防护**：从 URL 安装支持 `http://` 与 `https://`（推荐使用 HTTPS），会先做 DNS 解析，任何落在保留/私有段的 IP 都会被拒绝——回环（`127.0.0.0/8`、`::1`）、私网（`10/8`、`172.16/12`、`192.168/16`）、CGNAT（`100.64/10`）、链路本地（`169.254/16`，含云元数据接口）、IPv6 ULA（`fc00::/7`）和链路本地（`fe80::/10`）、benchmarking、文档、组播、保留段。HTTP 跳转被禁用——3xx 响应直接拒绝，避免公网 URL 通过重定向绕回内网。
 - **Zip-slip 防护**：解压时会拒绝包含 `..` 或绝对路径的条目。
 - **静态解析**：清单必须能用纯正则解析出来；没有任何 `eval` / `Function()` 调用。解析器在源码 > 1 MiB 时直接拒绝。
 - **ID 冲突拒绝**：若上传的 `id` 已属于其他来源的模块（例如试图覆盖内置组件），返回 `409 Conflict`。
@@ -285,7 +292,7 @@ curl -X DELETE "https://your-host/api/widget-modules/com.example.hello" \
 - **管理员限定**：安装、卸载接口都要求管理员权限；普通成员只能读取列表与资源。
 - **审计日志**：每次安装/卸载都会写入 audit log，记录操作者、来源、id、版本、code SHA-256。
 - **同源运行**：组件运行在主 SPA 同源环境，请只安装来源可信的代码。
-- **Action 按钮**：通过 `defineWidget({ actions })` 声明的按钮自带确认对话框（`confirm` 配置生效时）、加载状态和成功/失败 toast 提示。
+- **Action 按钮**：通过 `defineWidget({ actions })` 声明并由 `actions.render(id)` 渲染的按钮自带确认对话框（`confirm` 配置生效时）、加载状态和成功/失败 toast 提示。
 
 <Cards>
   <Card title="仪表盘与组件" href="/zh/docs/dashboards" />

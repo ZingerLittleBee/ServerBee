@@ -8,7 +8,7 @@ ServerBee 把 Web 管理面板使用的能力同时通过 REST 和 WebSocket API
 
 ## Swagger UI
 
-内置交互式文档地址：
+内置交互式文档（公开可访问，无需认证）地址：
 
 ```text
 https://your-server/swagger-ui/
@@ -22,13 +22,19 @@ https://your-server/api-docs/openapi.json
 
 ## 响应格式
 
-REST 成功响应统一包装为：
+绝大多数 JSON REST 成功响应统一包装为：
 
 ```json
 {
   "data": {}
 }
 ```
+
+不使用该 JSON 包装的例外情况：
+
+- `204 No Content` 空响应体（例如 `DELETE /api/widget-modules/{id}`）。
+- 纯文本响应（`GET /healthz` 返回 `ok`）。
+- 原始二进制或静态资源响应（`POST /api/settings/backup`、`GET /api/files/download/{transfer_id}`、`GET /api/brand/logo`、`GET /api/brand/favicon`、`GET /api/widget-modules/{id}/{asset_path}`）。
 
 应用错误包含错误码和消息，还可能包含 `details`：
 
@@ -43,9 +49,11 @@ REST 成功响应统一包装为：
 
 ## 认证方式
 
+受保护的 REST 路由和 `/api/ws/*` 升级按以下优先级解析凭据（首个有效凭据生效）：`session_token` Cookie → `X-API-Key` 请求头 → `Authorization: Bearer` 请求头 → Tailscale Serve 回环身份。
+
 ### Session Cookie
 
-Web 管理面板登录后自动使用：
+Web 管理面板登录后自动使用。服务端设置名为 `session_token` 的 `HttpOnly` Cookie：
 
 ```bash
 curl -X POST https://your-server/api/auth/login \
@@ -69,7 +77,7 @@ API Key 使用 `serverbee_` 前缀，创建时只显示一次。API Key 会以�
 
 ### Bearer Session Token
 
-移动端流程在部分 REST 和 WebSocket 端点中使用 Bearer token：
+`Authorization: Bearer <session-token>` 适用于**所有**受保护的 REST 端点和 `/api/ws/*` WebSocket 升级（供 iOS 客户端和其他基于令牌的客户端使用）：
 
 ```bash
 curl https://your-server/api/auth/me \
@@ -80,10 +88,16 @@ curl https://your-server/api/auth/me \
 
 当 `tailscale.auth_enabled = true`（`SERVERBEE_TAILSCALE__AUTH_ENABLED=true`）时，ServerBee 支持解析本机 `tailscale serve` 注入的 `Tailscale-User-Login` 请求头，用于浏览器 REST 请求与 `/api/ws/*` WebSocket 升级。为防止身份伪造，服务端**仅在同时满足以下条件时**信任该请求头：底层 TCP 对端严格为回环地址（`127.0.0.1` 或 `::1`），**且**请求不含 `X-Forwarded-For` 或 `Forwarded` 转发头（若 `tailscale.socket_path` 指向可达的本地 Socket，还会通过 `/localapi/v0/whois` 交叉核验）。请求同时携带有效 Session Cookie、API Key 或 Bearer Token 时优先按前者认证；持久 WebSocket 连接期间会持续重验 `auth_enabled` 与用户当前角色。详见 [Tailscale 集成](/zh/docs/tailscale#方案二tailscale-serve-回环身份认证)。
 
+### 首次强制改密门禁
+
+当账号标记为 `must_change_password = true` 时，除三个白名单引导端点（`GET /api/auth/me`、`POST /api/auth/onboarding`、`POST /api/auth/logout`）外，所有受保护 REST 请求均返回 `403 Forbidden` 且 `error.code = "MUST_CHANGE_PASSWORD"`。`/api/ws/*` WebSocket 升级在完成密码引导前会被直接拒绝。
+
 ## 公开端点
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/healthz` | 纯文本健康检查（`ok`） |
+| GET | `/api/about` | 服务端版本与构建元数据 |
 | POST | `/api/auth/login` | Web 登录 |
 | GET | `/api/auth/oauth/providers` | 列出已启用的 OAuth Provider |
 | GET | `/api/auth/oauth/{provider}` | OAuth 授权跳转 |
@@ -103,8 +117,8 @@ curl https://your-server/api/auth/me \
 | GET | `/api/status/ip-quality` | 公开 IP 质量概览 |
 | GET | `/api/status/incidents`、`/api/status/maintenances` | 公开事件公告和维护窗口 |
 | GET | `/api/settings/brand` | 公开品牌设置 |
-| GET | `/api/brand/logo` | 返回上传的 Logo |
-| GET | `/api/brand/favicon` | 返回上传的 Favicon |
+| GET | `/api/brand/logo` | 返回上传的 Logo（原始二进制） |
+| GET | `/api/brand/favicon` | 返回上传的 Favicon（原始二进制） |
 
 普通移动端刷新会保留安装注册，并使之前的 access 和 refresh 凭据失效。登录返回稳定的 `revocation_token`，客户端跨刷新保留它，登出或清除被永久拒绝的认证凭据前，将它与 `installation_id` 发往 `/api/mobile/auth/revoke`。即使等待清理请求时发生新的登录，清理仍只使用原登录上下文。该凭据只能删除其原会话、认证凭据和注册，不能认证其他 API 或刷新会话。清理上下文会在轮换前同时捕获已保存的证明和原登录的当前 refresh secret。旧 Server 在 iOS 先升级期间替换会话，可能导致本地证明为空或已经失效。若已保存的证明被拒绝，客户端只会在删除接口尝试捕获的 refresh secret，不会改用替代登录的凭据。证明为空时，应用会在联网前保存它。撤销接口可在该秘密被消费前验证它；每次成功轮换也会在同一事务中保留被消费秘密的哈希。验证和删除与轮换串行，因此无论清理请求先于消费到达，还是在已提交的响应丢失后到达，都能撤销原会话。这些哈希仅允许删除原会话，并随其删除，不能授予普通 API 权限或重用已消费的刷新令牌。其他安装、用户和替代登录保持独立。
 
@@ -120,22 +134,28 @@ curl https://your-server/api/auth/me \
 
 | 端点族 | 代表端点 |
 |--------|----------|
-| 当前用户和凭据 | `GET /api/auth/me`、`PUT /api/auth/password`、`GET /api/auth/api-keys`、`DELETE /api/auth/api-keys/{id}` |
-| 2FA 和 OAuth 账号 | `/api/auth/2fa/*`、`GET/DELETE /api/auth/oauth/accounts/*` |
+| 当前用户和凭据 | `GET /api/auth/me`、`POST /api/auth/logout`、`POST /api/auth/onboarding`、`PUT /api/auth/password`、`GET /api/auth/api-keys`、`DELETE /api/auth/api-keys/{id}` |
+| 2FA 和 OAuth 账号 | `GET /api/auth/2fa/status`、`POST /api/auth/2fa/{setup,enable,disable}`、`GET /api/auth/oauth/accounts`、`DELETE /api/auth/oauth/accounts/{id}` |
 | 移动端会话和设备 | `POST /api/mobile/auth/logout`、`GET /api/mobile/auth/devices`、`DELETE /api/mobile/auth/devices/{id}`、`POST /api/mobile/pair`、`POST /api/mobile/push/register`、`POST /api/mobile/push/unregister` |
-| 服务器 | `GET /api/servers`、`GET /api/servers/{id}`（含持久化的 `tailscale_ipv4`、`tailscale_ipv6`、`tailscale_dns_name`、`tailscale_tailnet`）、`GET /api/servers/{id}/records`、`GET /api/servers/{id}/gpu-records` |
+| 移动端加密推送 | `GET/PUT /api/mobile/push/settings`、`POST /api/mobile/push/encrypted-register`、`POST /api/mobile/push/test`、`GET /api/mobile/push/test/{event_id}` |
+| Agent 元数据 | `GET /api/agent/latest-version` |
+| 服务器 | `GET /api/servers`、`GET /api/servers/{id}`（含 `renewal`、`geo_manual` 及持久化的 `tailscale_ipv4`、`tailscale_ipv6`、`tailscale_dns_name`、`tailscale_tailnet`）、`GET /api/servers/{id}/records`、`GET /api/servers/{id}/gpu-records` |
 | Tailscale | `GET /api/servers/{id}/tailscale/status`（需 `CAP_TAILSCALE`）、`GET /api/tailscale/overview` |
 | Agent Authority | `GET /api/servers/{id}/agent-authority`、`GET /api/agent-authority/events?server_id={id}` |
 | 分组和标签 | `GET /api/server-groups`、`GET /api/servers/{id}/tags` |
-| 可用性和流量 | `GET /api/servers/{id}/uptime-daily`、`GET /api/servers/{id}/traffic` |
-| GeoIP | `GET /api/geoip/status` |
-| Ping 任务 | `GET /api/ping-tasks`、`GET /api/ping-tasks/{id}/records` |
+| 可用性和流量 | `GET /api/servers/{server_id}/uptime-daily`、`GET /api/servers/{id}/traffic`、`GET /api/traffic/overview`、`GET /api/traffic/overview/daily`、`GET /api/traffic/{server_id}/daily`、`GET /api/traffic/{server_id}/cycle` |
+| GeoIP 与 ASN | `GET /api/geoip/status`、`GET /api/asn/status` |
+| Ping 任务 | `GET /api/ping-tasks`、`GET /api/ping-tasks/{id}`、`GET /api/ping-tasks/{id}/records` |
 | 网络探测 | `GET /api/network-probes/targets`、`GET /api/network-probes/setting`、`GET /api/network-probes/overview`、`GET /api/servers/{id}/network-probes/targets`、`GET /api/servers/{id}/network-probes/records`、`GET /api/servers/{id}/network-probes/summary`、`GET /api/servers/{id}/network-probes/anomalies` |
-| Traceroute 结果 | `GET /api/servers/{id}/traceroute/{request_id}` |
+| IP 质量 | `GET /api/ip-quality/services`、`GET /api/ip-quality/settings`、`GET /api/ip-quality/overview`、`GET /api/ip-quality/servers/{id}`、`GET /api/ip-quality/events` |
+| 安全事件 | `GET /api/security/events`、`GET /api/security/events/{id}`、`GET /api/security/stats` |
+| 防火墙封禁列表 | `GET /api/firewall/blocks`、`GET /api/firewall/blocks/{id}`、`GET /api/firewall/stats` |
+| Traceroute | `GET /api/servers/{id}/traceroute`、`GET /api/servers/{id}/traceroute/{request_id}` |
 | Docker 读取 | `GET /api/servers/{id}/docker/containers`、`stats`、`info`、`events`、`networks`、`volumes` |
 | 服务监控 | `GET /api/service-monitors`、`GET /api/service-monitors/{id}`、`GET /api/service-monitors/{id}/records` |
 | 状态页配置 | `GET /api/status-page` |
 | 仪表盘 | `GET /api/dashboards`、`GET /api/dashboards/default`、`GET /api/dashboards/{id}` |
+| 组件模块 | `GET /api/widget-modules`、`GET /api/widget-modules/{id}/{asset_path}` |
 | 成本洞察 | `GET /api/cost/overview`、`GET /api/servers/{id}/cost-insights` |
 | 告警事件 | `GET /api/alert-events`、`GET /api/alert-events/{alert_key}` |
 
@@ -146,25 +166,30 @@ curl https://your-server/api/auth/me \
 | 端点族 | 代表端点 |
 |--------|----------|
 | 创建 API Key | `POST /api/auth/api-keys` |
-| 服务器管理 | `POST /api/servers`（幂等 onboarding）、`PUT/DELETE /api/servers/{id}`、`POST /api/servers/{id}/upgrade` |
+| 服务器管理 | `POST /api/servers`（幂等 onboarding，支持 `renewal`）、`PUT/DELETE /api/servers/{id}`（支持 `renewal` / `geo_manual`）、`POST /api/servers/batch-delete`、`DELETE /api/servers/cleanup`、`POST /api/servers/{id}/upgrade` |
 | Agent Authority | `/api/servers/{id}/agent-authority/*` 下的重新接入、offer 发出/替换/吊销及 authority 吊销 |
 | 分组和标签 | `POST /api/server-groups`、`PUT/DELETE /api/server-groups/{id}`、`PUT /api/servers/{id}/tags` |
 | Ping 和网络探测 | `POST /api/ping-tasks`、`PUT/DELETE /api/ping-tasks/{id}`、`POST /api/network-probes/targets`、`PUT/DELETE /api/network-probes/targets/{id}`、`PUT /api/network-probes/setting`、`PUT /api/servers/{id}/network-probes/targets` |
-| Traceroute | `POST /api/servers/{id}/traceroute` |
-| 文件管理 | 所有 `/api/files/*` 端点，包括列目录、获取元数据、读取、下载、传输管理和文件修改 |
+| IP 质量 | `POST /api/ip-quality/services`、`PUT/DELETE /api/ip-quality/services/{id}`、`PUT /api/ip-quality/settings`、`POST /api/ip-quality/servers/{id}/check` |
+| 安全事件 | `DELETE /api/security/events/{id}` |
+| 防火墙封禁列表 | `POST /api/firewall/blocks`、`DELETE /api/firewall/blocks/{id}` |
+| Traceroute | `POST /api/servers/{id}/traceroute`、`DELETE /api/servers/{id}/traceroute/{request_id}`、`DELETE /api/servers/{id}/traceroute` |
+| 文件管理 | 所有 `/api/files/*` 端点，包括列目录、获取元数据、读取、下载、上传、传输管理和文件修改 |
 | Docker 操作 | `POST /api/servers/{id}/docker/containers/{cid}/action` |
 | 服务监控 | `POST /api/service-monitors`、`PUT/DELETE /api/service-monitors/{id}`、`POST /api/service-monitors/{id}/check` |
 | 仪表盘 | `POST /api/dashboards`、`PUT/DELETE /api/dashboards/{id}` |
+| 组件模块 | `POST /api/widget-modules`、`DELETE /api/widget-modules/{id}`（返回 `204 No Content`） |
 | 品牌外观 | `PUT /api/settings/brand`、`POST /api/settings/brand/logo`、`POST /api/settings/brand/favicon` |
 | 状态页 | `PUT /api/status-page` |
 | 事件公告 | `GET/POST /api/incidents`、`PUT/DELETE /api/incidents/{id}`、`POST /api/incidents/{id}/updates` |
 | 维护窗口 | `GET/POST /api/maintenances`、`PUT/DELETE /api/maintenances/{id}` |
-| 告警和通知 | 管理 `/api/alert-rules`、`/api/notifications`、`/api/notification-groups` 及其 `/{id}` 路由 |
+| 告警和通知 | 管理 `/api/alert-rules`、`/api/alert-rules/{id}`、`GET /api/alert-rules/{id}/states`、`/api/notifications`、`/api/notifications/{id}`、`POST /api/notifications/{id}/test`、`/api/notification-groups` 及 `/api/notification-groups/{id}` |
 | 任务 | `GET/POST /api/tasks`、`GET/PUT/DELETE /api/tasks/{id}`、`GET /api/tasks/{id}/results`、`POST /api/tasks/{id}/run` |
 | 用户 | `GET/POST /api/users`、`GET/PUT/DELETE /api/users/{id}` |
-| 审计和设置 | `GET/DELETE /api/audit-logs`、`GET/PUT /api/settings`、`POST /api/settings/backup`、`POST /api/settings/restore` |
+| 速率限制 | `GET /api/admin/rate-limit`、`POST /api/admin/rate-limit/reset` |
+| 审计和设置 | `GET/DELETE /api/audit-logs`、`GET /api/audit-logs/options`、`GET/PUT /api/settings`、`POST /api/settings/backup`、`POST /api/settings/restore` |
 | Tailscale 控制面 | `GET /api/tailscale/config`（`api_key` 脱敏为 `has_api_key`）、`PUT /api/tailscale/config`、`POST /api/tailscale/test` |
-| GeoIP | `POST /api/geoip/download` |
+| GeoIP 与 ASN | `POST /api/geoip/download`、`POST /api/asn/download` |
 
 备份端点返回原始 SQLite 下载；恢复端点接受 `Content-Type: application/octet-stream` 的原始 SQLite body，并要求重启 Server。两者都是仅限 Admin 的高风险操作，已验证命令与保护措施见[备份与恢复](/zh/docs/deployment#备份与恢复)。
 
@@ -174,7 +199,7 @@ curl https://your-server/api/auth/me \
 
 ### `POST /api/servers` —— Onboard Server
 
-原子地创建 Server 配置及其初始绑定 offer。`onboarding_request_id` 必填，并按当前认证操作者隔离。使用相同 ID 和相同标准化输入重试会返回同一个 `server_id`；同一 ID 搭配不同输入会返回 `409 ONBOARDING_IDEMPOTENCY_CONFLICT`。
+原子地创建 Server 配置及其初始绑定 offer。`onboarding_request_id` 必填，并按当前认证操作者隔离。使用相同 ID 和相同标准化输入重试会返回同一个 `server_id`；同一 ID 搭配不同输入会返回 `409 ONBOARDING_IDEMPOTENCY_CONFLICT`。接入时也可一并传入可选计费字段（`price`、`currency`、`billing_cycle`、`billing_start_day`、`expired_at`、`renewal`、`traffic_limit`、`traffic_limit_type`；不可同时提交 `renewal.expiry_date` 和 `expired_at`）。
 
 ```json
 {
@@ -216,23 +241,27 @@ curl https://your-server/api/auth/me \
 
 | 路径 | 认证 | 说明 |
 |------|------|------|
-| `/api/agent/ws` | Agent Bearer token（兼容旧 Agent 的 `?token=`） | Agent 指标、命令、Ping、文件、Docker、Traceroute、Tailscale 状态 |
+| `/api/agent/ws` | Agent Bearer token（兼容旧 Agent 的 `?token=`） | 双向 Agent 协议（按 `type` 区分的 JSON 帧）：`SystemInfo`、`Report`、`CapabilitiesChanged`、`CapabilityDenied`、`SecurityEvent`、`PingResult`、`NetworkProbeResults`、`UnlockResults` / `IpQualitySync`、`TaskResult`、`Terminal*`、`File*`、`Docker*`、`TailscaleStatus` / `TailscaleUnavailable`、`TracerouteResult` / `TracerouteRoundUpdate`、`IpChanged`、`UpgradeProgress` / `UpgradeResult`、`BlocklistAck` / `BlocklistResetAck` 及 `Ack` / `Pong` |
 | `/api/ws/servers` | Session cookie、API Key、Bearer token 或 Tailscale Serve 回环身份 | 浏览器/移动端实时服务器更新（`FullSync` 包含 `tailscale_*` 字段） |
-| `/api/ws/terminal/{server_id}` | 已认证 Admin + `CAP_TERMINAL` | Web 终端代理；JSON 文本消息，终端数据 base64 编码 |
-| `/api/ws/docker/logs/{server_id}` | 已认证 Admin + `CAP_DOCKER` | 按容器流式传输 Docker 日志 |
+| `/api/ws/terminal/{server_id}` | 已认证 Admin + `CAP_TERMINAL` | Web 终端代理。客户端 JSON 帧：`{"type":"input","data":"<base64>"}` 与 `{"type":"resize","rows":24,"cols":80}`；服务端 JSON 帧：`session`、`started`、`output`（base64 `data`）和 `error` |
+| `/api/ws/docker/logs/{server_id}` | 已认证 Admin + `CAP_DOCKER` | 按容器流式传输 Docker 日志。服务端 JSON 帧：`{"type":"session","session_id":"..."}` 与 `{"type":"logs","entries":[...]}`；客户端 JSON 帧：`{"type":"subscribe","container_id":"...","tail":100,"follow":true}` 与 `{"type":"unsubscribe"}` |
 
 ## 常见状态码
 
 | 状态码 | 含义 |
 |--------|------|
+| 200 | 成功（JSON `{ "data": ... }` 包装、二进制下载，或 `/healthz` 纯文本） |
+| 204 | 无内容（空响应体，例如卸载组件模块） |
 | 400 | 请求错误或操作无效 |
 | 401 | 未认证 |
-| 403 | 无权限：角色、capability 或 Agent 本地策略阻止操作 |
+| 403 | 无权限：角色、capability、Agent 本地策略，或首次强制改密（`MUST_CHANGE_PASSWORD`） |
 | 404 | 资源不存在、服务器离线或公开页面已禁用 |
-| 409 | 冲突，例如 slug/name 重复 |
-| 422 | 参数校验失败 |
-| 429 | 请求过于频繁 |
-| 500 | 服务器内部错误 |
+| 408 | 请求超时（`REQUEST_TIMEOUT`） |
+| 409 | 冲突，例如 slug/name 重复或过期的 enrollment offer |
+| 422 | 参数校验失败（`VALIDATION_ERROR`） |
+| 429 | 请求过于频繁（`TOO_MANY_REQUESTS`） |
+| 500 | 服务器内部错误（`INTERNAL_ERROR`） |
+| 502 | 上游网关错误（`BAD_GATEWAY`）：外部投递失败（Webhook、推送服务商、邮件） |
 
 <Cards>
   <Card title="功能开关" href="/zh/docs/capabilities" />

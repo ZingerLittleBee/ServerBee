@@ -8,7 +8,7 @@ ServerBee exposes the same capabilities the web dashboard uses through REST and 
 
 ## Swagger UI
 
-Open the built-in interactive documentation at:
+Open the built-in interactive documentation (publicly accessible, unauthenticated) at:
 
 ```text
 https://your-server/swagger-ui/
@@ -22,13 +22,19 @@ https://your-server/api-docs/openapi.json
 
 ## Response Format
 
-Successful REST responses are wrapped as:
+Most successful JSON REST responses are wrapped as:
 
 ```json
 {
   "data": {}
 }
 ```
+
+Exceptions to the JSON envelope:
+
+- `204 No Content` with an empty body (for example, `DELETE /api/widget-modules/{id}`).
+- Plain text (`GET /healthz` returns `ok`).
+- Raw binary or asset responses (`POST /api/settings/backup`, `GET /api/files/download/{transfer_id}`, `GET /api/brand/logo`, `GET /api/brand/favicon`, and `GET /api/widget-modules/{id}/{asset_path}`).
 
 Application errors use an error code and message, with optional `details`:
 
@@ -43,9 +49,11 @@ Application errors use an error code and message, with optional `details`:
 
 ## Authentication
 
+Protected REST routes and `/api/ws/*` upgrades resolve credentials in the following precedence order (first valid credential wins): `session_token` cookie → `X-API-Key` header → `Authorization: Bearer` header → Tailscale Serve loopback identity.
+
 ### Session Cookie
 
-Used by the web dashboard after login:
+Used by the web dashboard after login. The server sets an `HttpOnly` cookie named `session_token`:
 
 ```bash
 curl -X POST https://your-server/api/auth/login \
@@ -69,7 +77,7 @@ API keys use the `serverbee_` prefix and are shown only once when created. An AP
 
 ### Bearer Session Token
 
-Mobile flows use Bearer tokens for selected REST and WebSocket endpoints:
+`Authorization: Bearer <session-token>` is accepted across **all** protected REST endpoints and `/api/ws/*` WebSocket upgrades (used by the iOS app and token-based clients):
 
 ```bash
 curl https://your-server/api/auth/me \
@@ -80,10 +88,16 @@ curl https://your-server/api/auth/me \
 
 When `tailscale.auth_enabled = true` (`SERVERBEE_TAILSCALE__AUTH_ENABLED=true`), ServerBee also resolves `Tailscale-User-Login` injected by a local `tailscale serve` instance for browser REST requests and `/api/ws/*` WebSocket upgrades. For spoofing resistance, this header is trusted **only** when the TCP peer is strictly loopback (`127.0.0.1` or `::1`) **and** neither `X-Forwarded-For` nor `Forwarded` is present (with an additional `/localapi/v0/whois` cross-check when `tailscale.socket_path` points to a reachable socket). Existing session cookies, API keys, and Bearer tokens take precedence when supplied; long-lived WebSockets re-check `auth_enabled` and the user's current role during the connection. See [Tailscale Integration](/en/docs/tailscale#option-2-tailscale-serve-loopback-identity-auth).
 
+### Forced Password Change Gate
+
+When an account has `must_change_password = true`, protected REST endpoints return `403 Forbidden` with `error.code = "MUST_CHANGE_PASSWORD"` except for three onboarding routes: `GET /api/auth/me`, `POST /api/auth/onboarding`, and `POST /api/auth/logout`. WebSocket upgrades under `/api/ws/*` are rejected outright until password onboarding is completed.
+
 ## Public Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/healthz` | Plain-text health check (`ok`) |
+| GET | `/api/about` | Server version and build metadata |
 | POST | `/api/auth/login` | Web login |
 | GET | `/api/auth/oauth/providers` | List enabled OAuth providers |
 | GET | `/api/auth/oauth/{provider}` | OAuth authorization redirect |
@@ -103,8 +117,8 @@ When `tailscale.auth_enabled = true` (`SERVERBEE_TAILSCALE__AUTH_ENABLED=true`),
 | GET | `/api/status/ip-quality` | Public IP quality overview |
 | GET | `/api/status/incidents`, `/api/status/maintenances` | Public incidents and maintenance windows |
 | GET | `/api/settings/brand` | Public brand settings |
-| GET | `/api/brand/logo` | Serve uploaded logo |
-| GET | `/api/brand/favicon` | Serve uploaded favicon |
+| GET | `/api/brand/logo` | Serve uploaded logo (raw binary) |
+| GET | `/api/brand/favicon` | Serve uploaded favicon (raw binary) |
 
 Ordinary mobile refresh preserves the installation registration and invalidates the previous access and refresh credentials. Login returns a stable `revocation_token`; the client retains it across refreshes and sends it with `installation_id` to `/api/mobile/auth/revoke` when signing out or discarding permanently rejected credentials. Cleanup uses the original login context even if a replacement login starts while the request is pending. This proof can only delete its original session, credentials, and registration; it cannot authenticate other APIs or refresh a session. Cleanup captures both the saved proof and the original login's current refresh secret before rotation. The saved proof can be absent or stale when an older Server replaced sessions during an iOS-first upgrade. If the saved proof is rejected, the client tries only the captured refresh secret at the deletion endpoint, without adopting a replacement login's credentials. An absent proof is saved before networking. Revocation can verify that secret before consumption; every successful rotation also retains the consumed secret's hash in the same transaction. Verification and deletion are serialized with rotation, so cleanup remains possible whether it reaches the Server before consumption or after a committed response is lost. These retained hashes grant deletion of only the original session and are removed with that session. They never grant ordinary API access or allow reuse of a consumed refresh token. Other installations, users, and replacement logins remain independent.
 
@@ -112,7 +126,7 @@ Recovery through `/api/mobile/auth/recover` uses the same login rate limit and a
 
 A response contains `outcome`, `user_id`, `installation_id`, nullable `mobile_session_id`, and `candidates`. Outcomes `ok` and `already_absent` confirm cleanup and return no candidates. Without a known ID or matching material, remaining scoped sessions produce `selection_required` with device names, session IDs, creation dates and last-use dates, including expired sessions. No session is selected or removed automatically. The user chooses the original session, and another reauthenticated request uses that exact `expected_session_id`. Absence without an ID is confirmed only when the original account and installation have no remaining operational state. Unattributed state or more than 64 candidates returns 409 without discarding records. Recovery never chooses the newest session or deletes all sessions for an installation.
 
-QR/grant responses also contain a cleanup-only `recovery_token`; password responses omit it. This random grant expires five minutes after creation, is kept only in client memory, and is lost on Server restart. The Server retains at most 128 grants, cleans expired entries, and returns 429 at capacity. It is bound to the original account, installation, and exact captured access/refresh/revocation material, and cannot authorize ordinary login, pairing, refresh or API calls. Reuse it with unchanged captured material for session selection and retries. Selection is restricted to the initially offered candidates and pinned before deletion; retries cannot change the target or broaden the list. A terminal grant retains the exact resolved target until expiry, so lost-response retries confirm only that target’s absence. An ID-less absence grant cannot acknowledge or clean up later replacement state. After restart, expiry, or new state following an ID-less absence, scan a fresh web QR code.
+QR/grant responses also contain a cleanup-only `recovery_token`; password responses omit it. This random grant expires five minutes after creation, is kept only in client memory, and is lost on Server restart. The Server retains at most 128 grants, cleans expired entries, and returns 429 at capacity. It is bound to the original account, installation, and exact captured access/refresh/revocation material, and cannot authorize ordinary login, pairing, refresh or API calls. Reuse it with unchanged captured material for session selection and retries. Selection is restricted to the initially offered candidates and pinned before deletion; retries cannot change the target or broaden the list. A terminal grant retains the exact resolved target until expiry, so lost-response retries confirm only that target's absence. An ID-less absence grant cannot acknowledge or clean up later replacement state. After restart, expiry, or new state following an ID-less absence, scan a fresh web QR code.
 
 ## Authenticated Read Endpoints
 
@@ -120,22 +134,28 @@ These endpoints require a user credential. Admin and Member users can use the li
 
 | Family | Representative endpoints |
 |--------|--------------------------|
-| Current user and credentials | `GET /api/auth/me`, `PUT /api/auth/password`, `GET /api/auth/api-keys`, `DELETE /api/auth/api-keys/{id}` |
-| 2FA and OAuth accounts | `/api/auth/2fa/*`, `GET/DELETE /api/auth/oauth/accounts/*` |
+| Current user and credentials | `GET /api/auth/me`, `POST /api/auth/logout`, `POST /api/auth/onboarding`, `PUT /api/auth/password`, `GET /api/auth/api-keys`, `DELETE /api/auth/api-keys/{id}` |
+| 2FA and OAuth accounts | `GET /api/auth/2fa/status`, `POST /api/auth/2fa/{setup,enable,disable}`, `GET /api/auth/oauth/accounts`, `DELETE /api/auth/oauth/accounts/{id}` |
 | Mobile sessions and devices | `POST /api/mobile/auth/logout`, `GET /api/mobile/auth/devices`, `DELETE /api/mobile/auth/devices/{id}`, `POST /api/mobile/pair`, `POST /api/mobile/push/register`, `POST /api/mobile/push/unregister` |
-| Servers | `GET /api/servers`, `GET /api/servers/{id}` (include persisted `tailscale_ipv4`, `tailscale_ipv6`, `tailscale_dns_name`, `tailscale_tailnet`), `GET /api/servers/{id}/records`, `GET /api/servers/{id}/gpu-records` |
+| Mobile encrypted push | `GET/PUT /api/mobile/push/settings`, `POST /api/mobile/push/encrypted-register`, `POST /api/mobile/push/test`, `GET /api/mobile/push/test/{event_id}` |
+| Agent metadata | `GET /api/agent/latest-version` |
+| Servers | `GET /api/servers`, `GET /api/servers/{id}` (include `renewal`, `geo_manual`, and persisted `tailscale_ipv4`, `tailscale_ipv6`, `tailscale_dns_name`, `tailscale_tailnet`), `GET /api/servers/{id}/records`, `GET /api/servers/{id}/gpu-records` |
 | Tailscale | `GET /api/servers/{id}/tailscale/status` (requires `CAP_TAILSCALE`), `GET /api/tailscale/overview` |
 | Agent Authority | `GET /api/servers/{id}/agent-authority`, `GET /api/agent-authority/events?server_id={id}` |
 | Groups and tags | `GET /api/server-groups`, `GET /api/servers/{id}/tags` |
-| Uptime and traffic | `GET /api/servers/{id}/uptime-daily`, `GET /api/servers/{id}/traffic` |
-| GeoIP | `GET /api/geoip/status` |
-| Ping tasks | `GET /api/ping-tasks`, `GET /api/ping-tasks/{id}/records` |
+| Uptime and traffic | `GET /api/servers/{server_id}/uptime-daily`, `GET /api/servers/{id}/traffic`, `GET /api/traffic/overview`, `GET /api/traffic/overview/daily`, `GET /api/traffic/{server_id}/daily`, `GET /api/traffic/{server_id}/cycle` |
+| GeoIP and ASN | `GET /api/geoip/status`, `GET /api/asn/status` |
+| Ping tasks | `GET /api/ping-tasks`, `GET /api/ping-tasks/{id}`, `GET /api/ping-tasks/{id}/records` |
 | Network probes | `GET /api/network-probes/targets`, `GET /api/network-probes/setting`, `GET /api/network-probes/overview`, `GET /api/servers/{id}/network-probes/targets`, `GET /api/servers/{id}/network-probes/records`, `GET /api/servers/{id}/network-probes/summary`, `GET /api/servers/{id}/network-probes/anomalies` |
-| Traceroute results | `GET /api/servers/{id}/traceroute/{request_id}` |
+| IP quality | `GET /api/ip-quality/services`, `GET /api/ip-quality/settings`, `GET /api/ip-quality/overview`, `GET /api/ip-quality/servers/{id}`, `GET /api/ip-quality/events` |
+| Security events | `GET /api/security/events`, `GET /api/security/events/{id}`, `GET /api/security/stats` |
+| Firewall blocklist | `GET /api/firewall/blocks`, `GET /api/firewall/blocks/{id}`, `GET /api/firewall/stats` |
+| Traceroute | `GET /api/servers/{id}/traceroute`, `GET /api/servers/{id}/traceroute/{request_id}` |
 | Docker, read-only | `GET /api/servers/{id}/docker/containers`, `stats`, `info`, `events`, `networks`, `volumes` |
 | Service monitors | `GET /api/service-monitors`, `GET /api/service-monitors/{id}`, `GET /api/service-monitors/{id}/records` |
 | Status page config | `GET /api/status-page` |
 | Dashboards | `GET /api/dashboards`, `GET /api/dashboards/default`, `GET /api/dashboards/{id}` |
+| Widget modules | `GET /api/widget-modules`, `GET /api/widget-modules/{id}/{asset_path}` |
 | Cost insights | `GET /api/cost/overview`, `GET /api/servers/{id}/cost-insights` |
 | Alert events | `GET /api/alert-events`, `GET /api/alert-events/{alert_key}` |
 
@@ -146,25 +166,30 @@ The following management and host-control operations require Admin. Operations l
 | Family | Representative endpoints |
 |--------|--------------------------|
 | API key creation | `POST /api/auth/api-keys` |
-| Server management | `POST /api/servers` (idempotent onboarding), `PUT/DELETE /api/servers/{id}`, `POST /api/servers/{id}/upgrade` |
+| Server management | `POST /api/servers` (idempotent onboarding, optional `renewal`), `PUT/DELETE /api/servers/{id}` (optional `renewal` / `geo_manual`), `POST /api/servers/batch-delete`, `DELETE /api/servers/cleanup`, `POST /api/servers/{id}/upgrade` |
 | Agent Authority | re-enrollment, offer issue/replace/revoke, and authority revocation under `/api/servers/{id}/agent-authority/*` |
 | Groups and tags | `POST /api/server-groups`, `PUT/DELETE /api/server-groups/{id}`, `PUT /api/servers/{id}/tags` |
 | Ping and network probes | `POST /api/ping-tasks`, `PUT/DELETE /api/ping-tasks/{id}`, `POST /api/network-probes/targets`, `PUT/DELETE /api/network-probes/targets/{id}`, `PUT /api/network-probes/setting`, `PUT /api/servers/{id}/network-probes/targets` |
-| Traceroute | `POST /api/servers/{id}/traceroute` |
-| Files | All `/api/files/*` endpoints, including list, stat, read, download, transfer management, and file changes |
+| IP quality | `POST /api/ip-quality/services`, `PUT/DELETE /api/ip-quality/services/{id}`, `PUT /api/ip-quality/settings`, `POST /api/ip-quality/servers/{id}/check` |
+| Security events | `DELETE /api/security/events/{id}` |
+| Firewall blocklist | `POST /api/firewall/blocks`, `DELETE /api/firewall/blocks/{id}` |
+| Traceroute | `POST /api/servers/{id}/traceroute`, `DELETE /api/servers/{id}/traceroute/{request_id}`, `DELETE /api/servers/{id}/traceroute` |
+| Files | All `/api/files/*` endpoints, including list, stat, read, download, upload, transfer management, and file changes |
 | Docker actions | `POST /api/servers/{id}/docker/containers/{cid}/action` |
 | Service monitors | `POST /api/service-monitors`, `PUT/DELETE /api/service-monitors/{id}`, `POST /api/service-monitors/{id}/check` |
 | Dashboards | `POST /api/dashboards`, `PUT/DELETE /api/dashboards/{id}` |
+| Widget modules | `POST /api/widget-modules`, `DELETE /api/widget-modules/{id}` (`204 No Content`) |
 | Brand appearance | `PUT /api/settings/brand`, `POST /api/settings/brand/logo`, `POST /api/settings/brand/favicon` |
 | Status page | `PUT /api/status-page` |
 | Incidents | `GET/POST /api/incidents`, `PUT/DELETE /api/incidents/{id}`, `POST /api/incidents/{id}/updates` |
 | Maintenance windows | `GET/POST /api/maintenances`, `PUT/DELETE /api/maintenances/{id}` |
-| Alerts and notifications | Manage `/api/alert-rules`, `/api/notifications`, `/api/notification-groups`, and their `/{id}` routes |
+| Alerts and notifications | Manage `/api/alert-rules`, `/api/alert-rules/{id}`, `GET /api/alert-rules/{id}/states`, `/api/notifications`, `/api/notifications/{id}`, `POST /api/notifications/{id}/test`, `/api/notification-groups`, and `/api/notification-groups/{id}` |
 | Tasks | `GET/POST /api/tasks`, `GET/PUT/DELETE /api/tasks/{id}`, `GET /api/tasks/{id}/results`, `POST /api/tasks/{id}/run` |
 | Users | `GET/POST /api/users`, `GET/PUT/DELETE /api/users/{id}` |
-| Audit and settings | `GET/DELETE /api/audit-logs`, `GET/PUT /api/settings`, `POST /api/settings/backup`, `POST /api/settings/restore` |
+| Rate limits | `GET /api/admin/rate-limit`, `POST /api/admin/rate-limit/reset` |
+| Audit and settings | `GET/DELETE /api/audit-logs`, `GET /api/audit-logs/options`, `GET/PUT /api/settings`, `POST /api/settings/backup`, `POST /api/settings/restore` |
 | Tailscale control plane | `GET /api/tailscale/config` (`api_key` redacted as `has_api_key`), `PUT /api/tailscale/config`, `POST /api/tailscale/test` |
-| GeoIP | `POST /api/geoip/download` |
+| GeoIP and ASN | `POST /api/geoip/download`, `POST /api/asn/download` |
 
 The backup endpoint returns a raw SQLite download. Restore accepts a raw SQLite body with `Content-Type: application/octet-stream` and requires a Server restart. Both are Admin-only, high-risk operations; see [Backup and Restore](/en/docs/deployment#backup-and-restore) for verified commands and safeguards.
 
@@ -174,7 +199,7 @@ Responses follow the standard `{ "data": ... }` envelope. Agent Authority manage
 
 ### `POST /api/servers` -- Onboard a Server
 
-Creates the Server profile and its initial bound offer atomically. `onboarding_request_id` is required and is scoped to the authenticated actor. Retrying the same ID with identical normalized input returns the same `server_id`; reusing it with different input returns `409 ONBOARDING_IDEMPOTENCY_CONFLICT`.
+Creates the Server profile and its initial bound offer atomically. `onboarding_request_id` is required and is scoped to the authenticated actor. Retrying the same ID with identical normalized input returns the same `server_id`; reusing it with different input returns `409 ONBOARDING_IDEMPOTENCY_CONFLICT`. Optional billing fields (`price`, `currency`, `billing_cycle`, `billing_start_day`, `expired_at`, `renewal`, `traffic_limit`, `traffic_limit_type`) can also be supplied during onboarding (do not submit `renewal.expiry_date` and `expired_at` together).
 
 ```json
 {
@@ -216,23 +241,27 @@ Only one offer may be outstanding per Server. Its terminal outcome is exactly on
 
 | Path | Auth | Description |
 |------|------|-------------|
-| `/api/agent/ws` | Agent Bearer token (`?token=` accepted for legacy Agents) | Agent metrics, commands, pings, files, Docker, traceroute, Tailscale status |
+| `/api/agent/ws` | Agent Bearer token (`?token=` accepted for legacy Agents) | Bidirectional Agent protocol (`type`-tagged JSON frames): `SystemInfo`, `Report`, `CapabilitiesChanged`, `CapabilityDenied`, `SecurityEvent`, `PingResult`, `NetworkProbeResults`, `UnlockResults` / `IpQualitySync`, `TaskResult`, `Terminal*`, `File*`, `Docker*`, `TailscaleStatus` / `TailscaleUnavailable`, `TracerouteResult` / `TracerouteRoundUpdate`, `IpChanged`, `UpgradeProgress` / `UpgradeResult`, `BlocklistAck` / `BlocklistResetAck`, and `Ack` / `Pong` |
 | `/api/ws/servers` | Session cookie, API key, Bearer token, or Tailscale Serve loopback identity | Browser/mobile real-time server updates (`FullSync` includes `tailscale_*` fields) |
-| `/api/ws/terminal/{server_id}` | Authenticated Admin + `CAP_TERMINAL` | Web terminal proxy; JSON text messages with terminal data base64-encoded |
-| `/api/ws/docker/logs/{server_id}` | Authenticated Admin + `CAP_DOCKER` | Per-container Docker log streaming |
+| `/api/ws/terminal/{server_id}` | Authenticated Admin + `CAP_TERMINAL` | Web terminal proxy. Client JSON frames: `{"type":"input","data":"<base64>"}` and `{"type":"resize","rows":24,"cols":80}`. Server JSON frames: `session`, `started`, `output` (base64 `data`), and `error` |
+| `/api/ws/docker/logs/{server_id}` | Authenticated Admin + `CAP_DOCKER` | Per-container Docker log streaming. Server JSON frames: `{"type":"session","session_id":"..."}` and `{"type":"logs","entries":[...]}`. Client JSON frames: `{"type":"subscribe","container_id":"...","tail":100,"follow":true}` and `{"type":"unsubscribe"}` |
 
 ## Common Status Codes
 
 | Code | Meaning |
 |------|---------|
+| 200 | Success (JSON `{ "data": ... }` envelope, binary download, or plain text for `/healthz`) |
+| 204 | No Content (empty body, e.g., widget module uninstall) |
 | 400 | Bad request or invalid operation |
 | 401 | Not authenticated |
-| 403 | Forbidden: role, capability, or local agent policy blocks the operation |
+| 403 | Forbidden: role, capability, local agent policy, or forced password onboarding (`MUST_CHANGE_PASSWORD`) |
 | 404 | Resource not found, server offline, or disabled public page |
-| 409 | Conflict, such as duplicate slug/name |
-| 422 | Validation error |
-| 429 | Rate limited |
-| 500 | Internal server error |
+| 408 | Request timeout (`REQUEST_TIMEOUT`) |
+| 409 | Conflict, such as duplicate slug/name or stale enrollment offer |
+| 422 | Validation error (`VALIDATION_ERROR`) |
+| 429 | Rate limited (`TOO_MANY_REQUESTS`) |
+| 500 | Internal server error (`INTERNAL_ERROR`) |
+| 502 | Bad gateway (`BAD_GATEWAY`): upstream/external delivery failure (webhook, push provider, mail) |
 
 <Cards>
   <Card title="Capabilities" href="/en/docs/capabilities" />

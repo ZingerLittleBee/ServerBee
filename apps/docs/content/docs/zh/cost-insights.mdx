@@ -1,33 +1,44 @@
 ---
 title: 成本洞察
-description: ServerBee 如何把账单字段与 agent 指标转换为消耗速率、单位资源成本，以及客观的成本提醒。
+description: ServerBee 如何把账单字段、自动续费日历与 agent 指标转换为消耗速率、单位资源成本，以及客观的成本提醒。
 icon: CircleDollarSign
 ---
 
-ServerBee 把管理员录入的账单字段（`price`、`billing_cycle`、`currency`、`expired_at` 等）与每个 agent 上报的资源容量、利用率、在线率结合起来，推导出一组客观的成本信号：消耗速率、单位资源成本，以及每台服务器的**成本提醒（advisories）**。这些信息出现在服务器列表、仪表盘服务器卡片，以及服务器详情页的成本面板上。
+ServerBee 把管理员录入的账单字段（`price`、`billing_cycle`、`currency`、`billing_start_day`、`expired_at`、`traffic_limit`、`traffic_limit_type` 以及可选的自动续费 `renewal` 设置）与每个 agent 上报的资源容量、利用率、在线率结合起来，推导出一组客观的成本信号：消耗速率、单位资源成本，以及每台服务器的**成本提醒（advisories）**。这些信息出现在服务器列表（`/servers`）、仪表盘 `server-cards` 组件的**列表（list）**布局（网格布局的 `<ServerCard>` 卡片不显示成本数据）、服务器详情页的成本面板，以及原生 iOS 客户端（服务器详情的 `CostInsightsCard` 与 **Insights** 机群汇总）。
 
 如何在界面里录入账单数据，见[管理员指南的计费信息一节](/zh/docs/admin#计费信息)。
 
 ## 派生输出
 
-每台账单配置合法的服务器都会产出下列字段（通过 `GET /api/cost/overview` 和 `GET /api/servers/{id}/cost-insights` 暴露）：
+有两个只读端点暴露派生出的成本数据：
 
-| 字段 | 含义 |
-|------|------|
-| `cost_per_second / per_hour / per_day` | 在当前计费周期内按单位时间摊销的成本 |
-| `cost_per_month_equivalent` | 归一化到「每 30 天」的成本，便于比较不同长度的周期 |
-| `cycle_cost_elapsed / cycle_cost_remaining` | 本周期已消耗 vs. 剩余的金额 |
-| `cycle_burn_percent` | 当前周期已过部分的百分比 |
-| `days_remaining` | 当前计费周期剩余天数 |
-| `resource_value.cost_per_cpu_core` | 每 CPU 核的月度等价单位成本 |
-| `resource_value.cost_per_gb_memory` | 每 GB 内存的月度等价单位成本 |
-| `resource_value.cost_per_gb_disk` | 每 GB 磁盘的月度等价单位成本 |
-| `resource_value.cost_per_tb_traffic_limit` | 配置了 `traffic_limit` 时，每 TB 流量限额的月度等价成本 |
-| `advisories` | 客观的每台服务器提醒（见下文）；无任何提醒时为空数组 |
-| `invalid_reason` | 账单字段校验失败时，替代上述成本字段填充 |
+- `GET /api/cost/overview` 返回按币种汇总的机群总计 `currencies`（`currency`、`configured_server_count`、`monthly_equivalent_total`、`daily_total`、`cycle_elapsed_total`）以及每台服务器的精简摘要 `ServerCostOverview`（不包含 `cycle_cost_remaining` 和 `resource_value`）。
+- `GET /api/servers/{id}/cost-insights` 返回单台服务器的完整 `ServerCostInsights` 明细，包含周期起止日期、`price`、`cycle_cost_remaining` 与 `resource_value`。
+
+| 字段 | 暴露接口 | 含义 |
+|------|----------|------|
+| `configured` | 两者 | 服务器是否具备合法的账单配置 |
+| `price` | `cost-insights` | 配置的周期价格 |
+| `currency` | 两者 | 计费币种代码（未填或为空时默认 `USD`） |
+| `billing_cycle` | 两者 | 标准化周期（`monthly`、`quarterly` 或 `yearly`） |
+| `cycle_start` / `cycle_end` | `cost-insights` | 当前计费周期的日历起止日期（`YYYY-MM-DD`，含首尾） |
+| `cycle_days` / `days_elapsed` | `cost-insights` | 当前周期的日历总天数与已过天数 |
+| `days_remaining` | 两者 | 当前计费周期剩余日历天数（`cycle_days - days_elapsed`） |
+| `cost_per_day` / `cost_per_hour` / `cost_per_second` | 两者 | `price` 按当前周期的实际日历天数 `cycle_days` 均摊，再分别除以 `24` 和 `3600` |
+| `cost_per_month_equivalent` | 两者 | 按月数归一化的月度等价成本（`monthly` = `price`，`quarterly` = `price / 3`，`yearly` = `price / 12`） |
+| `cycle_cost_elapsed` | 两者 | 本周期截至当前已摊销金额（`cost_per_day * days_elapsed`） |
+| `cycle_cost_remaining` | `cost-insights` | 本周期剩余金额（`max(price - cycle_cost_elapsed, 0)`） |
+| `cycle_burn_percent` | 两者 | 当前周期已消耗百分比（`price == 0` 时为 `null`） |
+| `resource_value.cost_per_cpu_core` | `cost-insights` | 每 CPU 核的月度等价单位成本 |
+| `resource_value.cost_per_gb_memory` | `cost-insights` | 每 GiB（`1024^3` 字节）内存的月度等价单位成本 |
+| `resource_value.cost_per_gb_disk` | `cost-insights` | 每 GiB（`1024^3` 字节）磁盘的月度等价单位成本 |
+| `resource_value.cost_per_tb_traffic_limit` | `cost-insights` | 配置了 `traffic_limit` 且 `traffic_limit_type` 合法（`sum`、`up`、`down` 或未设置）时，每 TiB（`1024^4` 字节）流量限额的月度等价成本 |
+| `resource_value.traffic_limit_type` | `cost-insights` | 配置的流量统计方式（`sum`、`up`、`down`），如有 |
+| `advisories` | 两者 | 客观的每台服务器提醒（见下文）；无任何提醒时为空数组 |
+| `invalid_reason` | 两者 | 账单字段校验失败时，替代成本字段填充 |
 
 <Callout type="info">
-ServerBee 有意**不再**计算单一的合成「价值分」。判断一台服务器是否划算，最好依据上面这些客观单价（无需机群对比）加上下面这些可行动的提醒，而不是一个把多个不相关维度压成一团的 0–100 黑盒数字。
+ServerBee 有意**不再**计算单一的合成「价值分」。判断一台服务器是否划算，最好依据上面这些客观单价（无需机群对比）加上下面这些可行动的提醒，而不是一个把多个不相关维度压成一团的 0-100 黑盒数字。
 </Callout>
 
 ## 输入校验
@@ -41,7 +52,27 @@ ServerBee 有意**不再**计算单一的合成「价值分」。判断一台服
 | `invalid_billing_cycle` | `billing_cycle` 不在识别集合内（`monthly`、`quarterly`、`yearly`） |
 | `invalid_price` | `price < 0` 或 NaN |
 
-`price == 0` 视为合法的「免费服务器」：它会得到完整成本明细（全为 0），但永远不会触发 `idle_burn` / `sleeping_money` 提醒——这两条只有在确实花钱时才有意义。
+`currency` 省略或为空时默认使用 `USD`。
+
+`price == 0` 视为合法的「免费服务器」：各项金额与速率字段均为 `0.0`，`cycle_burn_percent` 为 `null`，且永远不会触发 `idle_burn` / `sleeping_money` 提醒（这两条只有在确实花钱时才有意义）。
+
+## 自动续费跟踪与计费日历
+
+服务器通过 `POST /api/servers`、`PUT /api/servers/{id}` 和 `GET /api/servers/{id}` 上的 `renewal` 对象支持可选的自动续费跟踪。
+
+- **计费日历与时区**：客户端提交日历日期（`renewal.expiry_date`，格式 `YYYY-MM-DD`）和 IANA 时区 `renewal.billing_timezone`（默认 `UTC`），而不是在客户端自行换算 UTC 边界。ServerBee 会按该时区将其换算为当日结束边界。不能同时提交 `renewal.expiry_date` 和旧字段 `expired_at`。
+- **开启前提**：将 `renewal.enabled` 设为 `true` 时，必须同时具备到期日、合法的 IANA `billing_timezone`，以及 `monthly`、`quarterly` 或 `yearly` 的 `billing_cycle`。
+- **响应字段（`RenewalProjection`）**：`enabled`、`billing_timezone`、`expiry_date`、`confirmed_expired_at`、`deadline_origin`、`occurrence_id`。
+- **`deadline_origin` 生命周期**：
+  - `confirmed`：管理员显式设置或确认的到期日（未开启自动续费）。
+  - `projected`：已开启自动续费。当前到期边界过去后，ServerBee 会按 1、3 或 12 个月向前推算，并保留原始锚定日（遇较短月份自动截断到月末，如 31 日在 2 月变为 28/29 日，但后续周期仍保持原锚定日）。
+  - `frozen`：在期限已被自动推算后关闭了自动续费；推算出的日期将保持冻结，直到管理员重新确认新的日期。
+- **离线追赶**：如果 Server 离线跨越了多个计费周期，恢复时会直接追赶到第一个尚未过期的周期，同时保留原始锚定日，不会补发历史周期事件。
+- **与成本周期摊销解耦**：自动续费跟踪只控制到期日期推算与续费提醒，而成本周期消耗（`cycle_start` / `cycle_end`）独立根据 `billing_cycle` 与 `billing_start_day` 计算。
+
+<Callout type="warn">
+自动续费跟踪仅为日历推算，不代表服务商已实际扣款或完成续费。`projected` 状态不会确认任何支付结果。
+</Callout>
 
 ## 成本提醒
 
@@ -59,7 +90,7 @@ ServerBee 有意**不再**计算单一的合成「价值分」。判断一台服
 ## 数据来源与刷新频率
 
 - 提醒和成本数字由服务端按需计算，不做持久化缓存
-- 利用率均值取自 `record` 表（与监控图表同一张表），回看 24 小时（`RECORD_LOOKBACK_HOURS`）。网络活跃度依据每窗口的吞吐速率判断，而非累计字节计数器
+- 利用率均值取自 `records` 表（与监控图表同一张表），回看 24 小时（`RECORD_LOOKBACK_HOURS`）。网络活跃度依据每窗口的吞吐速率判断，而非累计字节计数器
 - 在线率从 `uptime_daily` 按 30 天回看聚合（`UPTIME_RECENT_DAYS`）
 - 资源容量（CPU 核数 / 总内存 / 总磁盘）来自每个 agent 最近一次 `SystemInfo`；agent 断开时沿用最后一次已知值
 
@@ -67,8 +98,10 @@ ServerBee 有意**不再**计算单一的合成「价值分」。判断一台服
 
 - 单位资源成本是绝对值（成本 ÷ 容量），不会与其他服务器排名，因此「便宜还是贵」由你自行判断
 - `idle_burn` 检查的是 CPU + 内存 + I/O 活跃度，而非应用层是否有用。一台开着却没干有用事、CPU/内存又空闲的主机会被判为空闲
-- 缺少 `traffic_limit` 时，`cost_per_tb_traffic_limit` 会省略
-- 月度等价换算使用固定 30 天基准。季度 / 年度周期会先换算到这个统一基准
+- 缺少 `traffic_limit` 或 `traffic_limit_type` 不在 `sum` / `up` / `down` 范围内时，`cost_per_tb_traffic_limit` 会省略
+- `cost_per_month_equivalent` 直接按月数折算（`monthly` 除以 1、`quarterly` 除以 3、`yearly` 除以 12），而 `cost_per_day` 按当前周期的实际日历天数 `cycle_days` 均摊
+- 内存、磁盘与流量单价的分母按二进制 GiB（`1024^3` 字节）和 TiB（`1024^4` 字节）换算，尽管 JSON 字段名使用 `gb` 与 `tb`
+- 在仪表盘上，`server-cards` 组件仅在**列表（list）**布局展示成本数据，**网格（grid）**布局卡片不显示成本
 
 <Cards>
   <Card title="账单字段" href="/zh/docs/admin#计费信息" />

@@ -1,33 +1,44 @@
 ---
 title: Cost Insights
-description: How ServerBee turns billing fields plus agent metrics into burn rate, per-resource unit cost, and objective cost advisories.
+description: How ServerBee turns billing fields, renewal schedules, and agent metrics into burn rate, per-resource unit cost, and objective cost advisories.
 icon: CircleDollarSign
 ---
 
-ServerBee combines admin-entered billing fields (`price`, `billing_cycle`, `currency`, `expired_at`, ...) with the resource capacity, utilization, and uptime each agent reports, then derives a set of objective cost signals: burn rate, per-resource unit cost, and per-server **advisories**. These appear in the server list, the dashboard server card, and the cost panel on the server detail page.
+ServerBee combines admin-entered billing fields (`price`, `billing_cycle`, `currency`, `billing_start_day`, `expired_at`, `traffic_limit`, `traffic_limit_type`, and optional automatic `renewal` settings) with the resource capacity, utilization, and uptime each agent reports, then derives a set of objective cost signals: burn rate, per-resource unit cost, and per-server **advisories**. These appear in the server list (`/servers`), the dashboard `server-cards` widget in **list** layout (grid-layout `<ServerCard>` tiles omit cost figures), the cost panel on the server detail page, and the native iOS app (`CostInsightsCard` and fleet roll-ups in **Insights**).
 
 To learn how to enter billing data in the UI, see the [Billing Information section in the admin guide](/en/docs/admin#billing-information).
 
 ## Derived outputs
 
-Every server with a valid billing configuration produces the fields below (exposed via both `GET /api/cost/overview` and `GET /api/servers/{id}/cost-insights`):
+Two read-only endpoints expose derived cost data:
 
-| Field | Meaning |
-|-------|---------|
-| `cost_per_second / per_hour / per_day` | Cost amortized to a single unit of time within the current billing cycle |
-| `cost_per_month_equivalent` | Cost normalized to "per 30 days" so cycles of different lengths can be compared |
-| `cycle_cost_elapsed / cycle_cost_remaining` | Money already burned vs. left in the current cycle |
-| `cycle_burn_percent` | Elapsed portion of the cycle expressed as a percentage |
-| `days_remaining` | Days left in the current billing cycle |
-| `resource_value.cost_per_cpu_core` | Monthly-equivalent unit cost per CPU core |
-| `resource_value.cost_per_gb_memory` | Monthly-equivalent unit cost per GB of memory |
-| `resource_value.cost_per_gb_disk` | Monthly-equivalent unit cost per GB of disk |
-| `resource_value.cost_per_tb_traffic_limit` | Monthly-equivalent cost per TB of `traffic_limit`, when configured |
-| `advisories` | Objective per-server warnings (see below); an empty array when nothing applies |
-| `invalid_reason` | Populated instead of the cost fields when billing fields fail validation |
+- `GET /api/cost/overview` returns fleet-wide per-currency totals under `currencies` (`currency`, `configured_server_count`, `monthly_equivalent_total`, `daily_total`, `cycle_elapsed_total`) plus a compact `ServerCostOverview` per server (omitting `cycle_cost_remaining` and `resource_value`).
+- `GET /api/servers/{id}/cost-insights` returns the full `ServerCostInsights` object for one server, including cycle dates, `price`, `cycle_cost_remaining`, and `resource_value`.
+
+| Field | Exposed on | Meaning |
+|-------|------------|---------|
+| `configured` | Both | Whether the server has a valid billing configuration |
+| `price` | `cost-insights` | Configured cycle price |
+| `currency` | Both | Billing currency code (defaults to `USD` when unset or blank) |
+| `billing_cycle` | Both | Normalized cycle (`monthly`, `quarterly`, or `yearly`) |
+| `cycle_start` / `cycle_end` | `cost-insights` | Inclusive calendar start and end dates (`YYYY-MM-DD`) of the current billing cycle |
+| `cycle_days` / `days_elapsed` | `cost-insights` | Total calendar days in the current cycle and days elapsed so far |
+| `days_remaining` | Both | Calendar days left in the current billing cycle (`cycle_days - days_elapsed`) |
+| `cost_per_day` / `cost_per_hour` / `cost_per_second` | Both | `price` divided by actual calendar `cycle_days`, then by `24` and `3600` |
+| `cost_per_month_equivalent` | Both | Cost normalized by month count (`monthly` = `price`, `quarterly` = `price / 3`, `yearly` = `price / 12`) |
+| `cycle_cost_elapsed` | Both | Money amortized so far in the current cycle (`cost_per_day * days_elapsed`) |
+| `cycle_cost_remaining` | `cost-insights` | Remaining money in the current cycle (`max(price - cycle_cost_elapsed, 0)`) |
+| `cycle_burn_percent` | Both | Elapsed portion of the cycle as a percentage (`null` when `price == 0`) |
+| `resource_value.cost_per_cpu_core` | `cost-insights` | Monthly-equivalent unit cost per CPU core |
+| `resource_value.cost_per_gb_memory` | `cost-insights` | Monthly-equivalent unit cost per GiB (`1024^3` bytes) of memory |
+| `resource_value.cost_per_gb_disk` | `cost-insights` | Monthly-equivalent unit cost per GiB (`1024^3` bytes) of disk |
+| `resource_value.cost_per_tb_traffic_limit` | `cost-insights` | Monthly-equivalent cost per TiB (`1024^4` bytes) of `traffic_limit`, when configured with a valid `traffic_limit_type` (`sum`, `up`, `down`, or unset) |
+| `resource_value.traffic_limit_type` | `cost-insights` | Configured traffic accounting mode (`sum`, `up`, `down`), if any |
+| `advisories` | Both | Objective per-server warnings (see below); an empty array when nothing applies |
+| `invalid_reason` | Both | Populated instead of cost fields when billing fields fail validation |
 
 <Callout type="info">
-ServerBee deliberately does **not** compute a single composite "value score". A server's cost-effectiveness is best judged from the objective unit costs above (which need no fleet comparison) plus the actionable advisories below — not from an opaque 0–100 number that conflates unrelated dimensions.
+ServerBee deliberately does **not** compute a single composite "value score". A server's cost-effectiveness is best judged from the objective unit costs above (which need no fleet comparison) plus the actionable advisories below, not from an opaque 0-100 number that conflates unrelated dimensions.
 </Callout>
 
 ## Input validation
@@ -41,7 +52,27 @@ The cost breakdown is skipped when any of the following are true. The reason is 
 | `invalid_billing_cycle` | `billing_cycle` is not in the recognized set (`monthly`, `quarterly`, `yearly`) |
 | `invalid_price` | `price < 0` or NaN |
 
-`price == 0` is treated as a valid "free server" entry: it gets the full cost breakdown (all zeros) but never raises the `idle_burn` / `sleeping_money` advisories, which only make sense when money is actually being spent.
+When `currency` is omitted or empty, it defaults to `USD`.
+
+`price == 0` is treated as a valid "free server" entry: monetary rates and elapsed/remaining amounts are `0.0`, `cycle_burn_percent` is `null`, and the server never raises `idle_burn` or `sleeping_money` advisories (which only apply when money is being spent).
+
+## Automatic Renewal Tracking & Billing Calendar
+
+Servers support opt-in automatic renewal tracking via the `renewal` object on `POST /api/servers`, `PUT /api/servers/{id}`, and `GET /api/servers/{id}`.
+
+- **Billing calendar & timezone**: Clients submit a calendar date (`renewal.expiry_date` as `YYYY-MM-DD`) together with an IANA `renewal.billing_timezone` (defaults to `UTC`), rather than computing UTC boundaries on the client. ServerBee converts the date to the end-of-day boundary in that timezone. Submitting `renewal.expiry_date` together with legacy `expired_at` is rejected.
+- **Prerequisites**: Enabling `renewal.enabled = true` requires an expiry date, a valid IANA `billing_timezone`, and a `monthly`, `quarterly`, or `yearly` `billing_cycle`.
+- **Response fields (`RenewalProjection`)**: `enabled`, `billing_timezone`, `expiry_date`, `confirmed_expired_at`, `deadline_origin`, and `occurrence_id`.
+- **`deadline_origin` lifecycle**:
+  - `confirmed`: An operator explicitly set or confirmed the expiry date (with automatic renewal off).
+  - `projected`: Automatic renewal is enabled. When the deadline passes, ServerBee advances it by 1, 3, or 12 months while preserving the original anchor day (clamping to the last day of shorter months, such as 31st to 28th/29th in February, without losing the anchor for subsequent cycles).
+  - `frozen`: Automatic renewal was turned off after a deadline had been projected; the projected date stays frozen in place until an operator confirms a new date.
+- **Offline catch-up**: If the Server is offline across multiple billing periods, catch-up jumps directly to the first unexpired occurrence while keeping the original anchor day. Historical missed periods are never emitted as separate occurrences.
+- **Decoupled from cost cycle burn**: Renewal tracking governs expiry dates and renewal reminders, whereas cost cycle burn (`cycle_start` / `cycle_end`) is computed independently from `billing_cycle` and `billing_start_day`.
+
+<Callout type="warn">
+Automatic renewal tracking is a calendar forecast only. A `projected` deadline does **not** confirm that your hosting provider actually charged your payment method or renewed the server.
+</Callout>
 
 ## Cost advisories
 
@@ -59,7 +90,7 @@ Each advisory is an objective fact about a single server, computed without any f
 ## Data sources and refresh cadence
 
 - Advisories and cost figures are computed on demand by the server; there is no persisted cache
-- Utilization averages come from the `record` table (the same table the monitoring charts use), 24h lookback (`RECORD_LOOKBACK_HOURS`). Network activity is judged from per-window throughput rates, not the cumulative byte counters
+- Utilization averages come from the `records` table (the same table the monitoring charts use), 24h lookback (`RECORD_LOOKBACK_HOURS`). Network activity is judged from per-window throughput rates, not the cumulative byte counters
 - Uptime ratio is aggregated from `uptime_daily` over a 30-day lookback (`UPTIME_RECENT_DAYS`)
 - Resource capacity (CPU cores / total memory / total disk) comes from each agent's last `SystemInfo`; the last known value is reused while the agent is disconnected
 
@@ -67,8 +98,10 @@ Each advisory is an objective fact about a single server, computed without any f
 
 - Per-resource unit costs are absolute (cost ÷ capacity); they are not ranked against other servers, so judging "cheap vs. expensive" is left to you
 - `idle_burn` inspects CPU + memory + I/O activity, not application-level usefulness. A host that is up but doing nothing useful while its CPU/RAM are idle reads as idle
-- When `traffic_limit` is missing, `cost_per_tb_traffic_limit` is omitted
-- Monthly-equivalent conversion uses a fixed 30-day basis. Quarterly / yearly cycles are converted into this single basis first
+- `cost_per_tb_traffic_limit` is omitted when `traffic_limit` is missing or `traffic_limit_type` is outside `sum` / `up` / `down`
+- `cost_per_month_equivalent` divides directly by calendar month count (`1` for `monthly`, `3` for `quarterly`, `12` for `yearly`), whereas `cost_per_day` divides by actual calendar `cycle_days` in the current cycle
+- Memory, disk, and traffic unit costs use binary GiB (`1024^3` bytes) and TiB (`1024^4` bytes) denominators even though the JSON field names use `gb` and `tb`
+- On dashboards, the `server-cards` widget renders cost figures only in **list** layout; **grid** layout cards omit cost data
 
 <Cards>
   <Card title="Billing fields" href="/en/docs/admin#billing-information" />
