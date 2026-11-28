@@ -64,6 +64,7 @@ fn spawn_conntrack() -> io::Result<Child> {
         .args(["-E", "-e", "NEW", "-o", "extended"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
         .spawn()
 }
 

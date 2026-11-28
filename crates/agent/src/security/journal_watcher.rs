@@ -4,9 +4,11 @@
 //! Both paths auto-recover from transient subprocess/file failures via
 //! exponential backoff.
 
+#[cfg(test)]
+use serde::Deserialize;
+#[cfg(any(test, target_os = "linux"))]
 use std::io;
-
-use serde_json::Value;
+#[cfg(any(test, target_os = "linux"))]
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::sync::mpsc;
 
@@ -54,6 +56,7 @@ pub async fn run_sshd_stream(_out_tx: mpsc::Sender<AuthAttempt>) {
 async fn has_journalctl() -> bool {
     Command::new("journalctl")
         .arg("--version")
+        .kill_on_drop(true)
         .output()
         .await
         .map(|o| o.status.success())
@@ -68,7 +71,7 @@ async fn run_journalctl_sshd(out_tx: mpsc::Sender<AuthAttempt>) -> io::Result<()
         .take()
         .ok_or_else(|| io::Error::other("journalctl stdout missing"))?;
     let reader = BufReader::new(stdout);
-    let result = drain_journalctl_json(reader, out_tx).await;
+    let result = drain_journalctl_cat(reader, out_tx).await;
     let _ = child.kill().await;
     result
 }
@@ -78,14 +81,9 @@ fn spawn_journalctl_sshd() -> io::Result<Child> {
     Command::new("journalctl")
         .args([
             "-f",
-            "--output=json",
+            "--output=cat",
             "-n",
             "0",
-            // OpenSSH ≥9.8 logs auth events from the per-connection
-            // "sshd-session" helper, not "sshd". Match both identifiers/comms so
-            // detection keeps working on Debian 13 / Ubuntu 24.10+ / Fedora 40+,
-            // including socket-activated setups where _SYSTEMD_UNIT is a
-            // per-connection transient unit rather than ssh.service.
             "SYSLOG_IDENTIFIER=sshd",
             "+",
             "SYSLOG_IDENTIFIER=sshd-session",
@@ -100,14 +98,27 @@ fn spawn_journalctl_sshd() -> io::Result<Child> {
         ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
         .spawn()
 }
 
-/// Read journalctl JSON lines from an arbitrary async reader, parse them,
-/// and forward decoded `AuthAttempt`s on `out_tx`.
-///
-/// Made public for tests; the production path constructs the reader from
-/// the spawned child's stdout.
+#[cfg(target_os = "linux")]
+async fn drain_journalctl_cat<R: AsyncRead + Unpin>(
+    reader: BufReader<R>,
+    out_tx: mpsc::Sender<AuthAttempt>,
+) -> io::Result<()> {
+    let mut lines = reader.lines();
+    while let Some(line) = lines.next_line().await? {
+        if let Some(attempt) = parse_sshd_line(&line)
+            && out_tx.send(attempt).await.is_err()
+        {
+            break;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
 pub async fn drain_journalctl_json<R: AsyncRead + Unpin>(
     reader: BufReader<R>,
     out_tx: mpsc::Sender<AuthAttempt>,
@@ -124,21 +135,104 @@ pub async fn drain_journalctl_json<R: AsyncRead + Unpin>(
     Ok(())
 }
 
-fn extract_message(line: &str) -> Option<String> {
-    let v: Value = serde_json::from_str(line).ok()?;
-    let raw = v.get("MESSAGE")?;
-    match raw {
-        Value::String(s) => Some(s.clone()),
-        // journalctl emits binary fields as JSON arrays of u8s.
-        Value::Array(bytes) => {
-            let mut buf = Vec::with_capacity(bytes.len());
-            for b in bytes {
-                buf.push(u8::try_from(b.as_u64()?).ok()?);
-            }
-            String::from_utf8(buf).ok()
+#[cfg(test)]
+#[derive(Deserialize)]
+struct JournalMessageLine {
+    #[serde(rename = "MESSAGE", default, deserialize_with = "deserialize_message")]
+    message: Option<String>,
+}
+
+#[cfg(test)]
+fn deserialize_message<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct MessageVisitor;
+
+    impl<'de> serde::de::Visitor<'de> for MessageVisitor {
+        type Value = Option<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a journald MESSAGE string or byte array")
         }
-        _ => None,
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(Some(value.to_string()))
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
+            Ok(Some(value))
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            #[derive(Deserialize)]
+            #[serde(untagged)]
+            enum ByteOrOther {
+                Byte(u8),
+                Other(serde::de::IgnoredAny),
+            }
+
+            let mut buf = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            let mut valid = true;
+            while let Some(elem) = seq.next_element::<ByteOrOther>()? {
+                match elem {
+                    ByteOrOther::Byte(b) if valid => buf.push(b),
+                    _ => valid = false,
+                }
+            }
+            if !valid {
+                return Ok(None);
+            }
+            Ok(String::from_utf8(buf).ok())
+        }
+
+        fn visit_bool<E>(self, _value: bool) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_i64<E>(self, _value: i64) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_u64<E>(self, _value: u64) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_f64<E>(self, _value: f64) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::MapAccess<'de>,
+        {
+            while map
+                .next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?
+                .is_some()
+            {}
+            Ok(None)
+        }
     }
+
+    deserializer.deserialize_any(MessageVisitor)
+}
+
+#[cfg(test)]
+fn extract_message(line: &str) -> Option<String> {
+    serde_json::from_str::<JournalMessageLine>(line)
+        .ok()
+        .and_then(|parsed| parsed.message)
 }
 
 /// Forward one auth.log line. A closed receiver tells the tail loop to stop.
@@ -170,15 +264,14 @@ async fn run_auth_log_tail(out_tx: mpsc::Sender<AuthAttempt>) -> io::Result<()> 
     let path = path.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no auth log found"))?;
     let mut file = File::open(&path).await?;
     file.seek(io::SeekFrom::End(0)).await?;
-    let mut last_inode = inode_of(&path).ok();
+    let mut last_inode = inode_of(&path).await.ok();
     let mut reader = BufReader::new(file);
     let mut buf = String::new();
     loop {
         buf.clear();
         match reader.read_line(&mut buf).await {
             Ok(0) => {
-                // Detect inode change (logrotate) before sleeping.
-                let cur = inode_of(&path).ok();
+                let cur = inode_of(&path).await.ok();
                 if cur != last_inode {
                     tracing::info!(path = %path.display(), "auth log rotated; reopening");
                     let file = File::open(&path).await?;
@@ -232,7 +325,7 @@ async fn run_journalctl_kernel(out_tx: mpsc::Sender<String>) -> io::Result<()> {
         .take()
         .ok_or_else(|| io::Error::other("journalctl -k stdout missing"))?;
     let reader = BufReader::new(stdout);
-    let result = drain_kernel_json(reader, out_tx).await;
+    let result = drain_kernel_cat(reader, out_tx).await;
     let _ = child.kill().await;
     result
 }
@@ -240,16 +333,34 @@ async fn run_journalctl_kernel(out_tx: mpsc::Sender<String>) -> io::Result<()> {
 #[cfg(target_os = "linux")]
 fn spawn_journalctl_kernel() -> io::Result<Child> {
     Command::new("journalctl")
-        .args(["-k", "-f", "--output=json", "-n", "0"])
+        .args(["-k", "-f", "--output=cat", "-n", "0"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
         .spawn()
+}
+
+#[cfg(target_os = "linux")]
+async fn drain_kernel_cat<R: AsyncRead + Unpin>(
+    reader: BufReader<R>,
+    out_tx: mpsc::Sender<String>,
+) -> io::Result<()> {
+    let mut lines = reader.lines();
+    while let Some(line) = lines.next_line().await? {
+        if let Some(ip) = extract_blocked_ip(&line)
+            && out_tx.send(ip).await.is_err()
+        {
+            break;
+        }
+    }
+    Ok(())
 }
 
 /// Read kernel journal JSON lines and forward extracted source IPs.
 ///
 /// Public for tests; the production path constructs the reader from
 /// `journalctl -k`'s stdout.
+#[cfg(test)]
 pub async fn drain_kernel_json<R: AsyncRead + Unpin>(
     reader: BufReader<R>,
     out_tx: mpsc::Sender<String>,
@@ -298,9 +409,9 @@ fn pick_auth_log_path() -> Option<std::path::PathBuf> {
 }
 
 #[cfg(target_os = "linux")]
-fn inode_of(path: &Path) -> io::Result<u64> {
+async fn inode_of(path: &Path) -> io::Result<u64> {
     use std::os::unix::fs::MetadataExt;
-    Ok(std::fs::metadata(path)?.ino())
+    Ok(tokio::fs::metadata(path).await?.ino())
 }
 
 #[cfg(test)]
